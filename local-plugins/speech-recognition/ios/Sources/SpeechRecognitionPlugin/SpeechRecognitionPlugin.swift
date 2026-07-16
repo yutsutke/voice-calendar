@@ -7,14 +7,18 @@ import AVFoundation
 ///
 /// 契約（input/transcriber.js の native 分岐と一致させる）:
 ///   start() / stop() … 1回の start = 1発話
-///   イベント: "interim" {text} / "final" {text, confidence?} / "state" {state} / "error" {message}
+///   イベント: "interim" {text} / "final" {text, confidence?, fallback?} / "state" {state}
+///             / "error" {message} / "debug" {msg}（診断パネル用・Mac なし開発の「目」）
 ///
 /// 方針:
 /// - **オンデバイス優先**（supportsOnDeviceRecognition なら requiresOnDeviceRecognition = true）
 ///   ＝ローカル完結（SPEC §2）。音声データを外部に送らない。
-/// - **無音で自動停止**: WebSpeech（continuous=false）と同じ「話し終わったら勝手に確定」の
-///   手触りに揃える。部分結果が止まって 1.8 秒で endAudio() → final が飛ぶ。
-///   何も聞き取れないまま 6 秒経ったら打ち切る（ノールックの前提＝手で止めさせない）。
+/// - **無音で自動停止**: 部分結果が止まって 1.8 秒で endAudio()。
+/// - 🔴 **確定の保険（v15・実機FBで判明）**: オンデバイス認識は endAudio() しても
+///   **isFinal が返ってこないことがある**（iOS の既知の癖。実機で「途中結果は出るのに
+///   確定だけ来ない」＝短い発話だけ認識器が自力確定し、長い発話が全滅していた真因）。
+///   → endAudio 後 2 秒待って final が来なければ、**最後の途中結果を確定として届ける**
+///   （fallback=true を付けて来歴で区別できるようにする）。エラー時も同じ保険を使う。
 @objc(SpeechRecognitionPlugin)
 public class SpeechRecognitionPlugin: CAPPlugin, CAPBridgedPlugin {
     public let identifier = "SpeechRecognitionPlugin"
@@ -30,7 +34,13 @@ public class SpeechRecognitionPlugin: CAPPlugin, CAPBridgedPlugin {
     private var request: SFSpeechAudioBufferRecognitionRequest?
     private var task: SFSpeechRecognitionTask?
     private var silenceTimer: Timer?
-    private var finished = false // final/error を JS へ二重に流さないためのガード
+    private var finalizeTimer: Timer?
+    private var lastPartial = ""      // 確定の保険に使う最後の途中結果
+    private var finished = false      // final/error を JS へ二重に流さないためのガード
+
+    private func debug(_ msg: String) {
+        notifyListeners("debug", data: ["msg": msg])
+    }
 
     @objc func available(_ call: CAPPluginCall) {
         call.resolve([
@@ -56,10 +66,11 @@ public class SpeechRecognitionPlugin: CAPPlugin, CAPBridgedPlugin {
         }
     }
 
-    /// 発話中でも呼べる手動停止（トグル）。endAudio → 認識器が final を返して閉じる
+    /// 手動停止（トグル）。endAudio → final を待ち、来なければ保険が確定する
     @objc func stop(_ call: CAPPluginCall) {
         DispatchQueue.main.async {
-            self.request?.endAudio()
+            self.debug("stop() 手動停止")
+            self.endAudioAndArmFinalize()
             call.resolve()
         }
     }
@@ -67,8 +78,9 @@ public class SpeechRecognitionPlugin: CAPPlugin, CAPBridgedPlugin {
     // MARK: - 本体（main thread）
 
     private func begin(_ call: CAPPluginCall) {
-        cleanup() // 前回分の掃除（多重 start 保険）
+        cleanup()
         finished = false
+        lastPartial = ""
 
         guard let recognizer = recognizer, recognizer.isAvailable else {
             call.reject("音声認識が利用できません（Siri と音声入力の設定・ネットワークを確認）")
@@ -82,7 +94,8 @@ public class SpeechRecognitionPlugin: CAPPlugin, CAPBridgedPlugin {
 
             let req = SFSpeechAudioBufferRecognitionRequest()
             req.shouldReportPartialResults = true
-            if recognizer.supportsOnDeviceRecognition {
+            let onDevice = recognizer.supportsOnDeviceRecognition
+            if onDevice {
                 req.requiresOnDeviceRecognition = true // ローカル完結（対応端末・対応言語なら）
             }
 
@@ -98,6 +111,7 @@ public class SpeechRecognitionPlugin: CAPPlugin, CAPBridgedPlugin {
             audioEngine = engine
             request = req
             notifyListeners("state", data: ["state": "listening"])
+            debug("開始 onDevice=\(onDevice)")
             armSilenceTimer(seconds: 6.0) // 無音のまま6秒 → 打ち切り
 
             task = recognizer.recognitionTask(with: req) { [weak self] result, error in
@@ -106,14 +120,24 @@ public class SpeechRecognitionPlugin: CAPPlugin, CAPBridgedPlugin {
                     if let result = result {
                         let text = result.bestTranscription.formattedString
                         if result.isFinal {
-                            self.deliverFinal(text: text, transcription: result.bestTranscription)
+                            self.debug("isFinal 到着")
+                            self.deliverFinal(text: text, transcription: result.bestTranscription, fallback: false)
                         } else {
+                            self.lastPartial = text
                             self.notifyListeners("interim", data: ["text": text])
                             self.armSilenceTimer(seconds: 1.8) // 部分結果が止まって1.8秒 → 発話終わり
                         }
                     }
                     if let error = error {
-                        self.deliverError(error)
+                        let ns = error as NSError
+                        self.debug("認識エラー \(ns.domain)#\(ns.code)")
+                        // 🔴 保険: エラーで閉じても途中結果があればそれを確定にする
+                        // （オンデバイス認識は endAudio 後に isFinal でなくエラーで終わることがある）
+                        if !self.finished && !self.lastPartial.isEmpty {
+                            self.deliverFinal(text: self.lastPartial, transcription: nil, fallback: true)
+                        } else {
+                            self.deliverIdleError(error.localizedDescription)
+                        }
                     }
                 }
             }
@@ -125,47 +149,69 @@ public class SpeechRecognitionPlugin: CAPPlugin, CAPBridgedPlugin {
         }
     }
 
-    private func deliverFinal(text: String, transcription: SFTranscription) {
+    /// endAudio ＋「final が来なければ保険で確定」タイマー
+    private func endAudioAndArmFinalize() {
+        request?.endAudio()
+        audioEngine?.stop() // これ以上の音は不要（バッファ済みは認識器が処理する）
+        finalizeTimer?.invalidate()
+        finalizeTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: false) { [weak self] _ in
+            guard let self = self, !self.finished else { return }
+            self.debug("final 待ちタイムアウト → 途中結果で確定")
+            if !self.lastPartial.isEmpty {
+                self.deliverFinal(text: self.lastPartial, transcription: nil, fallback: true)
+            } else {
+                self.deliverIdleError("聞き取れませんでした")
+            }
+        }
+    }
+
+    private func deliverFinal(text: String, transcription: SFTranscription?, fallback: Bool) {
         guard !finished else { return }
         finished = true
         var data: [String: Any] = ["text": text]
-        // segment 平均の確度（オンデバイスでは 0 のことがある → その時は送らない）
-        let confs = transcription.segments.map { Double($0.confidence) }
-        if !confs.isEmpty {
-            let avg = confs.reduce(0, +) / Double(confs.count)
-            if avg > 0 { data["confidence"] = avg }
+        if fallback { data["fallback"] = true }
+        if let transcription = transcription {
+            // segment 平均の確度（オンデバイスでは 0 のことがある → その時は送らない）
+            let confs = transcription.segments.map { Double($0.confidence) }
+            if !confs.isEmpty {
+                let avg = confs.reduce(0, +) / Double(confs.count)
+                if avg > 0 { data["confidence"] = avg }
+            }
         }
         cleanup()
         if !text.isEmpty { notifyListeners("final", data: data) }
         notifyListeners("state", data: ["state": "idle"])
     }
 
-    private func deliverError(_ error: Error) {
+    private func deliverIdleError(_ message: String) {
         guard !finished else { return }
         finished = true
         cleanup()
         notifyListeners("state", data: ["state": "idle"])
-        // 無音打ち切り等で「結果なし」のエラーが返るのは正常系に近い → error イベントは出すが短文で
-        notifyListeners("error", data: ["message": error.localizedDescription])
+        notifyListeners("error", data: ["message": message])
     }
 
-    /// 無音タイマー: 発火したら endAudio()（→ 認識器が final を確定して閉じる）
+    /// 無音タイマー: 発火したら endAudio ＋ 保険タイマー
     private func armSilenceTimer(seconds: TimeInterval) {
         silenceTimer?.invalidate()
         silenceTimer = Timer.scheduledTimer(withTimeInterval: seconds, repeats: false) { [weak self] _ in
-            self?.request?.endAudio()
+            self?.debug("無音\(seconds)s → endAudio")
+            self?.endAudioAndArmFinalize()
         }
     }
 
     private func cleanup() {
         silenceTimer?.invalidate()
         silenceTimer = nil
+        finalizeTimer?.invalidate()
+        finalizeTimer = nil
         if let engine = audioEngine {
             engine.stop()
             engine.inputNode.removeTap(onBus: 0)
         }
         audioEngine = nil
         request = nil
+        task?.cancel()
         task = nil
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
     }

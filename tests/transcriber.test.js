@@ -75,7 +75,7 @@ t('Capacitor.Plugins.SpeechRecognition があればそれを使う（registerPlu
     eq(tr.engine, 'sfspeech', 'native エンジンになる');
     eq(tr.available, true, 'available');
     eq(registerPluginCalled, false, 'Plugins.X があれば registerPlugin は呼ばない');
-    eq(listeners, ['interim', 'final', 'state', 'error'], '4つのイベントを購読する');
+    eq(listeners.slice().sort(), ['debug', 'error', 'final', 'interim', 'state'], '5つのイベントを購読する（debug は診断用・v15。順不同）');
   });
 });
 
@@ -88,7 +88,7 @@ t('Plugins.X が無く registerPlugin だけある環境ではそれを保険に
   }, () => {
     const tr = createTranscriber(H);
     eq(tr.engine, 'sfspeech', 'native エンジンになる');
-    eq(listeners.length, 4, '購読できている');
+    eq(listeners.length, 5, '購読できている');
   });
 });
 

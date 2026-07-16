@@ -14,6 +14,15 @@
 window.__vcErrors = [];
 window.__vcNote = function (where, msg) {
   window.__vcErrors.push({ where: where, msg: String(msg) });
+  if (window.__vcErrors.length > 30) window.__vcErrors.shift();
+  if (window.__vcRenderDiag) window.__vcRenderDiag();
+};
+// 情報ログ（v15）: Swift 内部の出来事など。エラーではないので診断を自動で開かない
+window.__vcDebugLog = [];
+window.__vcDebugNote = function (msg) {
+  var d = new Date();
+  window.__vcDebugLog.push(('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2) + ':' + ('0' + d.getSeconds()).slice(-2) + ' ' + String(msg));
+  if (window.__vcDebugLog.length > 40) window.__vcDebugLog.shift();
   if (window.__vcRenderDiag) window.__vcRenderDiag();
 };
 window.addEventListener('error', function (e) {
@@ -47,6 +56,13 @@ window.__vcRenderDiag = function () {
     var d = document.createElement('div');
     d.className = 'h-item h-note';
     d.textContent = '⚠ ' + e.where + ': ' + e.msg;
+    list.appendChild(d);
+  });
+  // 情報ログ（音声エンジンの内部イベント等）。薄く表示・自動オープンの対象外
+  window.__vcDebugLog.forEach(function (msg) {
+    var d = document.createElement('div');
+    d.className = 'h-item h-debug';
+    d.textContent = msg;
     list.appendChild(d);
   });
   // エラーがある / 初期化が止まった なら自動で開く（黙って壊れない）
@@ -127,6 +143,7 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
   .history-list .h-result { color: var(--sub); font-size: 12px; margin-top: 2px; }
   .history-list .h-note { color: var(--warn); }
   .history-list .h-empty { color: var(--sub); padding: 10px 0; }
+  .history-list .h-debug { color: var(--sub); font-size: 11px; padding: 3px 0; border-bottom: none; }
   .history-actions { text-align: right; padding: 8px 0; }
   .history-actions button { border: none; background: transparent; color: var(--sub); font-size: 12px; cursor: pointer; }
 
@@ -233,13 +250,13 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
      理由: この版文字列は index.html にしかないが、ロジックは別ファイル＝別キャッシュ。
      付けないと「フッタは新しいのにパーサは古い」という嘘の状態が成立する（v9 で実際に踏んだ）。
      index.html が更新されれば src の URL も変わる → JS も必ず新しく取り直される。 -->
-<script src="engine/schema.js?v=14"></script>
-<script src="engine/parser.js?v=14"></script>
-<script src="input/transcriber.js?v=14"></script>
-<script src="adapters/calendar.js?v=14"></script>
+<script src="engine/schema.js?v=15"></script>
+<script src="engine/parser.js?v=15"></script>
+<script src="input/transcriber.js?v=15"></script>
+<script src="adapters/calendar.js?v=15"></script>
 <script>
 'use strict';
-const BUILD = 'v14：不可視文字を除去(見えているのに入らない対策)＋解釈エラーも必ず来歴に残す｜v13：全ボタン無反応を修正＋診断｜v12：輸出コンプライアンス｜v11：iOS足回り｜v10：?v=キャッシュ整合 · 2026-07-16';
+const BUILD = 'v15：確定が来ない対策(endAudio後2秒で途中結果から補完確定＝発話が必ず届く)＋Swift内部を診断に可視化｜v14：不可視文字除去＋解釈エラーを来歴に｜v13：全ボタン無反応を修正｜v12：輸出コンプライアンス · 2026-07-16';
 console.log('BUILD:', BUILD);
 document.getElementById('build').textContent = BUILD;
 
@@ -347,7 +364,7 @@ function onUtterance(text, meta) {
     window.__vcNote('解釈エラー', `${err}｜発話「${text}」`);
     toast('解釈でエラーが起きました（詳細は「診断」と「来歴」）');
   }
-  logHistory({ at: Date.now(), text, conf: meta && meta.confidence, patch, notes, skipped, cleared, err });
+  logHistory({ at: Date.now(), text, conf: meta && meta.confidence, fb: !!(meta && meta.fallback), patch, notes, skipped, cleared, err });
 }
 
 // ===== 来歴（SPEC §5-①）: 生テキスト＋解釈結果を端末内に記録（外部送信しない） =====
@@ -389,7 +406,8 @@ function renderHistory() {
     time.className = 'h-time';
     const dt = new Date(e.at);
     time.textContent = `${dt.getMonth() + 1}/${dt.getDate()} ${String(dt.getHours()).padStart(2, '0')}:${String(dt.getMinutes()).padStart(2, '0')}`
-      + (typeof e.conf === 'number' ? ` 認識${Math.round(e.conf * 100)}%` : '');
+      + (typeof e.conf === 'number' ? ` 認識${Math.round(e.conf * 100)}%` : '')
+      + (e.fb ? ' 補完確定' : ''); // isFinal が来ず途中結果で確定した発話（v15 の保険が効いた印）
     const text = document.createElement('span');
     text.className = 'h-text';
     text.textContent = `🗣 ${e.text}`;
@@ -422,6 +440,7 @@ renderHistory();
 const transcriber = VCTranscriber.createTranscriber({
   onInterim(t) { transcriptEl.textContent = `… ${t}`; },
   onFinal(t, meta) { onUtterance(t, meta); },
+  onDebug(msg) { window.__vcDebugNote(`🎙 ${msg}`); }, // Swift 内部の出来事 → 診断（v15）
   onState(s) {
     micBtn.classList.toggle('listening', s === 'listening');
     micState.textContent = s === 'listening' ? '聞いています…（もう一度押すと停止）' : '';

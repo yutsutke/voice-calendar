@@ -39,8 +39,12 @@
       plugin.addListener('final', (d) => {
         const meta = { engine: 'sfspeech' };
         if (typeof d.confidence === 'number') meta.confidence = d.confidence;
+        if (d.fallback) meta.fallback = true; // isFinal が来ず途中結果で確定した印（v15 の保険）
         h.onFinal((d.text || '').trim(), meta);
       });
+      // Swift 内部の出来事（開始/無音タイマー/確定タイムアウト/エラー番号）。
+      // Mac なし開発の「目」＝診断パネルに流す（v15）
+      plugin.addListener('debug', (d) => { if (h.onDebug) h.onDebug(d.msg || ''); });
       plugin.addListener('state', (d) => {
         listening = d.state === 'listening';
         h.onState(d.state || 'idle');
