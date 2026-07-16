@@ -74,6 +74,31 @@
     if (!cands.length) return null;
     return cands.reduce((best, c) => (Math.abs(c - today) < Math.abs(best - today) ? c : best));
   };
+  // 欄指定発話（v17）の値から時刻をひとつ拾う（本文の TIME_RE と同じ意味論:
+  // 午前/午後/朝/夜等の修飾・「半」「N分」「H:MM」・修飾なし1〜6時は曖昧）
+  const TIME_VALUE_RE = /(午前|午後|朝|昼|夜|夕方|晩)?(?:(\d{1,2})時(?!間)(半|(\d{1,2})分)?|正午|(\d{1,2}):(\d{2}))/;
+  const timeFromValue = (value) => {
+    const m = TIME_VALUE_RE.exec(value);
+    if (!m) return null;
+    if (m[0].includes('正午')) return { h: 12, min: 0, ambiguous: false, raw: m[0] };
+    const qual = m[1] || '';
+    let h, min = 0;
+    if (m[5] !== undefined) { h = +m[5]; min = +m[6]; }
+    else {
+      h = +m[2];
+      if (m[3] === '半') min = 30;
+      else if (m[4] !== undefined) min = +m[4];
+    }
+    if (h > 24 || min > 59) return null;
+    let ambiguous = false;
+    if (qual === '午後') h = h < 12 ? h + 12 : h;
+    else if (qual === '午前' || qual === '朝') { /* そのまま */ }
+    else if (qual === '夜' || qual === '夕方' || qual === '晩' || qual === '昼') h = h < 12 ? (h === 12 ? 12 : h + 12) : h;
+    else if (h >= 1 && h <= 6) ambiguous = true; // 修飾なし 1〜6時 = 午前/午後が決められない
+    if (h === 24) h = 0;
+    return { h, min, ambiguous, raw: m[0] };
+  };
+
   // 漢数字（一〜九十九）→ 整数。算用数字はそのまま
   const jpNum = (s) => {
     if (/^\d+$/.test(s)) return +s;
@@ -87,12 +112,39 @@
     return tens * 10 + ones;
   };
 
+  // ---------- 欄指定発話（v17・実機FB第9回） ----------
+  // 「終了22時」「場所 立川」のように**フォームの欄名で始まる**発話は、その欄だけを狙った
+  // 差分として扱う（SPEC §0「任意項目は声か手で足す」= UC2 の声版。呼び手は掃除なしで適用する）。
+  //   - 従来は「終了 22時」と言うと通常解釈が動き、時刻→**開始**に入ってしまった
+  //   - 誤爆ガード①: 欄名で「始まる」発話だけ（「プロジェクト終了 打ち上げ」は通常解釈のまま）
+  //   - 誤爆ガード②: 値が解釈できなければ null を返し通常解釈へフォールバック（発話を捨てない）
+  const FIELD_KEYS = { タイトル: 'title', 件名: 'title', 場所: 'location', メモ: 'note', 開始: 'startTime', 終了: 'endTime' };
+  function tryTargeted(text) {
+    const m = /^(タイトル|件名|場所|メモ|開始|終了)[はがをに:、。]?\s*(.+)$/.exec(text);
+    if (!m) return null;
+    const field = FIELD_KEYS[m[1]];
+    const value = m[2].replace(/^[はがをに:、。\s]+/, '').replace(/[。．\s]+$/, '');
+    if (!value) return null;
+    if (field === 'startTime' || field === 'endTime') {
+      const t = timeFromValue(value);
+      if (!t || t.ambiguous) return null; // 時刻なし/曖昧（3時）→ 通常解釈へ（曖昧の理由はそちらが出す）
+      return { [field]: fmtTime(t.h, t.min) };
+    }
+    return { [field]: value }; // title / location / note は自由文をそのまま
+  }
+
   // ---------- 本体 ----------
   function interpret(rawText, now) {
     const text = normalize(rawText);
     const today = startOfDay(now);
     const consumed = new Array(text.length).fill(false);
     const notes = []; // 素通しの理由（UI で見せる／将来の仮置き v1 の種）
+
+    // 欄指定発話なら、その欄だけの差分を返す（通常解釈は走らせない）
+    const targetedPatch = tryTargeted(text);
+    if (targetedPatch) {
+      return { patch: targetedPatch, notes, targeted: true, normalizedText: text };
+    }
 
     const isFree = (a, b) => {
       for (let i = a; i < b; i++) if (consumed[i]) return false;

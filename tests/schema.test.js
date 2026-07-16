@@ -132,6 +132,35 @@ t('手で書いた欄も発話が言及すれば上書きされる（編集中�
   eq(r.cleared, ['title'], 'cleared');
 });
 
+// ===== 欄指定パッチ（v17）: その欄だけの差分＝掃除しない =====
+t('targeted パッチは他の音声欄を掃除しない（「終了22時」で予定が消えない）', () => {
+  const s = createDraftStore();
+  s.applyVoicePatch({ title: '歯医者', startDate: '2026-07-17', startTime: '15:00' }, '明日15時に歯医者');
+  const r = s.applyVoicePatch({ endTime: '22:00' }, '終了22時', { targeted: true });
+  eq(s.get().title, '歯医者', 'タイトルが残る');
+  eq(s.get().startDate, '2026-07-17', '開始日が残る');
+  eq(s.get().startTime, '15:00', '開始時刻が残る');
+  eq(s.get().endTime, '22:00', '終了が入る');
+  eq(r.cleared, [], '掃除リストは空');
+});
+
+t('targeted でも編集中ロックは尊重（§8）', () => {
+  const s = createDraftStore();
+  s.lock('endTime');
+  const r = s.applyVoicePatch({ endTime: '22:00' }, '終了22時', { targeted: true });
+  eq(r.skipped, ['endTime'], 'ロック中はスキップ');
+  eq(s.get().endTime, '', '書かれない');
+  s.unlock('endTime');
+});
+
+t('targeted なし（通常の言い直し）は従来どおり掃除する', () => {
+  const s = createDraftStore();
+  s.applyVoicePatch({ title: 'A', startTime: '15:00' }, 'x');
+  const r = s.applyVoicePatch({ title: 'B' }, 'y'); // opts なし = 言い直し
+  eq(s.get().startTime, '', '掃除される');
+  eq(r.cleared, ['startTime'], 'cleared に出る');
+});
+
 // ===== 来歴（SPEC §5-①: note に流し込まない） =====
 t('転写は来歴として貯まり、note には流し込まれない', () => {
   const s = createDraftStore();

@@ -73,8 +73,12 @@
       // 発話が触れなかった欄のうち **前回の音声が書いた欄は空に掃除する**（実発話FB:
       // 「時間が読み取れなかったのに前回の時間が残って混乱」→ --:-- に戻る方が分かる）。
       // 人が手で入れた欄（origin='human'）と編集中ロックの欄は消さない＝人の入力の保護（§8 の精神）。
-      // 発話の断片で欄を「追加」するのは v1 の差分パッチの主戦場（SPEC §11）。
-      applyVoicePatch(patch, transcriptText) {
+      //
+      // 例外 = 欄指定発話（opts.targeted・v17）: 「終了22時」「場所 立川」はその欄だけの差分。
+      // 掃除すると直前に組み立てた予定が消えて本末転倒なので、言及した欄以外に触れない
+      // （SPEC §0「任意項目は声か手で足す」の声版。自由文の差分パッチは v1 の主戦場のまま）。
+      applyVoicePatch(patch, transcriptText, opts) {
+        const targeted = !!(opts && opts.targeted);
         const transcript = { id: 't' + Date.now() + '-' + transcripts.length, text: transcriptText, createdAt: new Date() };
         transcripts.push(transcript);
         const written = [], skipped = [], cleared = [];
@@ -86,7 +90,7 @@
             fieldState[f] = 'confirmed';
             origin[f] = 'voice';
             written.push(f);
-          } else if (origin[f] === 'voice' && !isLocked(f)) {
+          } else if (!targeted && origin[f] === 'voice' && !isLocked(f)) {
             draft[f] = f === 'allDay' ? false : '';
             fieldState[f] = 'empty';
             origin[f] = null;

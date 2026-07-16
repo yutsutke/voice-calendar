@@ -140,6 +140,24 @@ check('明日は終日 出張', { title: '出張', startDate: '2026-07-17', allD
 // ===== タイトルなし =====
 check('明日15時', { title: undefined, startDate: '2026-07-17', startTime: '15:00' });
 
+// ===== 欄指定発話（v17・実機FB第9回: 「終了22時」と言うと開始に入ってしまう） =====
+check('終了22時', { endTime: '22:00' });
+check('終了は22時', { endTime: '22:00' });
+check('終了 22時半', { endTime: '22:30' });
+check('終了22時まで', { endTime: '22:00' }); // 値の後ろの言い回しは無視
+check('開始9時半', { startTime: '09:30' });
+check('開始は午後3時', { startTime: '15:00' });
+check('場所 立川', { location: '立川' });
+check('場所は立川駅前', { location: '立川駅前' });
+check('メモ 持ち物はタオル', { note: '持ち物はタオル' });
+check('タイトル 打ち上げ', { title: '打ち上げ' });
+// 誤爆ガード: 欄名で始まっても値に時刻が無ければ通常解釈へフォールバック
+check('終了式の打ち合わせ 明日', { title: '終了式の打ち合わせ', startDate: '2026-07-17' });
+// 曖昧時刻（3時）は欄指定でも埋めない → 通常解釈へ（素通しでタイトルに残る）
+check('終了3時', { title: '終了3時', startTime: undefined, endTime: undefined });
+// 欄名が文中にあるだけなら通常解釈（「始まる」発話だけが欄指定）
+check('明日15時 プロジェクト終了の打ち上げ', { title: 'プロジェクト終了の打ち上げ', startDate: '2026-07-17', startTime: '15:00' });
+
 // ===== 結果 =====
 console.log(`\nparser.test: ${pass} passed, ${fail} failed`);
 if (failures.length) {

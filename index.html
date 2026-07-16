@@ -250,13 +250,13 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
      理由: この版文字列は index.html にしかないが、ロジックは別ファイル＝別キャッシュ。
      付けないと「フッタは新しいのにパーサは古い」という嘘の状態が成立する（v9 で実際に踏んだ）。
      index.html が更新されれば src の URL も変わる → JS も必ず新しく取り直される。 -->
-<script src="engine/schema.js?v=16"></script>
-<script src="engine/parser.js?v=16"></script>
-<script src="input/transcriber.js?v=16"></script>
-<script src="adapters/calendar.js?v=16"></script>
+<script src="engine/schema.js?v=17"></script>
+<script src="engine/parser.js?v=17"></script>
+<script src="input/transcriber.js?v=17"></script>
+<script src="adapters/calendar.js?v=17"></script>
 <script>
 'use strict';
-const BUILD = 'v16：空の確定を黙って捨てていたのを修正(isFinalは届いていた→途中結果で補完·空はエラー表示)｜v15：補完確定＋Swift診断｜v14：不可視文字除去｜v13：全ボタン無反応を修正 · 2026-07-16';
+const BUILD = 'v17：欄指定発話(「終了22時」「場所 立川」=その欄だけの差分·掃除しない)｜v16：空の確定を捨てない(実機で自動入力成立🎉)｜v15：補完確定＋Swift診断｜v14：不可視文字除去 · 2026-07-17';
 console.log('BUILD:', BUILD);
 document.getElementById('build').textContent = BUILD;
 
@@ -345,17 +345,18 @@ function onUtterance(text, meta) {
   // 実機FBで「🗣 に見えているのに入らない」が出た＝途中で死ぬと無音になり、
   // native イベント経由の例外は window.onerror にも届かないことがある。
   // 🗣 表示は解釈の前なので「表示されるのに入らない」と症状が一致する。
-  let patch = {}, notes = [], skipped = [], cleared = [], err = null;
+  let patch = {}, notes = [], skipped = [], cleared = [], err = null, targeted = false;
   try {
     const r = VCParser.interpret(text, new Date());
     patch = r.patch;
     notes = r.notes;
+    targeted = !!r.targeted; // 欄指定発話（「終了22時」等）= その欄だけの差分・掃除しない（v17）
     notesEl.textContent = notes.join(' ／ ');
     if (Object.keys(patch).length === 0) {
       // 何も解釈できない発話（咳・雑音など）ではフォームを触らない＝掃除もしない
       toast('解釈できる項目がありませんでした（フォームは手で入力できます）');
     } else {
-      const a = store.applyVoicePatch(patch, text);
+      const a = store.applyVoicePatch(patch, text, { targeted });
       skipped = a.skipped;
       cleared = a.cleared;
     }
@@ -364,7 +365,7 @@ function onUtterance(text, meta) {
     window.__vcNote('解釈エラー', `${err}｜発話「${text}」`);
     toast('解釈でエラーが起きました（詳細は「診断」と「来歴」）');
   }
-  logHistory({ at: Date.now(), text, conf: meta && meta.confidence, fb: !!(meta && meta.fallback), patch, notes, skipped, cleared, err });
+  logHistory({ at: Date.now(), text, conf: meta && meta.confidence, fb: !!(meta && meta.fallback), tg: targeted, patch, notes, skipped, cleared, err });
 }
 
 // ===== 来歴（SPEC §5-①）: 生テキスト＋解釈結果を端末内に記録（外部送信しない） =====
@@ -381,6 +382,8 @@ function patchSummary(patch, skipped, cleared) {
   if ('title' in patch) parts.push(`タイトル「${patch.title}」`);
   if (patch.startDate || patch.startTime) parts.push(`開始 ${[patch.startDate, patch.startTime].filter(Boolean).join(' ')}`);
   if (patch.endDate || patch.endTime) parts.push(`終了 ${[patch.endDate, patch.endTime].filter(Boolean).join(' ')}`);
+  if (patch.location) parts.push(`場所「${patch.location}」`);
+  if (patch.note) parts.push(`メモ「${patch.note}」`);
   if (patch.allDay) parts.push('終日');
   let s = parts.length ? `→ ${parts.join('・')}` : '→ 解釈できる項目なし';
   if (skipped && skipped.length) s += `／✋スキップ: ${skipped.map(fieldLabel).join('・')}`;
@@ -414,7 +417,7 @@ function renderHistory() {
     line1.append(time, text);
     const line2 = document.createElement('div');
     line2.className = 'h-result';
-    line2.textContent = patchSummary(e.patch || {}, e.skipped, e.cleared);
+    line2.textContent = (e.tg ? '🎯 欄指定 ' : '') + patchSummary(e.patch || {}, e.skipped, e.cleared);
     item.append(line1, line2);
     if (e.notes && e.notes.length) {
       const n = document.createElement('div');
