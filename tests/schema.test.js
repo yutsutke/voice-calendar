@@ -161,6 +161,60 @@ t('targeted なし（通常の言い直し）は従来どおり掃除する', ()
   eq(r.cleared, ['startTime'], 'cleared に出る');
 });
 
+// ===== 巻き戻し（v18）: 来歴の ↩ ＝「その発話の直前の状態」を復元 =====
+t('snapshot → 発話で壊れる → restore で元通り（意図せず新規になった時の逃げ道）', () => {
+  const s = createDraftStore();
+  s.applyVoicePatch({ title: '歯医者', startDate: '2026-07-18', startTime: '15:00' }, '明日15時に歯医者');
+  s.applyVoicePatch({ endTime: '22:00' }, '終了22時', { targeted: true });
+  const before = s.snapshot();
+  // 意図せず「新規（言い直し）」になり、積み上げた予定が消える
+  s.applyVoicePatch({ title: '会議' }, '会議');
+  eq(s.get().startTime, '', '事故: 開始が消えた');
+  eq(s.get().endTime, '', '事故: 終了が消えた');
+  // ↩ で直前に戻る
+  eq(s.restore(before), true, 'restore が成功する');
+  eq(s.get().title, '歯医者', 'タイトルが戻る');
+  eq(s.get().startTime, '15:00', '開始が戻る');
+  eq(s.get().endTime, '22:00', '終了が戻る');
+});
+
+t('restore は fieldState と origin も戻す（戻した後の言い直し掃除が正しく効く）', () => {
+  const s = createDraftStore();
+  s.applyVoicePatch({ title: '歯医者', startTime: '15:00' }, 'x');
+  s.setByHuman('location', '駅前');
+  const before = s.snapshot();
+  s.reset();
+  s.restore(before);
+  eq(s.getFieldState('startTime'), 'confirmed', 'fieldState が戻る');
+  eq(s.getFieldOrigin('location'), 'human', 'origin が戻る＝手入力は掃除されない');
+  eq(s.getFieldOrigin('startTime'), 'voice', 'origin が戻る＝音声欄は掃除対象のまま');
+  // 戻した後の言い直しで、音声欄だけが掃除される
+  const r = s.applyVoicePatch({ title: '会議' }, 'y');
+  eq(r.cleared, ['startTime'], '音声由来だけ掃除');
+  eq(s.get().location, '駅前', '手入力は残る');
+});
+
+t('restore はスナップショットのコピーを使う（後から元オブジェクトを触っても壊れない）', () => {
+  const s = createDraftStore();
+  s.applyVoicePatch({ title: 'A' }, 'x');
+  const snap = s.snapshot();
+  s.applyVoicePatch({ title: 'B' }, 'y');
+  snap.draft.title = '外から改変';
+  s.restore(snap);
+  eq(s.get().title, '外から改変', 'snapshot は素の値なので渡された内容が入る（参照の共有はしない）');
+  const snap2 = s.snapshot();
+  s.setByHuman('title', 'C');
+  eq(snap2.draft.title, '外から改変', 'snapshot 取得後に store を変えても snapshot は不変');
+});
+
+t('不正な snapshot では restore が false を返す（黙って壊さない）', () => {
+  const s = createDraftStore();
+  s.setByHuman('title', 'A');
+  eq(s.restore(null), false, 'null');
+  eq(s.restore({}), false, 'draft なし');
+  eq(s.get().title, 'A', 'state は無傷');
+});
+
 // ===== 来歴（SPEC §5-①: note に流し込まない） =====
 t('転写は来歴として貯まり、note には流し込まれない', () => {
   const s = createDraftStore();

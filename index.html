@@ -144,6 +144,9 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
   .history-list .h-note { color: var(--warn); }
   .history-list .h-empty { color: var(--sub); padding: 10px 0; }
   .history-list .h-debug { color: var(--sub); font-size: 11px; padding: 3px 0; border-bottom: none; }
+  .history-list .h-undo { margin-top: 6px; padding: 6px 12px; border: 1px solid var(--line); border-radius: 8px;
+    background: transparent; color: var(--accent); font-size: 12px; cursor: pointer; font-family: inherit; }
+  .history-list .h-undo:active { opacity: .6; }
   .history-actions { text-align: right; padding: 8px 0; }
   .history-actions button { border: none; background: transparent; color: var(--sub); font-size: 12px; cursor: pointer; }
 
@@ -250,13 +253,13 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
      理由: この版文字列は index.html にしかないが、ロジックは別ファイル＝別キャッシュ。
      付けないと「フッタは新しいのにパーサは古い」という嘘の状態が成立する（v9 で実際に踏んだ）。
      index.html が更新されれば src の URL も変わる → JS も必ず新しく取り直される。 -->
-<script src="engine/schema.js?v=17"></script>
-<script src="engine/parser.js?v=17"></script>
-<script src="input/transcriber.js?v=17"></script>
-<script src="adapters/calendar.js?v=17"></script>
+<script src="engine/schema.js?v=18"></script>
+<script src="engine/parser.js?v=18"></script>
+<script src="input/transcriber.js?v=18"></script>
+<script src="adapters/calendar.js?v=18"></script>
 <script>
 'use strict';
-const BUILD = 'v17：欄指定発話(「終了22時」「場所 立川」=その欄だけの差分·掃除しない)｜v16：空の確定を捨てない(実機で自動入力成立🎉)｜v15：補完確定＋Swift診断｜v14：不可視文字除去 · 2026-07-17';
+const BUILD = 'v18：来歴から↩ワンタップで巻き戻し(意図せず新規になった時の逃げ道)｜v17：欄指定発話(終了22時·場所 立川)｜v16：空の確定を捨てない(実機で自動入力成立🎉)｜v15：補完確定＋Swift診断 · 2026-07-17';
 console.log('BUILD:', BUILD);
 document.getElementById('build').textContent = BUILD;
 
@@ -345,6 +348,8 @@ function onUtterance(text, meta) {
   // 実機FBで「🗣 に見えているのに入らない」が出た＝途中で死ぬと無音になり、
   // native イベント経由の例外は window.onerror にも届かないことがある。
   // 🗣 表示は解釈の前なので「表示されるのに入らない」と症状が一致する。
+  // この発話を適用する **前** の状態を控える（v18: 来歴の ↩ で戻すため）
+  const before = store.snapshot();
   let patch = {}, notes = [], skipped = [], cleared = [], err = null, targeted = false;
   try {
     const r = VCParser.interpret(text, new Date());
@@ -365,7 +370,9 @@ function onUtterance(text, meta) {
     window.__vcNote('解釈エラー', `${err}｜発話「${text}」`);
     toast('解釈でエラーが起きました（詳細は「診断」と「来歴」）');
   }
-  logHistory({ at: Date.now(), text, conf: meta && meta.confidence, fb: !!(meta && meta.fallback), tg: targeted, patch, notes, skipped, cleared, err });
+  // フォームを実際に変えた発話にだけ before を残す（変えていない発話の ↩ は無意味）
+  const changed = !err && (Object.keys(patch).length > 0) && (skipped.length !== Object.keys(patch).length || cleared.length > 0);
+  logHistory({ at: Date.now(), text, conf: meta && meta.confidence, fb: !!(meta && meta.fallback), tg: targeted, patch, notes, skipped, cleared, err, before: changed ? before : null });
 }
 
 // ===== 来歴（SPEC §5-①）: 生テキスト＋解釈結果を端末内に記録（外部送信しない） =====
@@ -431,8 +438,28 @@ function renderHistory() {
       n.textContent = `🛑 解釈エラー: ${e.err}`;
       item.appendChild(n);
     }
+    // ↩ この発話の直前に戻す（v18: 意図せず新規になった時の逃げ道）
+    if (e.before) {
+      const undo = document.createElement('button');
+      undo.type = 'button';
+      undo.className = 'h-undo';
+      undo.textContent = '↩ この発話の前に戻す';
+      undo.addEventListener('click', () => restoreTo(e));
+      item.appendChild(undo);
+    }
     list.appendChild(item);
   }
+}
+
+// 来歴からの巻き戻し。フォーカスを外してから復元する＝ロック中の欄を描画がスキップして
+// 「ストアと画面がズレる」事故（v3 で踏んだ）を防ぐ。人が押した以上は全欄を戻すのが正しい。
+function restoreTo(entry) {
+  if (!entry || !entry.before) return;
+  if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+  if (!store.restore(entry.before)) { toast('戻せませんでした'); return; }
+  transcriptEl.textContent = '';
+  notesEl.textContent = '';
+  toast(`↩ 「${entry.text}」の前に戻しました`);
 }
 document.getElementById('historyClear').addEventListener('click', () => {
   try { localStorage.removeItem(HISTORY_KEY); } catch {}

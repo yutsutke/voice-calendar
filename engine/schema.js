@@ -101,6 +101,21 @@
         return { written, skipped, cleared, transcript };
       },
 
+      // 巻き戻し（v18・実機FB「意図せず新規になるときがある」）:
+      // 発話を**やり直す**のではなく、その発話の**直前の状態を復元する**。
+      // 古い発話を再解釈すると now が変わって日付がズレる（「明日」は明日には別の日）＝
+      // 来歴に積むのは「解釈結果」ではなく「状態のスナップショット」でなければならない。
+      // origin/fieldState も一緒に戻す＝復元後の言い直し掃除（v6）が正しく効き続ける。
+      snapshot: () => ({ draft: { ...draft }, fieldState: { ...fieldState }, origin: { ...origin } }),
+      restore(snap) {
+        if (!snap || !snap.draft) return false;
+        draft = { ...emptyDraft(), ...snap.draft };
+        fieldState = { ...Object.fromEntries(FIELDS.map((f) => [f, 'empty'])), ...(snap.fieldState || {}) };
+        origin = { ...Object.fromEntries(FIELDS.map((f) => [f, null])), ...(snap.origin || {}) };
+        emit({ type: 'restore', fields: FIELDS.slice() });
+        return true;
+      },
+
       reset() {
         draft = emptyDraft();
         fieldState = Object.fromEntries(FIELDS.map((f) => [f, 'empty']));
