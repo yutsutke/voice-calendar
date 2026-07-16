@@ -6,7 +6,7 @@
   "type": "commonjs",
   "scripts": {
     "serve": "python -m http.server 5275 --directory www",
-    "test": "node tests/parser.test.js",
+    "test": "node tests/parser.test.js && node tests/schema.test.js",
     "sync": "cap sync",
     "sync:ios": "cap sync ios",
     "open:ios": "cap open ios"

@@ -26,12 +26,21 @@ www/engine/parser.js     # 解釈層: interpret(text, now) 純関数。確定的
 www/engine/schema.js     # 共有状態層: DraftEvent ストア + fieldState + 欄ロック（衝突ポリシー §8）
 www/input/transcriber.js # 転写層: WebSpeech(開発用) / 将来 SFSpeechRecognizer プラグイン。simulate() でテキスト注入
 www/adapters/calendar.js # 永続層: materialize(保存時既定値はここに集約) + ics(web) / eventkit(iOS,未実装)
-tests/parser.test.js     # パーサ単体テスト（node tests/parser.test.js）— 決め打ちルールはテストが仕様
+tests/parser.test.js     # パーサ単体テスト — 決め打ちルールはテストが仕様
+tests/schema.test.js     # 共有状態＋欄ロックのテスト（v3 の実バグの回帰込み）。`npm test` で両方走る
 .claude/launch.json      # dev サーバ (port 5275。5273=spike / 5274=madeleine / 8123=terrain-game と衝突回避)
 ```
 
 - バンドラ無し運用（あの日と同流儀）。各層は `<script>` 直読み・`window.VC*` 名前空間・Node からも require 可。
 - **パーサの決め打ちルールを変えるときは tests/parser.test.js を必ず同時に更新**（テストがルールの仕様書）。
+
+## 🚨 欄ロックの鉄則（v3 で実バグを踏んだ場所）
+
+**「編集中か」を二重に持たない。** ロックの正は `store.setLockSource(fn)` に注入された述語（UI では `activeElement` 基準）だけ。`render()` の描画スキップも `applyVoicePatch` のスキップも `store.isLocked()` から導出する。
+
+- ❌ やってはいけない: focus/blur イベントで Set を維持し、描画は activeElement で判定する（＝二重管理）。イベントが発火しない経路でズレ、**音声は書く・画面は隠す＝画面と違う値がサイレントに保存される**（背骨①の違反）。
+- 検証では **値が正しいか だけでなく `store.get()[f] === inputEl(f).value`（ストアと画面の一致）をアサートする**。画面だけ見ていると通ってしまう。
+- schema.js は DOM 非依存を維持（述語は宿主が注入する関数＝中立）。engine に `document` を持ち込まない。
 
 ## v0 実装の具体化判断（SPEC からの差分・2026-07-16）
 

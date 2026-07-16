@@ -1,5 +1,26 @@
 # voice-calendar — CHANGELOG（build log・最新が上）
 
+## v3 — 🔴 欄ロックの実バグ修正：ストアと画面がズレて「画面と違う値が保存される」を潰した (2026-07-16)
+
+**背景**
+- v1 の preview 検証中、ロック時の toast だけが出ないことに気づいた。「見た目の些細な差」に見えたが、憶測せず実測したら**核心（SPEC §8・背骨①）の correctness バグ**だった。
+
+**症状 → 原因 → 対処**
+- **症状**: `document.activeElement` は `f-title` なのに `store.getFieldState('title')` は `'confirmed'`、`applyVoicePatch` の `written` に `title` が入り**ストアが上書きされていた**。画面が「歯医者」のままに見えたのは `render()` が activeElement をスキップしていたからで、**ストアには「定例」が入っていた＝そのまま保存すれば画面と違う値が書かれる**。
+- **原因**: ロックが **focus/blur イベント基準の Set**、描画スキップが **activeElement 基準**＝**同じ「編集中か」を二重管理**していた。イベントが発火しない経路（プログラム的 focus・背面タブ、実機では webview の keyboard/background 復帰など）で両者がズレる。ズレた瞬間「音声は書く・画面は隠す」＝**サイレントに嘘の保存**。これは背骨①「フォームが単一の真実」の直接の違反。
+- **対処**: **ロックの正を「宿主に聞く述語」に一本化**（`store.setLockSource(fn)`）。UI は `(f) => inputEl(f) === document.activeElement` を注入＝**描画スキップと同じ根拠から導出**され、構造的にズレ得ない。`render()` / `applyVoicePatch` / `getFieldState` すべて `store.isLocked()` 経由に統一。✋マークの CSS も `render()` から同期（見た目も実挙動と一致）。明示 `lock()/unlock()` は DOM を持たない宿主・テスト用に温存し、判定は両者の OR。
+- engine は DOM 非依存のまま（述語は宿主が注入する関数＝中立）。移植性は損なわれていない。
+
+**設計判断**
+- 「イベントで状態を作る」より「**状態を現実から導出する**」。ロックの現実＝どこにフォーカスがあるか。導出なら同期漏れが原理的に起きない。
+
+**教訓**
+- **核心機能にテストが無かったから見逃した**。パーサ（35本）はテストで固められていたのに、`schema.js`（＝背骨①③と §8 が宿る場所）は0本だった。→ `tests/schema.test.js` 10本を追加し、この回帰も固定（「lockSource が locked と言う欄は getFieldState も locked」）。**テストの厚みは「難しさ」でなく「壊れたときの怖さ」で決める**。
+- **UI の些細な違和感（toast が出ない）が correctness バグの sentinel だった**。E2E で "値が期待どおり" だけを見ていたら見逃していた（画面の値は正しく見えていた）。**store と DOM の一致そのものをアサートする**のが正しい検証。
+
+**結果**
+- 修正後: `isLocked: true` / `skipped: ['title']` / **`storeVsDom: true`** / toast 表示 / ✋マーク表示、blur 後は全部解除されて音声が書ける。テスト 45/45（parser 35 + schema 10）。console エラー 0。
+
 ## v1 — リポ bootstrap＋一本道(web)貫通：転写→確定パーサ→フォーム→欄ロック→ics 保存 (2026-07-16)
 
 **背景**
@@ -16,7 +37,8 @@
 
 **ハマったところ**
 - preview_start がホームの `.claude/launch.json` を読む（リポ内の launch.json ではない）→ ホーム側に voice-calendar エントリ（port 5275、5273/5274/8123 と衝突回避）を追加して解決。
-- Browser ペインの screenshot が timeout する環境だった（ページ自体は健全）→ 検証は read_page + JS 実行で代替。
+- **「プレビューできない」の真因＝dev サーバがターン間で落ちていた**（`preview_list` が空・python プロセスもゼロ・ポート未 listen →ブラウザは接続拒否）。ページ側は無実で、再起動＋HTTP 200＋全レイヤ配信＋JS で実測（全要素が実サイズ・4層ロード済み・`micAvailable: true`）を確認。**確実に触るには自分のターミナルで `npm run serve`**。
+- Browser ペインの screenshot は **どのタブ（file:// の別ページ含む）でも timeout する環境**＝ツール側の不調でページのせいではない、と切り分け済み。検証は read_page + javascript_tool で代替する。
 
 **結果 / 観察**
 - パーサ単体テスト **35/35 ✅**。preview E2E ✅: 「明日15時に歯医者」→ タイトル/日付/時刻反映、**タイトル編集中に発話→タイトル保護＋日時は更新＋「✋そのまま」toast**、任意欄に音声が書いたら畳みが自動で開く、曖昧「明日3時」→時刻素通し＋理由表示、materialize→ics 生成正常。
@@ -26,6 +48,9 @@
 - 「曖昧は素通し」を UI まで通すと、**素通しの痕跡がそのままユーザーへの説明になる**（タイトルに残る断片 + notes）。仮置き UI (v1) を作る前でも体験が破綻しない。
 
 **残課題 / 次の方向**
-- 実発話10件の手触り検証（マイク・Edge/Chrome）→ 素通し率と外し方の実データ → パーサ補強（漢数字・「夕方」単独など）。
-- Phase 2: npm install → cap add ios → speech-recognition / calendar-events ローカルプラグイン（iOS17 の書き込み専用カレンダー権限を検証）。
-- GitHub リモート未作成（ユーザー判断待ち: リポ名・public/private）。
+- 実発話10件の手触り検証（マイク・自分の Edge/Chrome で `npm run serve`）→ 素通し率と外し方の実データ → パーサ補強（漢数字・「夕方」単独など）。
+- Phase 2: cap add ios → speech-recognition / calendar-events ローカルプラグイン（iOS17 の書き込み専用カレンダー権限を検証）。
+- **iPhone Safari 検証の道（判断待ち）**: リポ public 化により GitHub Pages が可能に。iOS Safari は webkitSpeechRecognition 対応＝native 前に本命端末でノールック完走率が測れる。ただし Pages はブランチ直下 or /docs しか配信できず、現構成は webDir=www に本体がある → あの日と同じ「root に本体 → sync-web.mjs で www/ 生成」への組み替えが要る。公開は外向き操作なので GO 待ち。
+
+**リポ**
+- https://github.com/yutsutke/voice-calendar （public・main・初回 push 済み）。git identity はグローバル未設定のため repo-local に設定（yutsutke / yutsutke@yahoo.co.jp、既存リポと同じ）。`git init` の master → main に rename。

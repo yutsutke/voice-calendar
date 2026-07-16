@@ -154,7 +154,7 @@
 <script src="adapters/calendar.js"></script>
 <script>
 'use strict';
-const BUILD = 'v1 bootstrap｜一本道(web): 録音→確定パーサ→フォーム→ics · 2026-07-16';
+const BUILD = 'v3：欄ロックをactiveElement由来に統一(ストアと画面のズレ修正)｜v2：クリアで任意欄も畳む｜v1：一本道(web) · 2026-07-16';
 console.log('BUILD:', BUILD);
 document.getElementById('build').textContent = BUILD;
 
@@ -170,11 +170,19 @@ const OPTIONAL_FIELDS = ['endDate', 'endTime', 'allDay', 'location', 'note'];
 const inputEl = (f) => document.getElementById(FIELD_INPUT[f]);
 const rowEl = (f) => document.querySelector(`.row[data-field="${f}"], .row[data-field2="${f}"]`);
 
+// ロックの正 = 実際のフォーカス。render の「編集中はスキップ」と同じ根拠から導出することで、
+// 「ロックは外れているのに描画はスキップ」＝ストアと画面がズレて画面と違う値が保存される事故を
+// 構造的に防ぐ（v1 で踏んだ実バグ。詳細は engine/schema.js 冒頭）。
+store.setLockSource((f) => inputEl(f) === document.activeElement);
+
 function render(change) {
   const draft = store.get();
+  syncLockMarks(); // 見た目のロック印も store.isLocked から導出＝実挙動と必ず一致
   for (const f of VCStore.FIELDS) {
     const el = inputEl(f);
-    if (el === document.activeElement) continue; // 編集中の欄は描画で潰さない
+    // 編集中の欄は描画で潰さない（caret が飛ぶ）。ロックと同じ根拠＝store.isLocked で判定するので、
+    // 「スキップしたのにストアは書き換わっていた」というズレは起きない。
+    if (store.isLocked(f)) continue;
     if (f === 'allDay') el.checked = draft.allDay;
     else if (el.value !== draft[f]) el.value = draft[f];
   }
@@ -203,15 +211,17 @@ function fieldLabel(f) {
 }
 
 // ===== 入口A: 人間の直接操作（focus=ロック / blur=解除） =====
+// ロック状態は store.isLocked（=activeElement 由来）から描画する＝見た目と実挙動が必ず一致する
+function syncLockMarks() {
+  for (const row of document.querySelectorAll('.row')) {
+    const pair = [row.dataset.field, row.dataset.field2].filter(Boolean);
+    row.classList.toggle('locked', pair.some((f) => store.isLocked(f)));
+  }
+}
 for (const f of VCStore.FIELDS) {
   const el = inputEl(f);
-  el.addEventListener('focus', () => { store.lock(f); rowEl(f).classList.add('locked'); });
-  el.addEventListener('blur', () => {
-    store.unlock(f);
-    const row = rowEl(f);
-    const pair = [row.dataset.field, row.dataset.field2].filter(Boolean);
-    if (!pair.some((g) => inputEl(g) === document.activeElement)) row.classList.remove('locked');
-  });
+  el.addEventListener('focus', syncLockMarks);
+  el.addEventListener('blur', syncLockMarks);
   el.addEventListener('input', () => {
     store.setByHuman(f, f === 'allDay' ? el.checked : el.value);
   });

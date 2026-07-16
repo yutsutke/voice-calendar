@@ -15,10 +15,17 @@
 
 ## 現在地
 
-> **🔧 セッション1（2026-07-16）＝リポ bootstrap ＋ 一本道(web) 貫通。**
-> テキスト/音声（WebSpeech）→ 確定パーサ → フォーム反映 → 欄ロック → .ics 保存まで、Windows のブラウザで動く。パーサ単体テスト 35/35 ✅。preview E2E ✅（発話反映・編集中タイトル保護・曖昧素通し・ics 生成）。
+> **🔧 セッション1（2026-07-16）＝リポ bootstrap ＋ 一本道(web) 貫通 ＋ GitHub public 公開 ＋ 欄ロックの実バグ修正(v3)。**
+> テキスト/音声（WebSpeech）→ 確定パーサ → フォーム反映 → 欄ロック → .ics 保存まで、Windows のブラウザで動く。**テスト 45/45 ✅**（parser 35 + schema 10）。preview E2E ✅（発話反映・編集中タイトル保護・**ストアと画面の一致**・曖昧素通し・終日・ics 生成・console 0）。リポ = https://github.com/yutsutke/voice-calendar （public）。
+> 🔴 **v3 で core バグを1件潰した**: 欄ロックが焼き付いておらず「画面と違う値が保存され得た」（詳細 CHANGELOG v3・鉄則 CLAUDE.md）。
 >
-> **▶▶ 次回はここから**: ① ブラウザ（Edge/Chrome で `npm run serve` → http://localhost:5275）で**マイク発話**を自分の口で試す＝実発話の素通し率・言い回しの実データ集め（パーサに足すべきパターンが見えてくる）② 集まった実発話をテストに足してパーサ補強 ③ その後 Phase 2（iOS native の足回り）へ。
+> **▶▶ 次回はここから**: ① **自分の Edge/Chrome でマイク発話を10件試す**（`npm run serve` → http://localhost:5275）＝実発話の素通し率・言い回しの実データ集め（パーサに足すべきパターンが見えてくる）② 集まった実発話をテストに足してパーサ補強 ③ その後 Phase 2（iOS native の足回り）へ。
+>
+> **🖥 dev サーバの運用メモ（セッション1でハマった）**: Claude の preview_start で起動したサーバは**ターン間で落ちる**（python プロセスごと消える→ブラウザは「接続できません」）。**自分のターミナルで `npm run serve` を起動しておくのが確実**。マイクは Claude の Browser ペインでは許可が取れないので、**実発話の検証は自分の Edge/Chrome で行う**（localhost は secure context 扱いなので Web Speech API が動く。file:// では動かない）。
+
+> **🤔 判断待ち: iPhone Safari で先に試すか（GitHub Pages）**
+> リポが public になったので、あの日と同じ **GitHub Pages で実機 iPhone から触る**道が開いた。iOS Safari は `webkitSpeechRecognition` 対応（14.5+）＝**native を作る前に、本命の iPhone で実発話の手触りとノールック完走率が測れる**（Windows Chrome より遥かに本番に近い）。
+> ただし現構成は `webDir=www` に index.html があり、**Pages はブランチ直下か /docs しか配信できない**ため、あの日と同じ「root に本体 → `scripts/sync-web.mjs` で www/ を生成」構成への組み替えが要る。**やるならユーザーの GO 待ち**（公開＝外向き操作）。
 
 ---
 
@@ -27,7 +34,8 @@
 - [x] 中立スキーマ + 共有状態ストア（fieldState / 欄ロック）＝ engine/schema.js
 - [x] 確定的日本語日時パーサ（純関数・now 注入・LLMなし）＝ engine/parser.js + テスト35本
 - [x] 単一フォーム（必須/任意の段差・任意は畳む）＋2経路配線 ＝ index.html
-- [x] 編集中フィールドのロック（focus=lock / blur=unlock・スキップ通知）
+- [x] 編集中フィールドのロック（activeElement 由来の述語に一本化・スキップ通知）＋ テスト10本
+      ※ v3 で実バグ修正済み（イベント基準と描画スキップの二重管理→ストアと画面がズレ、画面と違う値が保存され得た）。鉄則は CLAUDE.md 参照
 - [x] 転写層（WebSpeech + simulate 注入口）＝ input/transcriber.js
 - [x] 保存アダプタ境界（materialize + ics アダプタ）＝ adapters/calendar.js
 - [ ] **実発話での手触り検証**（マイクで10件入れてみる→素通し率と外し方を記録）← 次の一手
