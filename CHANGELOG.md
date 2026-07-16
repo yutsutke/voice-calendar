@@ -1,5 +1,23 @@
 # voice-calendar — CHANGELOG（build log・最新が上）
 
+## v12 — 🎉 初回 Codemagic ビルド成功→TestFlight 1.0 配信＋輸出コンプライアンスを恒久回答 (2026-07-16)
+
+**背景 / 結果**
+- **初回ビルドが一発で成功**（あの日は初回に署名で1度コケた）。**Swift プラグイン2本（SFSpeechRecognizer / EventKit）の初コンパイルが通った**＝v11 の native 足回りが実在するコードとして成立していることの証明。TestFlight に **1.0** が届き、内部テスター（自分グループ）を登録して配信済み。
+- 効いた資産: あの日の `MadeleineASC`（ASC API キー・Developer Portal 連携）と Team ID 25TM5C27YT をそのまま再利用。codemagic.yaml は BUNDLE_ID だけ差し替えて流用。署名鍵は新規 RSA を生成（リポ外 `Documents/voice-calendar-signing/cert_key`）し Codemagic の Secure 環境変数 `CERTIFICATE_PRIVATE_KEY`（グループ `signing`）に登録。
+- Windows で書いた CapApp-SPM/Package.swift のバックスラッシュ問題は、**CI の macOS 上での `cap sync ios` 再生成で想定どおり解消**（v11 の予測が当たった）。
+
+**設計判断**
+- **輸出コンプライアンスを Info.plist で恒久回答**: `ITSAppUsesNonExemptEncryption = false`。TestFlight 配信のたびに ASC で聞かれるダイアログ（毎ビルド）を消す。本アプリは独自暗号を1行も持たず、OS 標準（TLS 等）の範囲内＝免除対象。ダイアログの注意書き自身が Info.plist での明記を勧めている。
+- **BUILD をネイティブ専用の変更でも上げる**: web は 1 バイトも変わっていないが、**フッタの BUILD が「実機に届いた TestFlight ビルドの識別子」として機能する**ため（v10 の教訓＝版表示は嘘をつかせない）。
+
+**結果**
+- テスト 92/92。preview E2E: web 無退行・script は `?v=12`・console 0。
+
+**残課題 / 次の方向**
+- **実機で v0 の一本道を検証**（TestFlight 1.0 で可能・次の一手）: 権限3つの文言（カレンダーが「追加のみ」の軽い文言か）／**話し終わって1.8秒で自動確定するか**（無音判定のチューニング。長い=待たされる・短い=切られる。実機でしか分からない）／**保存 → 本物のカレンダーに入るか**／OS の既定が Google なら Google カレンダーにも出るか（＝アプリが Google と直接通信しない設計の証明）。
+- Codemagic は手動トリガのみ（yaml に `triggering:` なし＝あの日と同流儀）。v12 を実機に載せるには Start new build が要る。
+
 ## v11 — Phase 2 足回り：iOS プラットフォーム＋SFSpeechRecognizer / EventKit プラグイン＋Codemagic (2026-07-16)
 
 **背景**

@@ -41,6 +41,8 @@ tests/version.test.js    # BUILD と script の ?v= の一致を強制（v10 の
 
 - バンドラ無し運用（あの日と同流儀）。各層は `<script>` 直読み・`window.VC*` 名前空間・Node からも require 可。
 - **native の検証は Codemagic**（Windows に Xcode なし＝Swift はローカルでコンパイルできない）。⚠️ **Windows で `npx cap sync ios` を実行すると CapApp-SPM/Package.swift のプラグインパスがバックスラッシュになる**（Swift として不正）→ CI の macOS 再 sync で直るが、コミット前に気づいたらスラッシュへ手修正。
+- **iOS ビルド運用（v12 で確立）**: Codemagic の `ios-testflight` ワークフローを**手動で Start new build**（`triggering:` 無し＝あの日と同流儀。push では走らない）。署名鍵はリポ外 `Documents/voice-calendar-signing/cert_key`（Codemagic の Secure env `CERTIFICATE_PRIVATE_KEY`・group `signing` に登録済み）。ASC キー `MadeleineASC`・Team `25TM5C27YT`・bundle id `io.github.yutsutke.voicecalendar`。輸出コンプライアンスは Info.plist の `ITSAppUsesNonExemptEncryption=false` で回答済み（毎ビルドのダイアログは出ない）。
+- **BUILD は native 専用の変更でも上げる**: web が 1 バイトも変わらなくても、**フッタの BUILD が「実機に届いた TestFlight ビルドの識別子」**として機能するため（版表示に嘘をつかせない＝v10 の教訓）。
 - **web 実機確認 = GitHub Pages**: https://yutsutke.github.io/voice-calendar/ （main の root を配信）。push が実機確認の前提＝ワークフローの一部（あの日と同じ）。iPhone Safari の webkitSpeechRecognition で実発話を試す（PC にマイクが無いため実発話検証は iPhone が主戦場）。
 - **パーサの決め打ちルールを変えるときは tests/parser.test.js を必ず同時に更新**（テストがルールの仕様書）。
 
