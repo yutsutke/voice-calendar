@@ -1,0 +1,30 @@
+.DS_Store
+Thumbs.db
+node_modules/
+*.log
+.vscode/
+.idea/
+
+# Capacitor / native（www/ は本体ソースなのでコミットする。生成物のみ ignore）
+# CocoaPods（CI/Mac で pod install）
+ios/App/Pods/
+# cap copy が同期する web（生成物）
+ios/App/App/public/
+DerivedData/
+*.xcuserstate
+
+# Android（後追い。spike と同流儀＝native 本体はコミット・生成物のみ ignore）
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/app/src/main/assets/public/
+android/capacitor-cordova-android-plugins/
+local-plugins/*/android/build/
+
+# 署名鍵は絶対にコミットしない
+*.jks
+*.keystore
+*.p12
+*.p8
+key.properties

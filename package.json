@@ -1,0 +1,28 @@
+{
+  "name": "voice-calendar",
+  "version": "0.1.0",
+  "description": "声で入れるカレンダー（仮称）— 音声と手が同じ一つのフォームを同時に編集する入力補助カレンダー。Capacitor app (iOS first).",
+  "private": true,
+  "type": "commonjs",
+  "scripts": {
+    "serve": "python -m http.server 5275 --directory www",
+    "test": "node tests/parser.test.js",
+    "sync": "cap sync",
+    "sync:ios": "cap sync ios",
+    "open:ios": "cap open ios"
+  },
+  "keywords": [
+    "calendar",
+    "voice",
+    "speech",
+    "capacitor",
+    "ios"
+  ],
+  "author": "yutsutke",
+  "license": "UNLICENSED",
+  "dependencies": {
+    "@capacitor/cli": "^8.3.4",
+    "@capacitor/core": "^8.3.4",
+    "@capacitor/ios": "^8.3.4"
+  }
+}

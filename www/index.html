@@ -1,0 +1,303 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<title>声で入れるカレンダー（仮）</title>
+<style>
+  :root {
+    --bg: #f5f5f7; --card: #ffffff; --ink: #1d1d1f; --sub: #6e6e73;
+    --line: #d2d2d7; --accent: #0a84ff; --accent-ink: #ffffff;
+    --ok: #30a14e; --warn: #b25000; --lock: #ffd60a22; --flash: #0a84ff22;
+    --sat: env(safe-area-inset-top, 0px); --sab: env(safe-area-inset-bottom, 0px);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #000; --card: #1c1c1e; --ink: #f5f5f7; --sub: #98989d; --line: #3a3a3c; --lock: #ffd60a1e; --flash: #0a84ff33; }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: calc(var(--sat) + 12px) 16px calc(var(--sab) + 24px);
+    background: var(--bg); color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic UI", sans-serif;
+    font-size: 16px; line-height: 1.5;
+  }
+  main { max-width: 560px; margin: 0 auto; }
+  h1 { font-size: 17px; font-weight: 600; text-align: center; margin: 4px 0 14px; }
+  h1 .kari { font-weight: 400; color: var(--sub); font-size: 13px; }
+
+  /* ---- 録音（入口B） ---- */
+  .mic-wrap { text-align: center; margin-bottom: 6px; }
+  #mic {
+    width: 84px; height: 84px; border-radius: 50%; border: none; cursor: pointer;
+    background: var(--accent); color: var(--accent-ink); font-size: 34px;
+    box-shadow: 0 4px 14px rgb(10 132 255 / .35); transition: transform .1s;
+  }
+  #mic:active { transform: scale(.95); }
+  #mic.listening { background: #ff375f; box-shadow: 0 0 0 8px rgb(255 55 95 / .18); animation: pulse 1.2s infinite; }
+  #mic:disabled { background: var(--line); box-shadow: none; cursor: default; }
+  @keyframes pulse { 50% { box-shadow: 0 0 0 16px rgb(255 55 95 / .06); } }
+  .mic-state { color: var(--sub); font-size: 13px; margin-top: 8px; min-height: 20px; }
+  .transcript { min-height: 24px; text-align: center; color: var(--sub); font-size: 14px; margin: 2px 0 4px; overflow-wrap: anywhere; }
+  .transcript .final { color: var(--ink); }
+  .notes { text-align: center; font-size: 12px; color: var(--warn); min-height: 18px; margin-bottom: 8px; }
+
+  /* ---- 開発用: テキストで発話 ---- */
+  .sim { display: flex; gap: 8px; margin-bottom: 18px; }
+  .sim input { flex: 1; padding: 9px 12px; border: 1px solid var(--line); border-radius: 10px; font-size: 15px; background: var(--card); color: var(--ink); }
+  .sim button { padding: 9px 14px; border: none; border-radius: 10px; background: var(--card); color: var(--accent); font-size: 14px; cursor: pointer; border: 1px solid var(--line); white-space: nowrap; }
+
+  /* ---- フォーム（単一の真実の描画） ---- */
+  form.card { background: var(--card); border-radius: 16px; padding: 6px 16px; box-shadow: 0 1px 3px rgb(0 0 0 / .06); }
+  .row { display: flex; align-items: center; gap: 10px; padding: 11px 0; border-bottom: 1px solid var(--line); position: relative; }
+  .row:last-child { border-bottom: none; }
+  .row label.name { flex: 0 0 4.5em; font-size: 14px; color: var(--sub); }
+  .row .req { color: var(--accent); font-size: 11px; margin-left: 2px; }
+  .row input[type="text"], .row textarea { flex: 1; border: none; background: transparent; font-size: 16px; color: var(--ink); outline: none; min-width: 0; }
+  .row input[type="date"], .row input[type="time"] { border: none; background: transparent; font-size: 16px; color: var(--ink); outline: none; font-family: inherit; }
+  .row textarea { resize: vertical; min-height: 24px; }
+  .row .lockmark { position: absolute; right: 0; top: 6px; font-size: 11px; color: var(--warn); opacity: 0; transition: opacity .15s; pointer-events: none; }
+  .row.locked { background: var(--lock); border-radius: 8px; }
+  .row.locked .lockmark { opacity: 1; }
+  .row.flash { animation: flashbg 1.2s ease-out; }
+  @keyframes flashbg { 0% { background: var(--flash); border-radius: 8px; } 100% { background: transparent; } }
+
+  details.optional { margin-top: 10px; }
+  details.optional > summary { list-style: none; cursor: pointer; color: var(--sub); font-size: 13px; padding: 6px 4px; user-select: none; }
+  details.optional > summary::before { content: '▸ '; }
+  details.optional[open] > summary::before { content: '▾ '; }
+  details.optional .card2 { background: var(--card); border-radius: 16px; padding: 2px 16px; box-shadow: 0 1px 3px rgb(0 0 0 / .06); }
+
+  /* ---- 保存 ---- */
+  .actions { display: flex; gap: 10px; margin-top: 16px; }
+  #save { flex: 1; padding: 14px; border: none; border-radius: 14px; background: var(--accent); color: var(--accent-ink); font-size: 16px; font-weight: 600; cursor: pointer; }
+  #save:active { opacity: .85; }
+  #clear { padding: 14px 18px; border: 1px solid var(--line); border-radius: 14px; background: transparent; color: var(--sub); font-size: 14px; cursor: pointer; }
+
+  .toast { position: fixed; left: 50%; bottom: calc(var(--sab) + 20px); transform: translateX(-50%) translateY(20px);
+    background: var(--ink); color: var(--bg); padding: 10px 18px; border-radius: 12px; font-size: 14px;
+    opacity: 0; transition: all .25s; pointer-events: none; max-width: 90vw; text-align: center; }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  footer { text-align: center; color: var(--sub); font-size: 11px; margin-top: 26px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>🎤 声で入れるカレンダー <span class="kari">（仮）</span></h1>
+
+  <div class="mic-wrap">
+    <button id="mic" type="button" aria-label="録音">🎤</button>
+    <div class="mic-state" id="micState"></div>
+  </div>
+  <div class="transcript" id="transcript"></div>
+  <div class="notes" id="notes"></div>
+
+  <div class="sim">
+    <input id="simText" type="text" placeholder="テキストで発話を試す（例: 明日15時に歯医者）" autocomplete="off">
+    <button id="simSend" type="button">発話として送る</button>
+  </div>
+
+  <form class="card" id="form" autocomplete="off" onsubmit="return false">
+    <div class="row" data-field="title">
+      <label class="name" for="f-title">タイトル<span class="req">●</span></label>
+      <input type="text" id="f-title" placeholder="なんの予定？">
+      <span class="lockmark">✋ 編集中 — 音声は書き込みません</span>
+    </div>
+    <div class="row" data-field="startDate" data-field2="startTime">
+      <label class="name">開始<span class="req">●</span></label>
+      <input type="date" id="f-startDate" aria-label="開始日">
+      <input type="time" id="f-startTime" aria-label="開始時刻">
+      <span class="lockmark">✋ 編集中 — 音声は書き込みません</span>
+    </div>
+  </form>
+
+  <details class="optional" id="optional">
+    <summary>任意の項目（終了・終日・場所・メモ）</summary>
+    <div class="card2">
+      <div class="row" data-field="endDate" data-field2="endTime">
+        <label class="name">終了</label>
+        <input type="date" id="f-endDate" aria-label="終了日">
+        <input type="time" id="f-endTime" aria-label="終了時刻">
+        <span class="lockmark">✋ 編集中 — 音声は書き込みません</span>
+      </div>
+      <div class="row" data-field="allDay">
+        <label class="name" for="f-allDay">終日</label>
+        <input type="checkbox" id="f-allDay">
+        <span class="lockmark">✋ 編集中</span>
+      </div>
+      <div class="row" data-field="location">
+        <label class="name" for="f-location">場所</label>
+        <input type="text" id="f-location" placeholder="どこで？">
+        <span class="lockmark">✋ 編集中 — 音声は書き込みません</span>
+      </div>
+      <div class="row" data-field="note">
+        <label class="name" for="f-note">メモ</label>
+        <textarea id="f-note" rows="1" placeholder="自由メモ（スキーマ外の受け皿）"></textarea>
+        <span class="lockmark">✋ 編集中 — 音声は書き込みません</span>
+      </div>
+    </div>
+  </details>
+
+  <div class="actions">
+    <button id="save" type="button">カレンダーに保存</button>
+    <button id="clear" type="button">クリア</button>
+  </div>
+
+  <footer id="build"></footer>
+</main>
+<div class="toast" id="toast"></div>
+
+<script src="engine/schema.js"></script>
+<script src="engine/parser.js"></script>
+<script src="input/transcriber.js"></script>
+<script src="adapters/calendar.js"></script>
+<script>
+'use strict';
+const BUILD = 'v1 bootstrap｜一本道(web): 録音→確定パーサ→フォーム→ics · 2026-07-16';
+console.log('BUILD:', BUILD);
+document.getElementById('build').textContent = BUILD;
+
+// ===== 共有状態（単一の真実） =====
+const store = VCStore.createDraftStore();
+
+// ===== 描画は1つ: store → フォーム =====
+const FIELD_INPUT = {
+  title: 'f-title', startDate: 'f-startDate', startTime: 'f-startTime',
+  endDate: 'f-endDate', endTime: 'f-endTime', location: 'f-location', note: 'f-note', allDay: 'f-allDay',
+};
+const OPTIONAL_FIELDS = ['endDate', 'endTime', 'allDay', 'location', 'note'];
+const inputEl = (f) => document.getElementById(FIELD_INPUT[f]);
+const rowEl = (f) => document.querySelector(`.row[data-field="${f}"], .row[data-field2="${f}"]`);
+
+function render(change) {
+  const draft = store.get();
+  for (const f of VCStore.FIELDS) {
+    const el = inputEl(f);
+    if (el === document.activeElement) continue; // 編集中の欄は描画で潰さない
+    if (f === 'allDay') el.checked = draft.allDay;
+    else if (el.value !== draft[f]) el.value = draft[f];
+  }
+  // 音声が書いた欄をフラッシュ（AI の結果が見える）
+  if (change && change.type === 'voice') {
+    for (const f of change.fields) {
+      const row = rowEl(f);
+      if (!row) continue;
+      row.classList.remove('flash');
+      void row.offsetWidth; // アニメ再発火
+      row.classList.add('flash');
+    }
+    // 任意欄に書かれたら畳みを開く（見えないところに書かない）
+    if (change.fields.some((f) => OPTIONAL_FIELDS.includes(f))) {
+      document.getElementById('optional').open = true;
+    }
+    if (change.skipped.length) {
+      toast(`✋ 編集中の欄（${change.skipped.map(fieldLabel).join('・')}）はそのままにしました`);
+    }
+  }
+}
+store.subscribe(render);
+
+function fieldLabel(f) {
+  return { title: 'タイトル', startDate: '開始日', startTime: '開始時刻', endDate: '終了日', endTime: '終了時刻', location: '場所', note: 'メモ', allDay: '終日' }[f] || f;
+}
+
+// ===== 入口A: 人間の直接操作（focus=ロック / blur=解除） =====
+for (const f of VCStore.FIELDS) {
+  const el = inputEl(f);
+  el.addEventListener('focus', () => { store.lock(f); rowEl(f).classList.add('locked'); });
+  el.addEventListener('blur', () => {
+    store.unlock(f);
+    const row = rowEl(f);
+    const pair = [row.dataset.field, row.dataset.field2].filter(Boolean);
+    if (!pair.some((g) => inputEl(g) === document.activeElement)) row.classList.remove('locked');
+  });
+  el.addEventListener('input', () => {
+    store.setByHuman(f, f === 'allDay' ? el.checked : el.value);
+  });
+}
+
+// ===== 入口B: 音声 → 転写 → 解釈（純関数） → 構造化パッチ =====
+const transcriptEl = document.getElementById('transcript');
+const notesEl = document.getElementById('notes');
+const micBtn = document.getElementById('mic');
+const micState = document.getElementById('micState');
+
+function onUtterance(text) {
+  transcriptEl.innerHTML = '';
+  const span = document.createElement('span');
+  span.className = 'final';
+  span.textContent = `🗣 ${text}`;
+  transcriptEl.appendChild(span);
+  const { patch, notes } = VCParser.interpret(text, new Date());
+  notesEl.textContent = notes.join(' ／ ');
+  if (Object.keys(patch).length === 0) {
+    toast('解釈できる項目がありませんでした（フォームは手で入力できます）');
+    return;
+  }
+  store.applyVoicePatch(patch, text);
+}
+
+const transcriber = VCTranscriber.createTranscriber({
+  onInterim(t) { transcriptEl.textContent = `… ${t}`; },
+  onFinal(t) { onUtterance(t); },
+  onState(s) {
+    micBtn.classList.toggle('listening', s === 'listening');
+    micState.textContent = s === 'listening' ? '聞いています…（もう一度押すと停止）' : '';
+  },
+  onError(e) {
+    if (e === 'no-speech') micState.textContent = '';
+    else toast(`音声認識エラー: ${e}`);
+  },
+});
+
+if (transcriber.available) {
+  micBtn.addEventListener('click', () => transcriber.toggle());
+} else {
+  micBtn.disabled = true;
+  micState.textContent = 'この環境では音声認識が使えません（下のテキスト欄で試せます）';
+}
+
+// 開発用: テキストを発話として注入（同じ経路を通る）
+const simText = document.getElementById('simText');
+document.getElementById('simSend').addEventListener('click', send);
+simText.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); send(); } });
+function send() { transcriber.simulate(simText.value); simText.value = ''; }
+
+// ===== 保存: DraftEvent → アダプタ =====
+document.getElementById('save').addEventListener('click', async () => {
+  const res = VCAdapter.materialize(store.get(), new Date());
+  if (!res.ok) { toast(`⚠ ${res.problems.join(' / ')}`); return; }
+  const adapter = VCAdapter.pickAdapter();
+  try {
+    await adapter.save(res.event);
+    const w = res.warnings.length ? `（${res.warnings.join('・')}）` : '';
+    toast(`✅ 保存しました${adapter.name === 'ics' ? '（.ics をダウンロード）' : ''}${w}`);
+    store.reset();
+    transcriptEl.textContent = '';
+    notesEl.textContent = '';
+    document.getElementById('optional').open = false;
+  } catch (err) {
+    toast(`保存に失敗: ${err.message || err}`);
+  }
+});
+
+document.getElementById('clear').addEventListener('click', () => {
+  store.reset();
+  transcriptEl.textContent = '';
+  notesEl.textContent = '';
+  document.getElementById('optional').open = false;
+});
+
+// ===== toast =====
+let toastTimer = null;
+function toast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove('show'), 3200);
+}
+</script>
+</body>
+</html>
