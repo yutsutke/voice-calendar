@@ -19,13 +19,11 @@
 > テキスト/音声（WebSpeech）→ 確定パーサ → フォーム反映 → 欄ロック → .ics 保存まで、Windows のブラウザで動く。**テスト 45/45 ✅**（parser 35 + schema 10）。preview E2E ✅（発話反映・編集中タイトル保護・**ストアと画面の一致**・曖昧素通し・終日・ics 生成・console 0）。リポ = https://github.com/yutsutke/voice-calendar （public）。
 > 🔴 **v3 で core バグを1件潰した**: 欄ロックが焼き付いておらず「画面と違う値が保存され得た」（詳細 CHANGELOG v3・鉄則 CLAUDE.md）。
 >
-> **▶▶ 次回はここから**: ① **自分の Edge/Chrome でマイク発話を10件試す**（`npm run serve` → http://localhost:5275）＝実発話の素通し率・言い回しの実データ集め（パーサに足すべきパターンが見えてくる）② 集まった実発話をテストに足してパーサ補強 ③ その後 Phase 2（iOS native の足回り）へ。
+> **▶▶ 次回はここから**: ① **iPhone Safari で https://yutsutke.github.io/voice-calendar/ を開き、マイク発話を10件試す**＝実発話の素通し率・言い回しの実データ集め（🎤タップ→マイク許可。認識されない時は 設定→Siriと検索→「"Hey Siri"を聞き取る」等で音声認識が有効か確認）② 外れた言い回しをそのまま報告してもらう→テストに足してパーサ補強 ③ その後 Phase 2（iOS native の足回り）へ。
 >
-> **🖥 dev サーバの運用メモ（セッション1でハマった）**: Claude の preview_start で起動したサーバは**ターン間で落ちる**（python プロセスごと消える→ブラウザは「接続できません」）。**自分のターミナルで `npm run serve` を起動しておくのが確実**。マイクは Claude の Browser ペインでは許可が取れないので、**実発話の検証は自分の Edge/Chrome で行う**（localhost は secure context 扱いなので Web Speech API が動く。file:// では動かない）。
-
-> **🤔 判断待ち: iPhone Safari で先に試すか（GitHub Pages）**
-> リポが public になったので、あの日と同じ **GitHub Pages で実機 iPhone から触る**道が開いた。iOS Safari は `webkitSpeechRecognition` 対応（14.5+）＝**native を作る前に、本命の iPhone で実発話の手触りとノールック完走率が測れる**（Windows Chrome より遥かに本番に近い）。
-> ただし現構成は `webDir=www` に index.html があり、**Pages はブランチ直下か /docs しか配信できない**ため、あの日と同じ「root に本体 → `scripts/sync-web.mjs` で www/ を生成」構成への組み替えが要る。**やるならユーザーの GO 待ち**（公開＝外向き操作）。
+> **🖥 dev サーバの運用メモ（セッション1でハマった）**: PC にはマイク無し＝**実発話検証は iPhone（GitHub Pages）が主戦場**。PC ではテキスト欄（発話シミュレート）で試す。Claude の preview_start で起動したサーバは**ターン間で落ちる**（python プロセスごと消える→ブラウザは「接続できません」）。自分で触るときは自分のターミナルで `npm run serve`（root 配信・http://localhost:5275）。
+>
+> **✅ GitHub Pages 化（GO 済み・実施済み 2026-07-16）**: あの日と同じ「root に本体 → `scripts/sync-web.mjs` で www/ 生成（gitignore）」に組み替え。**web の編集は root の index.html / engine/ / input/ / adapters/**（www/ は生成物・手で触らない）。Capacitor へは `npm run cap:sync`（sync-web が先に走る）。
 
 ---
 
@@ -38,7 +36,8 @@
       ※ v3 で実バグ修正済み（イベント基準と描画スキップの二重管理→ストアと画面がズレ、画面と違う値が保存され得た）。鉄則は CLAUDE.md 参照
 - [x] 転写層（WebSpeech + simulate 注入口）＝ input/transcriber.js
 - [x] 保存アダプタ境界（materialize + ics アダプタ）＝ adapters/calendar.js
-- [ ] **実発話での手触り検証**（マイクで10件入れてみる→素通し率と外し方を記録）← 次の一手
+- [x] GitHub Pages 配信（root 本体 + sync-web.mjs → www/ 生成）＝ iPhone Safari で実発話できる場
+- [ ] **実発話での手触り検証**（iPhone で10件入れてみる→素通し率と外し方を記録）← 次の一手
 - [ ] パーサ補強（実データ駆動）: 漢数字（「三時」）/「半」単独 /「夕方」だけ（時刻なし）/ 「今度の金曜」等、出てきたものから
 
 ## Phase 2 — iOS native 足回り

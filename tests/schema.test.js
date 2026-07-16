@@ -2,7 +2,7 @@
 // v1 で「ロック（イベント基準）と描画スキップ（activeElement 基準）の二重管理」により
 // **ストアと画面がズレて画面と違う値が保存される**バグを踏んだ。核心機能なのでテストで固定する。
 'use strict';
-const { createDraftStore, FIELDS } = require('../www/engine/schema.js');
+const { createDraftStore, FIELDS } = require('../engine/schema.js');
 
 let pass = 0, fail = 0;
 const failures = [];

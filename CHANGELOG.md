@@ -1,5 +1,23 @@
 # voice-calendar — CHANGELOG（build log・最新が上）
 
+## v4 — root に本体→sync-web で www/ 生成、GitHub Pages 配信＝iPhone Safari で実発話検証へ (2026-07-16)
+
+**背景**
+- PC に音声入力装置が無い＝実発話の検証（v0 の次の一手）が PC ではできない。リポは public 済み → あの日と同じ **GitHub Pages で iPhone Safari から触る**道をユーザー GO で実施。iOS Safari は webkitSpeechRecognition 対応＝**native を書く前に本命端末でノールック完走率が測れる**。
+
+**設計判断**
+- Pages はブランチ直下 or /docs しか配信できない → **web 本体を root へ移動**（index.html / engine/ / input/ / adapters/）し、Capacitor の webDir（www/）は `scripts/sync-web.mjs` が生成する構成に（photo-memory-spike と同一の運用。sync-web.mjs はほぼ流用）。www/ は gitignore＝生成物。
+- script の参照は元から相対パス（`engine/parser.js`）なので、Pages のサブパス（/voice-calendar/）でも root でもそのまま動く。移動は `git mv`（履歴保持）。
+- npm scripts をあの日に合わせ `sync:web` / `cap:copy` / `cap:sync`（cap の前に sync-web が必ず走る）に。`serve` は root 配信に変更。
+
+**結果 / 観察**
+- sync-web で www/ 生成 ✅・テスト 45/45 ✅・root 配信のプレビューで v4 BUILD 稼働＋発話シミュレート反映 ✅。
+- Claude の Browser ペインはマイクをブロックする（通知で確認）＝ PC 側で実発話が試せないことの裏取り。iPhone 路線が正解。
+
+**残課題 / 次の方向**
+- iPhone Safari での実発話10件（素通し率・外し方の実データ）→ パーサ補強。
+- iOS Safari の webkitSpeechRecognition は Siri/音声認識の OS 設定に依存する可能性 → 実機で確認（ダメでもテキスト欄で体験は試せる）。
+
 ## v3 — 🔴 欄ロックの実バグ修正：ストアと画面がズレて「画面と違う値が保存される」を潰した (2026-07-16)
 
 **背景**

@@ -5,7 +5,9 @@ node_modules/
 .vscode/
 .idea/
 
-# Capacitor / native（www/ は本体ソースなのでコミットする。生成物のみ ignore）
+# Capacitor / native
+# webDir = scripts/sync-web.mjs が生成するビルド成果物（本体ソースは root。Pages も root 配信）
+www/
 # CocoaPods（CI/Mac で pod install）
 ios/App/Pods/
 # cap copy が同期する web（生成物）

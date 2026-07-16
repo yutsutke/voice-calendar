@@ -2,7 +2,7 @@
 // now を固定して純関数 interpret() の入出力だけを検証する（端末 TZ に依存しない
 // よう、期待値もローカル構成の文字列で書く）。
 'use strict';
-const { interpret } = require('../www/engine/parser.js');
+const { interpret } = require('../engine/parser.js');
 
 // 固定の現在時刻: 2026-07-16 (木) 13:43
 const NOW = new Date(2026, 6, 16, 13, 43);

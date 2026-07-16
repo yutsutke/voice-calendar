@@ -5,10 +5,11 @@
   "private": true,
   "type": "commonjs",
   "scripts": {
-    "serve": "python -m http.server 5275 --directory www",
+    "serve": "python -m http.server 5275",
     "test": "node tests/parser.test.js && node tests/schema.test.js",
-    "sync": "cap sync",
-    "sync:ios": "cap sync ios",
+    "sync:web": "node scripts/sync-web.mjs",
+    "cap:copy": "npm run sync:web && cap copy",
+    "cap:sync": "npm run sync:web && cap sync",
     "open:ios": "cap open ios"
   },
   "keywords": [

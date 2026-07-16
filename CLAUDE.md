@@ -21,17 +21,20 @@
 
 ```
 SPEC.md                  # 要件定義 v0（設計の正・背骨）
-www/index.html           # UI = フォーム描画 + 2入口の配線だけ（ロジックは持たない）
-www/engine/parser.js     # 解釈層: interpret(text, now) 純関数。確定的日本語日時パーサ（LLMなし）
-www/engine/schema.js     # 共有状態層: DraftEvent ストア + fieldState + 欄ロック（衝突ポリシー §8）
-www/input/transcriber.js # 転写層: WebSpeech(開発用) / 将来 SFSpeechRecognizer プラグイン。simulate() でテキスト注入
-www/adapters/calendar.js # 永続層: materialize(保存時既定値はここに集約) + ics(web) / eventkit(iOS,未実装)
+index.html               # UI = フォーム描画 + 2入口の配線だけ（ロジックは持たない）。root が本体＝Pages 配信元
+engine/parser.js         # 解釈層: interpret(text, now) 純関数。確定的日本語日時パーサ（LLMなし）
+engine/schema.js         # 共有状態層: DraftEvent ストア + fieldState + 欄ロック（衝突ポリシー §8）
+input/transcriber.js     # 転写層: WebSpeech(web/iOS Safari) / 将来 SFSpeechRecognizer プラグイン。simulate() でテキスト注入
+adapters/calendar.js     # 永続層: materialize(保存時既定値はここに集約) + ics(web) / eventkit(iOS,未実装)
+scripts/sync-web.mjs     # root の web 本体 → www/（Capacitor webDir）を生成。cap の前に必ず実行（npm run cap:sync）
+www/                     # 生成物（gitignore）。手で編集しない
 tests/parser.test.js     # パーサ単体テスト — 決め打ちルールはテストが仕様
 tests/schema.test.js     # 共有状態＋欄ロックのテスト（v3 の実バグの回帰込み）。`npm test` で両方走る
 .claude/launch.json      # dev サーバ (port 5275。5273=spike / 5274=madeleine / 8123=terrain-game と衝突回避)
 ```
 
 - バンドラ無し運用（あの日と同流儀）。各層は `<script>` 直読み・`window.VC*` 名前空間・Node からも require 可。
+- **web 実機確認 = GitHub Pages**: https://yutsutke.github.io/voice-calendar/ （main の root を配信）。push が実機確認の前提＝ワークフローの一部（あの日と同じ）。iPhone Safari の webkitSpeechRecognition で実発話を試す（PC にマイクが無いため実発話検証は iPhone が主戦場）。
 - **パーサの決め打ちルールを変えるときは tests/parser.test.js を必ず同時に更新**（テストがルールの仕様書）。
 
 ## 🚨 欄ロックの鉄則（v3 で実バグを踏んだ場所）

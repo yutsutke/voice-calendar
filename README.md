@@ -9,9 +9,16 @@
 
 設計の正は [SPEC.md](SPEC.md)（要件定義 v0）。現在地は [TODO.md](TODO.md)、経緯は [CHANGELOG.md](CHANGELOG.md)。
 
+## 触ってみる
+
+**https://yutsutke.github.io/voice-calendar/** — iPhone Safari 推奨（🎤で実発話。テキスト欄でも試せる）
+
 ## 開発
 
 ```
-npm run serve   # http://localhost:5275 （マイクは Edge/Chrome。テキスト欄でも試せる）
-npm test        # パーサ単体テスト（node）
+npm run serve      # http://localhost:5275（root 配信。テキスト欄で発話シミュレート）
+npm test           # 単体テスト（parser + schema / node）
+npm run cap:sync   # root の web 本体 → www/ 生成 → cap sync（native ビルド前）
 ```
+
+web 本体は root（index.html / engine / input / adapters）。`www/` は sync-web が作る生成物（コミットしない）。
