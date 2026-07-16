@@ -11,6 +11,8 @@
 //   - 「来週(の)X曜」= 次の月曜始まりの週の X 曜。「の」は挟んでよい（実発話FBより）
 //   - 「今週X曜」「先週X曜」「昨日」「一昨日」= 過去の日付も埋める
 //     （実発話FBで「昨日の11時半暇だった」＝過去の実績を記録する用途が実在した）
+//   - **言った年には必ず従う**（v9）: 「2027年11月5日」「来年の3月1日」「去年の6月30日」。
+//     推測（下の「最も近い」）は**年を言っていない時だけ**の話。明示指定を推測で上書きしない。
 //   - **言っていない上位単位（年・月）は「今日に最も近いもの」を選ぶ**（v8。過去も一級市民＝v5の学び）
 //     「N月(の)N日」= 最も近い年（7/16 に「6月30日」→ 16日前の 6/30。「1月5日」→ 173日先の来年 1/5）
 //     「N日」= 最も近い月（7/16 に「20日」→ 今月20日。7/28 に「5日」→ 8日後の来月5日）
@@ -45,6 +47,10 @@
   // 月曜=0 … 日曜=6（日本の週感覚。「来週」= 次の月曜始まりの週）
   const weekIdxMon = (d) => (d.getDay() + 6) % 7;
   const JP_WEEKDAY = { 月: 0, 火: 1, 水: 2, 木: 3, 金: 4, 土: 5, 日: 6 };
+  // 年の明示指定（v9）: 絶対「2027年」／相対「来年・去年」等。言ったら必ず従う＝推測で上書きしない
+  const REL_YEAR = { 今年: 0, 来年: 1, 再来年: 2, 去年: -1, 昨年: -1, 一昨年: -2, おととし: -2 };
+  // 日付パターンの先頭に置く年プレフィクス（省略可）。捕獲: [1]=4桁年, [2]=相対年
+  const YEAR_PREFIX = '(?:(\\d{4})年の?|(今年|来年|再来年|去年|昨年|一昨年|おととし)の?)?';
   // 月単位の加算は月末に丸める（1/31 の1か月後 = 2/28。JS Date の自然なオーバーフロー 3/3 は使わない）
   const addMonthsClamped = (d, n) => {
     const y = d.getFullYear(), m = d.getMonth() + n;
@@ -115,6 +121,12 @@
     // 言っていない 7/30 を創作してしまう（背骨: AI は創作しない）。
     const blocked = [];
     const overlaps = (list, a, b) => list.some((c) => a < c.b && c.a < b);
+    // 年プレフィクスの解決（v9）。null = 年を言っていない → 呼び手が「最も近い年」を推測する
+    const explicitYear = (abs, rel) => {
+      if (abs) return +abs;
+      if (rel) return today.getFullYear() + REL_YEAR[rel];
+      return null;
+    };
     const pushCand = (date, a, b) => {
       if (!date || !isFree(a, b) || overlaps(dateCands, a, b) || overlaps(blocked, a, b)) return;
       dateCands.push({ date, a, b });
@@ -122,15 +134,20 @@
 
     // 1) N月(の)N日（過去なら来年。「7月の28日」の「の」も許す＝実発話FB。
     //    「の」未対応だと月が黙って無視され、素のN日として解釈される＝「12月の5日」が8月になる事故）
-    for (const { m, a, b } of findAll(/(\d{1,2})月の?(\d{1,2})日/g)) {
-      const mo = +m[1], da = +m[2];
+    for (const { m, a, b } of findAll(new RegExp(YEAR_PREFIX + '(\\d{1,2})月の?(\\d{1,2})日', 'g'))) {
+      const mo = +m[3], da = +m[4];
       if (mo < 1 || mo > 12 || da < 1 || da > 31) continue;
-      // 年は言っていない → 最も近い年（過去も可）。2月30日 等の存在しない日は素通し
-      const d = nearestBy(
-        today,
-        (k) => new Date(today.getFullYear() + k, mo - 1, da),
-        (c) => c.getMonth() === mo - 1 && c.getDate() === da
-      );
+      const valid = (c) => c.getMonth() === mo - 1 && c.getDate() === da;
+      const y = explicitYear(m[1], m[2]);
+      // 年を言ったならそれに従う／言っていない時だけ最も近い年を推測（過去も可）。
+      // 存在しない日（2月30日）は素通し＝blocked（素の N日 に再解釈させない）
+      let d;
+      if (y != null) {
+        d = new Date(y, mo - 1, da);
+        if (!valid(d)) d = null;
+      } else {
+        d = nearestBy(today, (k) => new Date(today.getFullYear() + k, mo - 1, da), valid);
+      }
       if (!d) { blocked.push({ a, b }); notes.push(`「${m[0]}」は存在しない日付なので入れていません`); continue; }
       pushCand(d, a, b);
     }
@@ -141,11 +158,15 @@
       if (da < 1 || da > 31) continue;
       pushCand(new Date(today.getFullYear(), today.getMonth() + shift, da), a, b);
     }
-    // 3) N月の末（「7月の末」「9月末」）。年は言っていない → 最も近い年
-    for (const { m, a, b } of findAll(/(\d{1,2})月の?末/g)) {
-      const mo = +m[1];
+    // 3) N月の末（「7月の末」「9月末」「来年2月末」）。new Date(y, mo, 0) = mo 月の最終日
+    for (const { m, a, b } of findAll(new RegExp(YEAR_PREFIX + '(\\d{1,2})月の?末', 'g'))) {
+      const mo = +m[3];
       if (mo < 1 || mo > 12) continue;
-      pushCand(nearestBy(today, (k) => new Date(today.getFullYear() + k, mo, 0), () => true), a, b); // new Date(y, mo, 0) = mo 月の最終日
+      const y = explicitYear(m[1], m[2]);
+      const d = y != null
+        ? new Date(y, mo, 0)
+        : nearestBy(today, (k) => new Date(today.getFullYear() + k, mo, 0), () => true);
+      pushCand(d, a, b);
     }
     // 3.5) 月末（来月の末 / 今月の末 / 来月末 / 今月末 / 月末。「の」を許す＝実発話FB。
     //      素の「末」は拾わない＝「週末」を月末と誤読しないため）
