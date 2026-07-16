@@ -47,6 +47,15 @@ tests/version.test.js    # BUILD と script の ?v= の一致を強制（v10 の
 - **web 実機確認 = GitHub Pages**: https://yutsutke.github.io/voice-calendar/ （main の root を配信）。push が実機確認の前提＝ワークフローの一部（あの日と同じ）。iPhone Safari の webkitSpeechRecognition で実発話を試す（PC にマイクが無いため実発話検証は iPhone が主戦場）。
 - **パーサの決め打ちルールを変えるときは tests/parser.test.js を必ず同時に更新**（テストがルールの仕様書）。
 
+## 🚨 黙って捨てない（v16 で実機が沈黙した場所）
+
+**空・null・想定外を silent drop するコードを書かない。** v16 の真犯人は Swift のこの1行だった:
+`if !text.isEmpty { notifyListeners("final", data: data) }` ＝ **確定テキストが空なら何も言わず握り潰す**（iOS は endAudio 後に空の確定を返すことがある）。症状「来歴が空」と原因が完全に一致していたのに、v15 では外側（「isFinal が来ない」）を疑って的外れな保険を足した。
+
+- 捨てる代わりに **①代替で補う（例: 空の確定 → 最後の途中結果）→ ②それも無ければエラーとして表に出す**（診断・来歴・toast）。
+- **数字を診断に出す**（`確定 len=N partial=M`）＝次に同じ疑いが出た時、推測でなく数字で判定できる。
+- 仮説が外れた時は**ログが正しく、仮説が間違っている**。診断ログ（🎙 行）は Mac なし環境で最速のデバッガ＝投資を惜しまない。
+
 ## 🚨 native プラグインの取り方（v13 で実機が全滅した場所）
 
 **`Capacitor.registerPlugin` は native に存在しない。** native が注入するのは `Capacitor.Plugins.<jsName>`（`JSExport.swift` が登録済みプラグインごとに document-start で生やす）。`registerPlugin` は npm `@capacitor/core` の API ＝**バンドラ前提**で、バンドラ無し運用の本リポには無い → 呼ぶと TypeError。

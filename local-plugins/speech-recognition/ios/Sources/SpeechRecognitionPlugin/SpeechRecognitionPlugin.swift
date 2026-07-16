@@ -150,9 +150,11 @@ public class SpeechRecognitionPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     /// endAudio ＋「final が来なければ保険で確定」タイマー
+    /// ⚠️ ここで audioEngine.stop() を呼ばないこと（v15 で追加して v16 で撤回）:
+    /// endAudio 直後にエンジンを止めると認識器の確定処理を妨げる恐れがある。
+    /// エンジンの停止は確定を届けた後の cleanup() が行う。
     private func endAudioAndArmFinalize() {
         request?.endAudio()
-        audioEngine?.stop() // これ以上の音は不要（バッファ済みは認識器が処理する）
         finalizeTimer?.invalidate()
         finalizeTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: false) { [weak self] _ in
             guard let self = self, !self.finished else { return }
@@ -165,12 +167,26 @@ public class SpeechRecognitionPlugin: CAPPlugin, CAPBridgedPlugin {
         }
     }
 
+    /// 🔴 v16（実機の診断ログで判明）: **isFinal は届くのに来歴が空**だった。
+    /// 犯人は「確定テキストが空なら黙って捨てる」というここの guard。
+    /// iOS は endAudio 後に **空の確定結果**を返すことがある（途中結果には文字があるのに）。
+    /// → 空なら **最後の途中結果で補う**。両方空の時だけエラーにする＝**絶対に黙って捨てない**。
     private func deliverFinal(text: String, transcription: SFTranscription?, fallback: Bool) {
         guard !finished else { return }
+        let usePartial = text.isEmpty && !lastPartial.isEmpty
+        let finalText = usePartial ? lastPartial : text
+        debug("確定 len=\(text.count) partial=\(lastPartial.count)\(usePartial ? " → 途中結果で補完" : "")")
+
+        if finalText.isEmpty {
+            // 空を握り潰さない: 画面（診断・toast）に必ず出す
+            deliverIdleError("聞き取れませんでした（確定テキストが空）")
+            return
+        }
+
         finished = true
-        var data: [String: Any] = ["text": text]
-        if fallback { data["fallback"] = true }
-        if let transcription = transcription {
+        var data: [String: Any] = ["text": finalText]
+        if fallback || usePartial { data["fallback"] = true }
+        if let transcription = transcription, !usePartial {
             // segment 平均の確度（オンデバイスでは 0 のことがある → その時は送らない）
             let confs = transcription.segments.map { Double($0.confidence) }
             if !confs.isEmpty {
@@ -179,7 +195,7 @@ public class SpeechRecognitionPlugin: CAPPlugin, CAPBridgedPlugin {
             }
         }
         cleanup()
-        if !text.isEmpty { notifyListeners("final", data: data) }
+        notifyListeners("final", data: data)
         notifyListeners("state", data: ["state": "idle"])
     }
 

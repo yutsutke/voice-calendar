@@ -250,13 +250,13 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
      理由: この版文字列は index.html にしかないが、ロジックは別ファイル＝別キャッシュ。
      付けないと「フッタは新しいのにパーサは古い」という嘘の状態が成立する（v9 で実際に踏んだ）。
      index.html が更新されれば src の URL も変わる → JS も必ず新しく取り直される。 -->
-<script src="engine/schema.js?v=15"></script>
-<script src="engine/parser.js?v=15"></script>
-<script src="input/transcriber.js?v=15"></script>
-<script src="adapters/calendar.js?v=15"></script>
+<script src="engine/schema.js?v=16"></script>
+<script src="engine/parser.js?v=16"></script>
+<script src="input/transcriber.js?v=16"></script>
+<script src="adapters/calendar.js?v=16"></script>
 <script>
 'use strict';
-const BUILD = 'v15：確定が来ない対策(endAudio後2秒で途中結果から補完確定＝発話が必ず届く)＋Swift内部を診断に可視化｜v14：不可視文字除去＋解釈エラーを来歴に｜v13：全ボタン無反応を修正｜v12：輸出コンプライアンス · 2026-07-16';
+const BUILD = 'v16：空の確定を黙って捨てていたのを修正(isFinalは届いていた→途中結果で補完·空はエラー表示)｜v15：補完確定＋Swift診断｜v14：不可視文字除去｜v13：全ボタン無反応を修正 · 2026-07-16';
 console.log('BUILD:', BUILD);
 document.getElementById('build').textContent = BUILD;
 
@@ -446,8 +446,9 @@ const transcriber = VCTranscriber.createTranscriber({
     micState.textContent = s === 'listening' ? '聞いています…（もう一度押すと停止）' : '';
   },
   onError(e) {
-    if (e === 'no-speech') micState.textContent = '';
-    else toast(`音声認識エラー: ${e}`);
+    if (e === 'no-speech') { micState.textContent = ''; return; } // web の「無言」は正常系
+    toast(`音声認識エラー: ${e}`);
+    window.__vcNote('音声', e); // toast は消える＝診断にも残す（v16）
   },
 });
 
