@@ -118,6 +118,12 @@ function nativePlugin(C, name) {
 - **`index.html` 冒頭の `const BUILD` を commit ごとに上げ、同時に script の `?v=N` も同じ数字にする**（`npm test` の version.test.js が一致を強制＝忘れると落ちる）。
   - ⚠️ **なぜ両方必要か（v10 で踏んだ罠）**: BUILD は index.html にしか無いが、ロジックは engine/ input/ adapters/ の**別ファイル＝別キャッシュ**。`?v=` が無いと「index.html は新しいのに parser.js は古い」＝**フッタが新版だと嘘をつくのに挙動は旧版**になる。あの日は単一 index.html なのでこの罠が無い＝**運用を移植する時は前提ごと確認する**。
 - **実機 FB を受けたら、まず切り分け**: ①フッタの BUILD 版 ②それでも怪しければ**オリジンを直接叩く**（`Invoke-WebRequest https://yutsutke.github.io/voice-calendar/engine/parser.js` で該当コードの有無）。「キャッシュでしょう」と決めつけない——v10 は自分の設計欠陥だった。Pages CDN は `max-age=600`（push 後10分は旧版が出る）。
+- 🚨 **push しただけで「Pages に出た」と言わない（v19 で嘘をついた）**: **必ずビルド完了と配信内容を確認する**。
+  ```powershell
+  gh api repos/yutsutke/voice-calendar/pages/builds/latest | ConvertFrom-Json | Select status, duration, @{n='e';e={$_.error.message}}
+  ```
+  `status=built` かつ配信 HTML の BUILD 文字列が新版であることまで見る。**v18 は Pages ビルドが errored で v17 が配信され続けていたのに、検証を省いて「Pages は既に v18」と報告した**＝ユーザーが「何回更新してもv17」と気づくまで嘘が残った。**検証を省くと報告は嘘になる。**
+- **Pages は `.nojekyll` で Jekyll を止めてある**（純粋な静的サイトで Jekyll は不要）。legacy ビルドの Jekyll が原因不明の `Page build failed`（duration 0）を起こしていた。ビルドも 40秒 → 17秒に短縮。**Pages が errored になったらまず `.nojekyll` の有無を疑う**。
 
 ## スコープを膨らませない歯止め（SPEC §3「v0 で作らない」）
 
