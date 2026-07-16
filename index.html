@@ -233,13 +233,13 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
      理由: この版文字列は index.html にしかないが、ロジックは別ファイル＝別キャッシュ。
      付けないと「フッタは新しいのにパーサは古い」という嘘の状態が成立する（v9 で実際に踏んだ）。
      index.html が更新されれば src の URL も変わる → JS も必ず新しく取り直される。 -->
-<script src="engine/schema.js?v=13"></script>
-<script src="engine/parser.js?v=13"></script>
-<script src="input/transcriber.js?v=13"></script>
-<script src="adapters/calendar.js?v=13"></script>
+<script src="engine/schema.js?v=14"></script>
+<script src="engine/parser.js?v=14"></script>
+<script src="input/transcriber.js?v=14"></script>
+<script src="adapters/calendar.js?v=14"></script>
 <script>
 'use strict';
-const BUILD = 'v13：実機で全ボタン無反応を修正(registerPluginは native に無い→Plugins.X。音声の失敗がフォームを殺さない)＋画面に診断｜v12：輸出コンプライアンス｜v11：iOS足回り｜v10：?v=でキャッシュ整合 · 2026-07-16';
+const BUILD = 'v14：不可視文字を除去(見えているのに入らない対策)＋解釈エラーも必ず来歴に残す｜v13：全ボタン無反応を修正＋診断｜v12：輸出コンプライアンス｜v11：iOS足回り｜v10：?v=キャッシュ整合 · 2026-07-16';
 console.log('BUILD:', BUILD);
 document.getElementById('build').textContent = BUILD;
 
@@ -324,18 +324,30 @@ function onUtterance(text, meta) {
   span.className = 'final';
   span.textContent = `🗣 ${text}`;
   transcriptEl.appendChild(span);
-  const { patch, notes } = VCParser.interpret(text, new Date());
-  notesEl.textContent = notes.join(' ／ ');
-  let skipped = [], cleared = [];
-  if (Object.keys(patch).length === 0) {
-    // 何も解釈できない発話（咳・雑音など）ではフォームを触らない＝掃除もしない
-    toast('解釈できる項目がありませんでした（フォームは手で入力できます）');
-  } else {
-    const r = store.applyVoicePatch(patch, text);
-    skipped = r.skipped;
-    cleared = r.cleared;
+  // v14: 解釈〜反映で何が起きても **必ず来歴に痕跡を残す**。
+  // 実機FBで「🗣 に見えているのに入らない」が出た＝途中で死ぬと無音になり、
+  // native イベント経由の例外は window.onerror にも届かないことがある。
+  // 🗣 表示は解釈の前なので「表示されるのに入らない」と症状が一致する。
+  let patch = {}, notes = [], skipped = [], cleared = [], err = null;
+  try {
+    const r = VCParser.interpret(text, new Date());
+    patch = r.patch;
+    notes = r.notes;
+    notesEl.textContent = notes.join(' ／ ');
+    if (Object.keys(patch).length === 0) {
+      // 何も解釈できない発話（咳・雑音など）ではフォームを触らない＝掃除もしない
+      toast('解釈できる項目がありませんでした（フォームは手で入力できます）');
+    } else {
+      const a = store.applyVoicePatch(patch, text);
+      skipped = a.skipped;
+      cleared = a.cleared;
+    }
+  } catch (e) {
+    err = (e && e.message) || String(e);
+    window.__vcNote('解釈エラー', `${err}｜発話「${text}」`);
+    toast('解釈でエラーが起きました（詳細は「診断」と「来歴」）');
   }
-  logHistory({ at: Date.now(), text, conf: meta && meta.confidence, patch, notes, skipped, cleared });
+  logHistory({ at: Date.now(), text, conf: meta && meta.confidence, patch, notes, skipped, cleared, err });
 }
 
 // ===== 来歴（SPEC §5-①）: 生テキスト＋解釈結果を端末内に記録（外部送信しない） =====
@@ -390,6 +402,12 @@ function renderHistory() {
       const n = document.createElement('div');
       n.className = 'h-result h-note';
       n.textContent = `⚠ ${e.notes.join(' ／ ')}`;
+      item.appendChild(n);
+    }
+    if (e.err) {
+      const n = document.createElement('div');
+      n.className = 'h-result h-note';
+      n.textContent = `🛑 解釈エラー: ${e.err}`;
       item.appendChild(n);
     }
     list.appendChild(item);

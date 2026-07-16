@@ -127,6 +127,13 @@ check('明日午後3時 打ち合わせ', { title: '打ち合わせ', startDate:
 check('明日か明後日 飲み会', { title: '明日か明後日 飲み会', startDate: undefined }); // 日付が複数 → 素通し
 check('9時から3時 バイト', { title: '3時 バイト', startDate: '2026-07-17', startTime: '09:00', endTime: undefined }); // 終了3時は曖昧 → 開始のみ。「3時」はタイトルに残って見える
 
+// ===== 不可視文字（v14）: iOS の音声認識が数字の前後に混ぜてくる＝「見えているのに入らない」 =====
+check('7月⁨14⁩日学校', { title: '学校', startDate: '2026-07-14' }); // 双方向分離子 FSI/PDI（\u エスケープで記述＝エディタで消えない）
+check('⁦7月14日⁩学校', { title: '学校', startDate: '2026-07-14' });
+check('明日 15時 歯医者', { title: '歯医者', startDate: '2026-07-17', startTime: '15:00' }); // NBSP・狭い NBSP
+check('7月14日​学校', { title: '学校', startDate: '2026-07-14' }); // ゼロ幅スペース
+check('昨日⁨10⁩時美術館', { title: '美術館', startDate: '2026-07-15', startTime: '10:00' }); // 実機FBの形
+
 // ===== 終日 =====
 check('明日は終日 出張', { title: '出張', startDate: '2026-07-17', allDay: true });
 
