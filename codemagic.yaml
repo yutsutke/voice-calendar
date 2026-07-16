@@ -1,0 +1,80 @@
+# ────────────────────────────────────────────────────────────────────────────
+# Codemagic CI/CD — voice-calendar（声で入れるカレンダー）iOS → TestFlight
+#
+# 狙い: Mac を持たずに、App Store Connect API キーによる「自動署名」で
+#       iOS アプリをビルドし TestFlight へ自動アップロードする。
+#       あの日（photo-memory-spike）で実績のあるワークフローをそのまま踏襲。
+#
+# 前提（Codemagic の Web UI で一度だけ設定する）:
+#   1. App Store Connect の API キー（Issuer ID / Key ID / .p8）は登録済み
+#      （あの日と同じ Apple アカウント＝チーム設定の "MadeleineASC" を再利用）
+#   2. このリポを Codemagic に接続し、この ios-testflight ワークフローを選ぶ
+#   3. ★ このアプリの環境変数グループ signing に CERTIFICATE_PRIVATE_KEY を登録
+#      （あの日で作った RSA 秘密鍵の中身をそのまま。グループはアプリごとなので再登録が要る）
+#   4. App Store Connect に新規 App を作成（bundle id: io.github.yutsutke.voicecalendar）
+#      ※ bundle id 自体は fetch-signing-files --create が Developer Portal に自動登録する
+#
+# 技術メモ（あの日で確立）:
+#   - Capacitor 8 は SPM（CocoaPods 不要）。xcodebuild がビルド時に解決する。
+#   - web 本体はリポのルート（GitHub Pages 配信元）。CI で sync:web → www/ を生成し
+#     `cap sync ios` で ios/App/App/public/ にバンドルする。
+#     ★ cap sync ios は CapApp-SPM/Package.swift も再生成する＝Windows で書かれた
+#       ローカルプラグインのパス（バックスラッシュ）はここで正しい形に直る。
+#   - 署名は CODE_SIGN_STYLE=Automatic ＋ `xcode-project use-profiles`。
+# ────────────────────────────────────────────────────────────────────────────
+
+workflows:
+  ios-testflight:
+    name: voice-calendar iOS → TestFlight
+    instance_type: mac_mini_m2
+    max_build_duration: 60
+    integrations:
+      # Codemagic チーム設定に登録済みの App Store Connect API キーの名前（あの日と共用）
+      app_store_connect: MadeleineASC
+    environment:
+      groups:
+        - signing
+      vars:
+        BUNDLE_ID: "io.github.yutsutke.voicecalendar"
+      node: 22
+      xcode: latest
+    scripts:
+      - name: npm 依存をインストール
+        script: npm install
+
+      - name: web を www/ へ同期し Capacitor iOS を sync
+        script: |
+          npm run sync:web
+          npx cap sync ios
+
+      # 新規 bundle id は証明書/プロファイルが未作成なので --create で自動生成する
+      - name: 署名ファイルを取得/作成し Xcode に適用
+        script: |
+          keychain initialize
+          app-store-connect fetch-signing-files "$BUNDLE_ID" \
+            --type IOS_APP_STORE \
+            --certificate-key @env:CERTIFICATE_PRIVATE_KEY \
+            --create
+          keychain add-certificates
+          xcode-project use-profiles
+
+      - name: ビルド番号を採番（Codemagic の連番を使う）
+        script: |
+          cd ios/App
+          agvtool new-version -all "$BUILD_NUMBER"
+
+      - name: IPA をビルド（App Store 配布用）
+        script: |
+          xcode-project build-ipa \
+            --project "ios/App/App.xcodeproj" \
+            --scheme "App"
+
+    artifacts:
+      - build/ios/ipa/*.ipa
+      - /tmp/xcodebuild_logs/*.log
+
+    publishing:
+      app_store_connect:
+        auth: integration
+        # 最初のビルドは TestFlight まで（審査提出はしない）
+        submit_to_testflight: true

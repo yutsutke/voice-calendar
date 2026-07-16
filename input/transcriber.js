@@ -1,15 +1,49 @@
 // input/transcriber.js — 転写層（SPEC §5-①）: 音声 → テキスト
 //
-// v0 web = Web Speech API（Chrome/Edge で動く開発用）。iOS native では
-// SFSpeechRecognizer のローカルプラグイン（speech-recognition）に差し替える予定。
-// どの実装でも出口は同じ: onInterim(text) / onFinal(text)。
-// simulate(text) はテキスト入力を「発話」として同じ経路に流す開発・検証用の口
-// （転写と解釈が分離しているから、ここを差し替えても解釈層は不変）。
+// 実装は環境で切り替えるが、出口はどれも同じ:
+//   onInterim(text) / onFinal(text, {engine, confidence?}) / onState('listening'|'idle') / onError(msg)
+//   - native (iOS): SFSpeechRecognizer プラグイン（local-plugins/speech-recognition。
+//     オンデバイス優先・無音で自動停止＝ローカル完結 SPEC §2）
+//   - web: Web Speech API（開発・GitHub Pages 検証用）
+//   - simulate(text): テキストを「発話」として同じ経路に流す（全実装共通・マイクなし環境用）
+// 転写と解釈が分離しているから、ここを差し替えても解釈層（engine/parser.js）は不変。
 (function (global) {
   'use strict';
 
-  function createTranscriber(handlers) {
-    const h = Object.assign({ onInterim() {}, onFinal() {}, onState() {}, onError() {} }, handlers);
+  // ---- native (iOS): SFSpeechRecognizer プラグイン ----
+  function createNative(h, C) {
+    const plugin = C.registerPlugin('SpeechRecognition');
+    let listening = false;
+    plugin.addListener('interim', (d) => h.onInterim(d.text || ''));
+    plugin.addListener('final', (d) => {
+      const meta = { engine: 'sfspeech' };
+      if (typeof d.confidence === 'number') meta.confidence = d.confidence;
+      h.onFinal((d.text || '').trim(), meta);
+    });
+    plugin.addListener('state', (d) => {
+      listening = d.state === 'listening';
+      h.onState(d.state || 'idle');
+    });
+    plugin.addListener('error', (d) => h.onError(d.message || 'speech-error'));
+    return {
+      available: true,
+      engine: 'sfspeech',
+      start() {
+        plugin.start().catch((e) => {
+          listening = false;
+          h.onState('idle');
+          h.onError((e && e.message) || String(e));
+        });
+      },
+      stop() { plugin.stop().catch(() => {}); },
+      toggle() { listening ? this.stop() : this.start(); },
+      isListening: () => listening,
+      simulate(text) { const t = String(text || '').trim(); if (t) h.onFinal(t, { engine: 'simulated' }); },
+    };
+  }
+
+  // ---- web: Web Speech API（開発用） ----
+  function createWebSpeech(h) {
     const SR = global.SpeechRecognition || global.webkitSpeechRecognition;
     let rec = null;
     let listening = false;
@@ -51,9 +85,15 @@
       stop,
       toggle() { listening ? stop() : start(); },
       isListening: () => listening,
-      // テキストを発話として注入（開発用・マイクなし環境用）
       simulate(text) { const t = String(text || '').trim(); if (t) h.onFinal(t, { engine: 'simulated' }); },
     };
+  }
+
+  function createTranscriber(handlers) {
+    const h = Object.assign({ onInterim() {}, onFinal() {}, onState() {}, onError() {} }, handlers);
+    const C = global.Capacitor;
+    if (C && C.isNativePlatform && C.isNativePlatform()) return createNative(h, C);
+    return createWebSpeech(h);
   }
 
   const api = { createTranscriber };

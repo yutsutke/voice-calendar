@@ -28,6 +28,11 @@ input/transcriber.js     # 転写層: WebSpeech(web/iOS Safari) / 将来 SFSpeec
 adapters/calendar.js     # 永続層: materialize(保存時既定値はここに集約) + ics(web) / eventkit(iOS,未実装)
 scripts/sync-web.mjs     # root の web 本体 → www/（Capacitor webDir）を生成。cap の前に必ず実行（npm run cap:sync）
 www/                     # 生成物（gitignore）。手で編集しない
+local-plugins/           # ローカル Capacitor プラグイン（SPM）。命名規約: npm名 kebab → PascalCase 一致必須
+  calendar-events/       #   EventKit 保存（iOS17+ 書き込み専用アクセス・openSettings 復帰導線）
+  speech-recognition/    #   SFSpeechRecognizer 転写（on-device 優先・無音1.8s自動確定/6s打ち切り）
+ios/                     # cap add ios の生成物をコミット（spike と同流儀）。Info.plist に権限4つ
+codemagic.yaml           # Mac なしビルド → TestFlight（あの日の実績ワークフロー）
 tests/parser.test.js     # パーサ単体テスト — 決め打ちルールはテストが仕様
 tests/schema.test.js     # 共有状態＋欄ロックのテスト（v3 の実バグの回帰込み）
 tests/version.test.js    # BUILD と script の ?v= の一致を強制（v10 の罠の再発防止）。`npm test` で全部走る
@@ -35,6 +40,7 @@ tests/version.test.js    # BUILD と script の ?v= の一致を強制（v10 の
 ```
 
 - バンドラ無し運用（あの日と同流儀）。各層は `<script>` 直読み・`window.VC*` 名前空間・Node からも require 可。
+- **native の検証は Codemagic**（Windows に Xcode なし＝Swift はローカルでコンパイルできない）。⚠️ **Windows で `npx cap sync ios` を実行すると CapApp-SPM/Package.swift のプラグインパスがバックスラッシュになる**（Swift として不正）→ CI の macOS 再 sync で直るが、コミット前に気づいたらスラッシュへ手修正。
 - **web 実機確認 = GitHub Pages**: https://yutsutke.github.io/voice-calendar/ （main の root を配信）。push が実機確認の前提＝ワークフローの一部（あの日と同じ）。iPhone Safari の webkitSpeechRecognition で実発話を試す（PC にマイクが無いため実発話検証は iPhone が主戦場）。
 - **パーサの決め打ちルールを変えるときは tests/parser.test.js を必ず同時に更新**（テストがルールの仕様書）。
 

@@ -1,5 +1,31 @@
 # voice-calendar — CHANGELOG（build log・最新が上）
 
+## v11 — Phase 2 足回り：iOS プラットフォーム＋SFSpeechRecognizer / EventKit プラグイン＋Codemagic (2026-07-16)
+
+**背景**
+- 入力エンジンは実発話FB 6回分で安定（「入力問題はこのぐらいで次へ」）→ v0 の本丸である **EventKit 保存**（.ics でなく本物のカレンダー書き込み）と**ネイティブ転写**へ。あの日で実績のある足回り（SPM ローカルプラグイン・Codemagic 自動署名→TestFlight）を踏襲。
+
+**作ったもの**
+- `npx cap add ios`（Capacitor 8 = SPM。CocoaPods なし）→ ios/ をコミット（spike と同流儀）。
+- **local-plugins/calendar-events**: `save({title,startMs,endMs,allDay,location,note}) → {id}`。**iOS17+ は書き込み専用アクセス**（requestWriteOnlyAccessToEvents＝「追加のみ」の軽いダイアログ・既存予定を読まない）、iOS16 以前は従来 requestAccess。拒否からの復帰導線 `openSettings()` も最初から用意（あの日 v215 のカメラ権限の教訓）。既定カレンダーに書く＝OS 設定が Google なら OS が Google へ同期（SPEC §1-6）。
+- **local-plugins/speech-recognition**: SFSpeechRecognizer(ja-JP)。**supportsOnDeviceRecognition なら requiresOnDeviceRecognition=true**（ローカル完結 SPEC §2）。イベント interim/final/state/error。**無音1.8秒で自動確定・無音6秒で打ち切り**＝WebSpeech と同じ「1タップ=1発話」の手触り（ノールックの前提）。final に segment 平均の confidence（0 なら送らない）。
+- **転写層に native 分岐**（input/transcriber.js）: `Capacitor.isNativePlatform()` で SFSpeech プラグインへ。出口 API（onInterim/onFinal/onState/onError・simulate）は完全に同じ＝解釈層以降は 1 行も変わらない（エンジン境界が効いた）。
+- 保存側は既存の eventKitAdapter（契約定義済み）がそのまま native プラグインに接続。
+- Info.plist に権限文言 4 つ（音声認識・マイク・カレンダー書き込み専用・旧カレンダー）。
+- codemagic.yaml（あの日の ios-testflight を BUNDLE_ID=io.github.yutsutke.voicecalendar に）。
+
+**ハマったところ**
+- **Windows の `cap sync ios` が CapApp-SPM/Package.swift にバックスラッシュのパスを書く**（`..\..\..\local-plugins\calendar-events`）＝Swift 文字列として不正エスケープで **Mac ではコンパイル不能**。CI は macOS 上で `cap sync ios` を再実行するので実害はないが、コミット物が壊れているのは罠 → 手でスラッシュに修正（codemagic.yaml にも注記）。
+
+**結果**
+- `cap sync ios` が両プラグインを認識（"Found 2 Capacitor plugins for ios"）。テスト 92/92。preview E2E: web 無退行（engine=webspeech・一本道・ロック・ics アダプタ）・console 0。
+- **Swift は未コンパイル**（Windows に Xcode なし）＝初回 Codemagic ビルドが検証になる。あの日も同じ進み方だった。
+
+**残課題 / 次の方向（ユーザー作業を含む）**
+- Codemagic: このリポをアプリとして接続 → ios-testflight 選択 → 環境変数グループ signing に CERTIFICATE_PRIVATE_KEY を登録（あの日と同じ鍵を再利用可）→ Start build。
+- App Store Connect: 新規 App 作成（bundle id は初回ビルドの fetch-signing-files --create が Portal に登録した後に選べる）。
+- TestFlight → iPhone 実機で: 権限ダイアログ（音声認識・マイク・カレンダー追加のみ）→ 実発話 → **本物のカレンダーに入るか**（v0 の一本道の完成確認）。
+
 ## v10 — 🔴 BUILD が嘘をつく罠を修正：script に ?v= を付け、全層のキャッシュを揃える (2026-07-16)
 
 **背景**

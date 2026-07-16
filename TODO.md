@@ -32,6 +32,11 @@
 >
 > **🔴 v10（実発話FB第6回・自分で作った罠）**: v9 公開後も実機で 2026-11-05 のまま → オリジンの parser.js を直接叩いて裏取り（v9 コードあり・Age:0）＋デプロイ版をブラウザ実行（2027-11-05 が出る）→ **実機に古い parser.js だけが残っていた**と確定。真因＝**BUILD は index.html にしか無いのにロジックは別ファイル＝別キャッシュ**＝「フッタは v9・解釈は v8」が成立し、**「フッタで版を確認して」という案内自体が機能していなかった**。→ script に `?v=N` を付け、**tests/version.test.js で BUILD との一致を機械的に強制**（わざとズラして落ちることも確認）。**テスト 92/92 ✅**（parser 72 + schema 14 + version 6）。
 >
+> **🔧 v11（Phase 2 着手）**: 入力エンジンが安定したので iOS 足回りへ。`cap add ios`＋**speech-recognition**（SFSpeechRecognizer・on-device 優先・無音自動停止）＋**calendar-events**（EventKit・iOS17 書き込み専用アクセス・openSettings）＋転写の native 分岐＋Info.plist 権限＋codemagic.yaml。web 無退行確認済み。**Swift は未コンパイル＝初回 Codemagic ビルドが検証**。
+> ⚠️ ハマり: Windows の `cap sync ios` は CapApp-SPM/Package.swift に**バックスラッシュのパス**を書く（Mac でコンパイル不能）→ 手でスラッシュに直した。CI は macOS で再 sync するので以後は自動で正しくなる。
+>
+> **▶▶ 次回はここから＝Codemagic 初回ビルド**（Phase 2 チェックリストの手順①〜④。ユーザー作業: Codemagic にリポ追加・signing グループに CERTIFICATE_PRIVATE_KEY 登録・ASC で App 作成）→ TestFlight → 実機で「実発話 → 本物のカレンダーに入る」の一本道完成確認。
+>
 > **▶▶ 次回はここから**: ① **iPhone Safari で https://yutsutke.github.io/voice-calendar/ を開き、マイク発話を10件試す**＝実発話の素通し率・言い回しの実データ集め（🎤タップ→マイク許可。認識されない時は 設定→Siriと検索→「"Hey Siri"を聞き取る」等で音声認識が有効か確認）② 外れた言い回しをそのまま報告してもらう→テストに足してパーサ補強 ③ その後 Phase 2（iOS native の足回り）へ。
 >
 > **🖥 dev サーバの運用メモ（セッション1でハマった）**: PC にはマイク無し＝**実発話検証は iPhone（GitHub Pages）が主戦場**。PC ではテキスト欄（発話シミュレート）で試す。Claude の preview_start で起動したサーバは**ターン間で落ちる**（python プロセスごと消える→ブラウザは「接続できません」）。自分で触るときは自分のターミナルで `npm run serve`（root 配信・http://localhost:5275）。
@@ -57,12 +62,16 @@
 
 ## Phase 2 — iOS native 足回り
 
-- [ ] `npm install` → `npx cap add ios`（ios/ をコミット、spike と同流儀）
-- [ ] **転写のネイティブ化**: local-plugins/speech-recognition（SFSpeechRecognizer, on-device 優先）
-      権限: NSSpeechRecognitionUsageDescription + NSMicrophoneUsageDescription。拒否時はテキスト入力にフォールバック
-- [ ] **保存のネイティブ化**: local-plugins/calendar-events（EventKit）。adapters/calendar.js の eventKitAdapter が呼ぶ契約は定義済み（title/startMs/endMs/allDay/location/note）
-      権限: iOS17+ の **書き込み専用アクセス**（NSCalendarsWriteOnlyAccessUsageDescription）が軽くて本命 → 要検証
-- [ ] Codemagic ビルド（spike の codemagic.yaml を流用）→ TestFlight で実機
+- [x] `npx cap add ios`（ios/ をコミット、spike と同流儀・SPM）
+- [x] **転写のネイティブ化**: local-plugins/speech-recognition（SFSpeechRecognizer ja-JP・on-device 優先・無音1.8秒で自動確定/6秒で打ち切り・interim/final/state/error イベント）＋ transcriber.js の native 分岐（出口 API 不変＝解釈層は無変更）
+- [x] **保存のネイティブ化**: local-plugins/calendar-events（EventKit・iOS17+ 書き込み専用アクセス・openSettings 復帰導線）。eventKitAdapter の契約どおり
+- [x] Info.plist 権限4つ／codemagic.yaml（あの日の ios-testflight 流用）
+- [ ] **Codemagic 初回ビルド → TestFlight**（Swift の初コンパイルを兼ねる）← 次の一手・ユーザー作業あり:
+      ① codemagic.codemagic.io でこのリポをアプリ追加 → ios-testflight 選択
+      ② アプリの環境変数グループ `signing` に `CERTIFICATE_PRIVATE_KEY` を登録（あの日と同じ RSA 鍵で可・Secure）
+      ③ Start build（fetch-signing-files --create が bundle id/証明書/プロファイルを自動作成）
+      ④ App Store Connect で新規 App 作成（bundle id: io.github.yutsutke.voicecalendar）→ TestFlight 配布
+- [ ] 実機確認: 権限ダイアログ（音声認識/マイク/カレンダー**追加のみ**）→ 実発話 → **本物のカレンダーに入る**（一本道完成）→ OS 側の同期先が Google ならそのまま Google カレンダーに出るか
 - [ ] 実機でノールック完走率を測り始める（SPEC §10）
 
 ## Phase 3 — Siri 起動（道1）

@@ -174,13 +174,13 @@
      理由: この版文字列は index.html にしかないが、ロジックは別ファイル＝別キャッシュ。
      付けないと「フッタは新しいのにパーサは古い」という嘘の状態が成立する（v9 で実際に踏んだ）。
      index.html が更新されれば src の URL も変わる → JS も必ず新しく取り直される。 -->
-<script src="engine/schema.js?v=10"></script>
-<script src="engine/parser.js?v=10"></script>
-<script src="input/transcriber.js?v=10"></script>
-<script src="adapters/calendar.js?v=10"></script>
+<script src="engine/schema.js?v=11"></script>
+<script src="engine/parser.js?v=11"></script>
+<script src="input/transcriber.js?v=11"></script>
+<script src="adapters/calendar.js?v=11"></script>
 <script>
 'use strict';
-const BUILD = 'v10：script に ?v= を付け全層のキャッシュを揃える(フッタが嘘をつく罠を修正)｜v9：言った年に必ず従う｜v8：年月は「最も近い」を推測｜v7：N月のN日｜v6：発話=言い直し · 2026-07-16';
+const BUILD = 'v11：iOS足回り(SFSpeechRecognizer/EventKitプラグイン·転写のnative分岐·codemagic)｜v10：?v=でキャッシュ整合｜v9：言った年に従う｜v8：年月は最も近い｜v7：N月のN日 · 2026-07-16';
 console.log('BUILD:', BUILD);
 document.getElementById('build').textContent = BUILD;
 
