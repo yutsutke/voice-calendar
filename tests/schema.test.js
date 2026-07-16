@@ -162,6 +162,29 @@ t('targeted なし（通常の言い直し）は従来どおり掃除する', ()
 });
 
 // ===== 巻き戻し（v18）: 来歴の ↩ ＝「その発話の直前の状態」を復元 =====
+// 🔴 v20 の回帰: 来歴の行に見えている状態と、↩ で戻る状態が一致すること。
+// v18 は「発話の“前”の状態」を積んでいたため、行に「飲み会」と出ているのに ↩ で「会議」に
+// 戻った（1つ前）＝行の表示と結果が食い違い「反映されない」に見えた。
+t('【v20 回帰】↩ は「その発話を適用した後の状態」＝行の表示と一致する', () => {
+  const s = createDraftStore();
+  // UI と同じ手順: 発話を適用した「後」に snapshot を積む
+  const hist = [];
+  const speak = (patch, text) => { s.applyVoicePatch(patch, text); hist.unshift({ text, after: s.snapshot() }); };
+  speak({ title: '歯医者', startTime: '10:00' }, '明日10時 歯医者');
+  speak({ title: '会議', startTime: '14:00' }, '明日14時 会議');
+  speak({ title: '飲み会', startTime: '18:00' }, '明日18時 飲み会');
+  // 来歴（新しい順）: 飲み会 / 会議 / 歯医者
+  eq(hist.map((e) => e.after.draft.title), ['飲み会', '会議', '歯医者'], '各行の状態＝その行の発話の結果');
+  // 「会議」の行の ↩ を押したら「会議」になる（「歯医者」ではない）
+  s.restore(hist[1].after);
+  eq(s.get().title, '会議', '行に見えているタイトルがそのまま入る');
+  eq(s.get().startTime, '14:00', '時刻も行のもの');
+  // 「歯医者」の行の ↩ を押したら「歯医者」になる
+  s.restore(hist[2].after);
+  eq(s.get().title, '歯医者', '行の表示と一致');
+  eq(s.get().startTime, '10:00', '時刻も一致');
+});
+
 t('snapshot → 発話で壊れる → restore で元通り（意図せず新規になった時の逃げ道）', () => {
   const s = createDraftStore();
   s.applyVoicePatch({ title: '歯医者', startDate: '2026-07-18', startTime: '15:00' }, '明日15時に歯医者');
