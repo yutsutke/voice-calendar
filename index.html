@@ -147,6 +147,18 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
   .history-list .h-undo { margin-top: 6px; padding: 6px 12px; border: 1px solid var(--line); border-radius: 8px;
     background: transparent; color: var(--accent); font-size: 12px; cursor: pointer; font-family: inherit; }
   .history-list .h-undo:active { opacity: .6; }
+  /* 発話の扱いモード（v21）: 🆕 新規 / 🎯 欄指定 が一目で分かる。
+     色は 16進+アルファ（このファイルの既存流儀。color-mix は古い iOS Safari で効かない） */
+  .history-list .h-badge { display: inline-block; margin: 4px 0 2px; padding: 2px 8px; border-radius: 6px;
+    font-size: 11px; font-weight: 600; }
+  .history-list .b-new { background: #0a84ff22; color: var(--accent); }
+  .history-list .b-new-wiped { background: #ff950026; color: var(--warn); }
+  .history-list .b-targeted { background: #30a14e22; color: var(--ok); }
+  @media (prefers-color-scheme: dark) {
+    /* 暗所では既定の --warn / --ok が沈むのでバッジの文字だけ明るくする */
+    .history-list .b-new-wiped { color: #ff9f0a; }
+    .history-list .b-targeted { color: #30d158; }
+  }
 
   /* ---- 詳細設定 ---- */
   .set-item { padding: 12px 0; border-bottom: 1px solid var(--line); }
@@ -275,14 +287,14 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
      理由: この版文字列は index.html にしかないが、ロジックは別ファイル＝別キャッシュ。
      付けないと「フッタは新しいのにパーサは古い」という嘘の状態が成立する（v9 で実際に踏んだ）。
      index.html が更新されれば src の URL も変わる → JS も必ず新しく取り直される。 -->
-<script src="engine/settings.js?v=20"></script>
-<script src="engine/schema.js?v=20"></script>
-<script src="engine/parser.js?v=20"></script>
-<script src="input/transcriber.js?v=20"></script>
-<script src="adapters/calendar.js?v=20"></script>
+<script src="engine/settings.js?v=21"></script>
+<script src="engine/schema.js?v=21"></script>
+<script src="engine/parser.js?v=21"></script>
+<script src="input/transcriber.js?v=21"></script>
+<script src="adapters/calendar.js?v=21"></script>
 <script>
 'use strict';
-const BUILD = 'v20：↩を「行に見えている状態に戻す」に修正(1つ前に戻る食い違いを解消)＋Pages復旧(.nojekyll)｜v19：詳細設定6項目｜v18：来歴から↩巻き戻し｜v17：欄指定発話 · 2026-07-17';
+const BUILD = 'v21：来歴に扱いモードのバッジ(🆕新規/🎯欄指定·消した新規は警告色)｜v20：↩を「行に見えている状態に戻す」に修正＋Pages復旧(.nojekyll)｜v19：詳細設定6項目｜v18：来歴から↩巻き戻し · 2026-07-17';
 console.log('BUILD:', BUILD);
 document.getElementById('build').textContent = BUILD;
 
@@ -403,7 +415,11 @@ function onUtterance(text, meta) {
   // 行に見えている状態に戻るのが自然（ユーザーの言葉＝「この“タイトルに”戻す」）。
   // フォームを実際に変えた発話にだけ残す（変えていない発話の ↩ は直下の行と同じ状態＝冗長）。
   const changed = !err && (Object.keys(patch).length > 0) && (skipped.length !== Object.keys(patch).length || cleared.length > 0);
-  logHistory({ at: Date.now(), text, conf: meta && meta.confidence, fb: !!(meta && meta.fallback), tg: targeted, patch, notes, skipped, cleared, err, after: changed ? store.snapshot() : null });
+  // 🆕 この発話が「新規（言い直し）」として扱われたか（v21・実機FB「新規になったときに分かるように」）。
+  // cleared では判定できない: 1件目の発話は新規でも消すものが無く cleared が空になる＝
+  // **副作用ではなく「適用したモード」そのもの**を記録する。設定でオフなら新規扱いにならない。
+  const isNew = !targeted && !!settings.get('plainUtteranceIsNew');
+  logHistory({ at: Date.now(), text, conf: meta && meta.confidence, fb: !!(meta && meta.fallback), tg: targeted, nw: isNew, patch, notes, skipped, cleared, err, after: changed ? store.snapshot() : null });
 }
 
 // ===== 来歴（SPEC §5-①）: 生テキスト＋解釈結果を端末内に記録（外部送信しない） =====
@@ -455,8 +471,18 @@ function renderHistory() {
     line1.append(time, text);
     const line2 = document.createElement('div');
     line2.className = 'h-result';
-    line2.textContent = (e.tg ? '🎯 欄指定 ' : '') + patchSummary(e.patch || {}, e.skipped, e.cleared);
+    line2.textContent = patchSummary(e.patch || {}, e.skipped, e.cleared);
     item.append(line1, line2);
+    // モードのバッジ（v21）: この発話が「新規（前の入力を消して入れ直す）」だったか
+    // 「欄指定（その欄だけ足す）」だったかを一目で。実機FB「新規になったときに分かるように」。
+    // 消した実績のある新規は警告色＝“何を失ったか”が目で追える。
+    if (e.nw || e.tg) {
+      const wiped = !!(e.nw && e.cleared && e.cleared.length);
+      const badge = document.createElement('div');
+      badge.className = 'h-badge ' + (e.nw ? (wiped ? 'b-new-wiped' : 'b-new') : 'b-targeted');
+      badge.textContent = e.nw ? (wiped ? '🆕 新規（前の入力を消した）' : '🆕 新規') : '🎯 欄指定';
+      item.insertBefore(badge, line2); // 🗣 の下・解釈結果の上
+    }
     if (e.notes && e.notes.length) {
       const n = document.createElement('div');
       n.className = 'h-result h-note';
