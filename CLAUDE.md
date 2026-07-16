@@ -35,6 +35,7 @@ ios/                     # cap add ios の生成物をコミット（spike と�
 codemagic.yaml           # Mac なしビルド → TestFlight（あの日の実績ワークフロー）
 tests/parser.test.js     # パーサ単体テスト — 決め打ちルールはテストが仕様
 tests/schema.test.js     # 共有状態＋欄ロックのテスト（v3 の実バグの回帰込み）
+tests/transcriber.test.js# 転写層の「壊れ方」（v13: registerPlugin 無し native で throw しない・Plugins.X 優先）
 tests/version.test.js    # BUILD と script の ?v= の一致を強制（v10 の罠の再発防止）。`npm test` で全部走る
 .claude/launch.json      # dev サーバ (port 5275。5273=spike / 5274=madeleine / 8123=terrain-game と衝突回避)
 ```
@@ -45,6 +46,24 @@ tests/version.test.js    # BUILD と script の ?v= の一致を強制（v10 の
 - **BUILD は native 専用の変更でも上げる**: web が 1 バイトも変わらなくても、**フッタの BUILD が「実機に届いた TestFlight ビルドの識別子」**として機能するため（版表示に嘘をつかせない＝v10 の教訓）。
 - **web 実機確認 = GitHub Pages**: https://yutsutke.github.io/voice-calendar/ （main の root を配信）。push が実機確認の前提＝ワークフローの一部（あの日と同じ）。iPhone Safari の webkitSpeechRecognition で実発話を試す（PC にマイクが無いため実発話検証は iPhone が主戦場）。
 - **パーサの決め打ちルールを変えるときは tests/parser.test.js を必ず同時に更新**（テストがルールの仕様書）。
+
+## 🚨 native プラグインの取り方（v13 で実機が全滅した場所）
+
+**`Capacitor.registerPlugin` は native に存在しない。** native が注入するのは `Capacitor.Plugins.<jsName>`（`JSExport.swift` が登録済みプラグインごとに document-start で生やす）。`registerPlugin` は npm `@capacitor/core` の API ＝**バンドラ前提**で、バンドラ無し運用の本リポには無い → 呼ぶと TypeError。
+
+```js
+// 正（あの日 index.html と同じ形）: Plugins.X が本命・registerPlugin は「あれば使う」保険
+function nativePlugin(C, name) {
+  if (!C) return null;
+  if (C.Plugins && C.Plugins[name]) return C.Plugins[name];
+  if (typeof C.registerPlugin === 'function') return C.registerPlugin(name);
+  return null;
+}
+```
+
+- JS から呼べるメソッドは Swift の `pluginMethods` に宣言したものだけ（＋ `addListener` / `removeAllListeners`）。
+- **補助機能（音声）の失敗が本体（フォーム）を殺さないこと**: v13 では `registerPlugin` の TypeError がインラインスクリプトを止め、**音声と無関係な「保存」「クリア」まで死んだ**（背骨①の違反）。転写層は**何があっても throw しない**（`createTranscriber` は必ずオブジェクトを返し、失敗理由は `.nativeFailure`）。テキスト送信は転写層に依存させない。
+- **実機の確認は「診断」パネル**（画面下の `<details>`）: 環境・エンジン・native 失敗理由・4層の読込・**初期化が完走したか**・捕捉エラー。head の自己完結コードなので**本体が全滅しても出る**。iPhone にコンソールは無く Mac も無い＝**画面に出す以外に見る手段が無い**（1回の確認に Codemagic 15分）。
 
 ## 🚨 欄ロックの鉄則（v3 で実バグを踏んだ場所）
 

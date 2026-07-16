@@ -5,6 +5,56 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <title>声で入れるカレンダー（仮）</title>
+<script>
+// ⚠️ 最初に置くこと（層スクリプトより前）。iPhone にはコンソールが無く、Mac が無いので
+// Safari Web Inspector も使えない＝**エラーを画面に出さないと永久に盲目**（1回の確認に
+// Codemagic ビルド15分）。capture=true で <script> の読み込み失敗（resource error）も拾う。
+// 診断は「診断される側」に依存しないこと: 本体（インラインスクリプト）が全滅しても
+// この head の自己完結コードだけで画面に出る。
+window.__vcErrors = [];
+window.__vcNote = function (where, msg) {
+  window.__vcErrors.push({ where: where, msg: String(msg) });
+  if (window.__vcRenderDiag) window.__vcRenderDiag();
+};
+window.addEventListener('error', function (e) {
+  if (e.target && e.target.tagName === 'SCRIPT') window.__vcNote('script読込失敗', e.target.getAttribute('src') || '(inline)');
+  else window.__vcNote('例外', (e.message || e.error) + ' @' + String(e.filename || '').split('/').pop() + ':' + e.lineno);
+}, true);
+window.addEventListener('unhandledrejection', function (e) {
+  window.__vcNote('Promise拒否', (e.reason && e.reason.message) || e.reason);
+});
+
+window.__vcRenderDiag = function () {
+  var list = document.getElementById('diagList');
+  if (!list) return; // まだ DOM が来ていない
+  var C = window.Capacitor;
+  var native = !!(C && C.isNativePlatform && C.isNativePlatform());
+  var rows = [];
+  rows.push(['環境', native ? 'native (Capacitor)' : 'web ブラウザ']);
+  rows.push(['音声エンジン', (window.__vcEngine || '(未初期化)') + (window.__vcNativeFailure ? ' ← native 失敗: ' + window.__vcNativeFailure : '')]);
+  var layers = ['VCStore', 'VCParser', 'VCTranscriber', 'VCAdapter']
+    .map(function (n) { return (window[n] ? '✅' : '❌') + n; }).join(' ');
+  rows.push(['層の読込', layers]);
+  rows.push(['初期化', window.__vcInitDone ? '✅ 完了' : '❌ 途中で停止']);
+  list.innerHTML = '';
+  rows.forEach(function (r) {
+    var d = document.createElement('div');
+    d.className = 'h-item';
+    d.textContent = r[0] + ': ' + r[1];
+    list.appendChild(d);
+  });
+  window.__vcErrors.forEach(function (e) {
+    var d = document.createElement('div');
+    d.className = 'h-item h-note';
+    d.textContent = '⚠ ' + e.where + ': ' + e.msg;
+    list.appendChild(d);
+  });
+  // エラーがある / 初期化が止まった なら自動で開く（黙って壊れない）
+  var box = document.getElementById('diagBox');
+  if (box && (window.__vcErrors.length || !window.__vcInitDone)) box.open = true;
+};
+document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDiag(); });
+</script>
 <style>
   :root {
     --bg: #f5f5f7; --card: #ffffff; --ink: #1d1d1f; --sub: #6e6e73;
@@ -166,6 +216,15 @@
     </div>
   </details>
 
+  <!-- 診断（v13）: 実機（iPhone）にコンソールが無いので、環境・層の読込・エラーを画面に出す。
+       エラーがあれば自動で開く＝黙って壊れない -->
+  <details class="optional" id="diagBox">
+    <summary>診断（環境・エラー）</summary>
+    <div class="card2">
+      <div id="diagList" class="history-list"></div>
+    </div>
+  </details>
+
   <footer id="build"></footer>
 </main>
 <div class="toast" id="toast"></div>
@@ -174,13 +233,13 @@
      理由: この版文字列は index.html にしかないが、ロジックは別ファイル＝別キャッシュ。
      付けないと「フッタは新しいのにパーサは古い」という嘘の状態が成立する（v9 で実際に踏んだ）。
      index.html が更新されれば src の URL も変わる → JS も必ず新しく取り直される。 -->
-<script src="engine/schema.js?v=12"></script>
-<script src="engine/parser.js?v=12"></script>
-<script src="input/transcriber.js?v=12"></script>
-<script src="adapters/calendar.js?v=12"></script>
+<script src="engine/schema.js?v=13"></script>
+<script src="engine/parser.js?v=13"></script>
+<script src="input/transcriber.js?v=13"></script>
+<script src="adapters/calendar.js?v=13"></script>
 <script>
 'use strict';
-const BUILD = 'v12：輸出コンプライアンスをInfo.plistで恒久回答(毎ビルドの質問を解消)｜v11：iOS足回り(SFSpeech/EventKitプラグイン)｜v10：?v=でキャッシュ整合｜v9：言った年に従う｜v8：年月は最も近い · 2026-07-16';
+const BUILD = 'v13：実機で全ボタン無反応を修正(registerPluginは native に無い→Plugins.X。音声の失敗がフォームを殺さない)＋画面に診断｜v12：輸出コンプライアンス｜v11：iOS足回り｜v10：?v=でキャッシュ整合 · 2026-07-16';
 console.log('BUILD:', BUILD);
 document.getElementById('build').textContent = BUILD;
 
@@ -355,18 +414,30 @@ const transcriber = VCTranscriber.createTranscriber({
   },
 });
 
+// 診断へ環境を報告（native を期待したのに web に落ちた理由もここに出る）
+window.__vcEngine = transcriber.engine;
+window.__vcNativeFailure = transcriber.nativeFailure || null;
+
 if (transcriber.available) {
   micBtn.addEventListener('click', () => transcriber.toggle());
 } else {
   micBtn.disabled = true;
-  micState.textContent = 'この環境では音声認識が使えません（下のテキスト欄で試せます）';
+  micState.textContent = transcriber.nativeFailure
+    ? '音声認識が使えません（下のテキスト欄で入力できます）— 詳細は「診断」'
+    : 'この環境では音声認識が使えません（下のテキスト欄で試せます）';
 }
 
-// 開発用: テキストを発話として注入（同じ経路を通る）
+// テキストを発話として注入。**転写層に依存させない**（音声が壊れていても文字で入れられる＝
+// フォームが本体・音声は補助。v13 の教訓）
 const simText = document.getElementById('simText');
 document.getElementById('simSend').addEventListener('click', send);
 simText.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); send(); } });
-function send() { transcriber.simulate(simText.value); simText.value = ''; }
+function send() {
+  const t = String(simText.value || '').trim();
+  if (!t) return;
+  simText.value = '';
+  onUtterance(t, { engine: 'simulated' });
+}
 
 // ===== 保存: DraftEvent → アダプタ =====
 document.getElementById('save').addEventListener('click', async () => {
@@ -402,6 +473,11 @@ function toast(msg) {
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => t.classList.remove('show'), 3200);
 }
+
+// 初期化がここまで通った印。ここに到達しないと診断が「初期化: ❌ 途中で停止」を出す＝
+// 実機でも「どこまで生きているか」が一目で分かる（v13 の教訓: 黙って壊れない）
+window.__vcInitDone = true;
+window.__vcRenderDiag();
 </script>
 </body>
 </html>

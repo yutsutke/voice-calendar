@@ -13,6 +13,16 @@
 (function (global) {
   'use strict';
 
+  // 🔴 バンドラ無し運用でのプラグイン取得（v13 の実バグ・詳細は input/transcriber.js 冒頭）:
+  // native が注入する window.Capacitor に registerPlugin は無い（Plugins だけ）。
+  // Plugins.X が本命・registerPlugin は「あれば使う」保険（あの日 index.html と同じ形）。
+  function nativePlugin(C, name) {
+    if (!C) return null;
+    if (C.Plugins && C.Plugins[name]) return C.Plugins[name];
+    if (typeof C.registerPlugin === 'function') return C.registerPlugin(name);
+    return null;
+  }
+
   const pad2 = (n) => String(n).padStart(2, '0');
 
   function materialize(draft, now) {
@@ -110,7 +120,8 @@
     async save(ev) {
       const C = global.Capacitor;
       if (!C || !C.isNativePlatform || !C.isNativePlatform()) throw new Error('native 環境ではありません');
-      const plugin = C.registerPlugin('CalendarEvents'); // ローカルプラグイン（未実装 → TODO.md Phase 2）
+      const plugin = nativePlugin(C, 'CalendarEvents');
+      if (!plugin) throw new Error('CalendarEvents プラグインが native に登録されていません');
       const res = await plugin.save({
         title: ev.title,
         startMs: ev.start.getTime(),

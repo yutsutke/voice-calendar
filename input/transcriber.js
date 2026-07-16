@@ -10,32 +10,58 @@
 (function (global) {
   'use strict';
 
+  // 🔴 バンドラ無し運用でのプラグイン取得（v13 で踏んだ実バグ）:
+  // **native が注入する window.Capacitor には registerPlugin が無い**（Plugins と
+  // isPluginAvailable だけ）。registerPlugin は npm の @capacitor/core 側 API ＝バンドラ前提。
+  // よって `C.registerPlugin(...)` は native で TypeError になり、インラインスクリプトごと
+  // 落ちて**保存・クリアまで死んだ**。あの日の index.html は最初から
+  //   (Plugins && Plugins.X) || (typeof registerPlugin === 'function' ? registerPlugin('X') : null)
+  // と書いており、こちらが正しい。Plugins.X が本命・registerPlugin は「あれば使う」保険。
+  function nativePlugin(C, name) {
+    if (!C) return null;
+    if (C.Plugins && C.Plugins[name]) return C.Plugins[name];
+    if (typeof C.registerPlugin === 'function') return C.registerPlugin(name);
+    return null;
+  }
+
   // ---- native (iOS): SFSpeechRecognizer プラグイン ----
+  // ⚠️ 失敗しても **絶対に throw しない**（null を返す）。v13 で踏んだ実バグ:
+  // プラグイン未登録だと registerPlugin の proxy が addListener で同期的に throw し、
+  // それが index.html のインラインスクリプトを止めて **保存・クリアまで死んだ**
+  // （音声と無関係なフォームが巻き添え＝背骨①「フォームが単一の真実」の違反）。
+  // 音声はフォームの補助であって前提ではない。ここは静かに諦めて呼び手に返す。
   function createNative(h, C) {
-    const plugin = C.registerPlugin('SpeechRecognition');
-    let listening = false;
-    plugin.addListener('interim', (d) => h.onInterim(d.text || ''));
-    plugin.addListener('final', (d) => {
-      const meta = { engine: 'sfspeech' };
-      if (typeof d.confidence === 'number') meta.confidence = d.confidence;
-      h.onFinal((d.text || '').trim(), meta);
-    });
-    plugin.addListener('state', (d) => {
-      listening = d.state === 'listening';
-      h.onState(d.state || 'idle');
-    });
-    plugin.addListener('error', (d) => h.onError(d.message || 'speech-error'));
+    let plugin, listening = false;
+    try {
+      plugin = nativePlugin(C, 'SpeechRecognition');
+      if (!plugin) return { failed: 'SpeechRecognition プラグインが native に登録されていません' };
+      plugin.addListener('interim', (d) => h.onInterim(d.text || ''));
+      plugin.addListener('final', (d) => {
+        const meta = { engine: 'sfspeech' };
+        if (typeof d.confidence === 'number') meta.confidence = d.confidence;
+        h.onFinal((d.text || '').trim(), meta);
+      });
+      plugin.addListener('state', (d) => {
+        listening = d.state === 'listening';
+        h.onState(d.state || 'idle');
+      });
+      plugin.addListener('error', (d) => h.onError(d.message || 'speech-error'));
+    } catch (e) {
+      return { failed: (e && e.message) || String(e) }; // 呼び手が診断に出す
+    }
     return {
       available: true,
       engine: 'sfspeech',
       start() {
-        plugin.start().catch((e) => {
-          listening = false;
-          h.onState('idle');
-          h.onError((e && e.message) || String(e));
-        });
+        try {
+          plugin.start().catch((e) => {
+            listening = false;
+            h.onState('idle');
+            h.onError((e && e.message) || String(e));
+          });
+        } catch (e) { h.onError((e && e.message) || String(e)); }
       },
-      stop() { plugin.stop().catch(() => {}); },
+      stop() { try { plugin.stop().catch(() => {}); } catch {} },
       toggle() { listening ? this.stop() : this.start(); },
       isListening: () => listening,
       simulate(text) { const t = String(text || '').trim(); if (t) h.onFinal(t, { engine: 'simulated' }); },
@@ -89,11 +115,20 @@
     };
   }
 
+  // どんな環境でも **必ずオブジェクトを返す**（throw しない）。音声が全滅しても
+  // フォーム（＝製品の本体）は動き続けること。native 失敗の理由は .nativeFailure に残す。
   function createTranscriber(handlers) {
     const h = Object.assign({ onInterim() {}, onFinal() {}, onState() {}, onError() {} }, handlers);
     const C = global.Capacitor;
-    if (C && C.isNativePlatform && C.isNativePlatform()) return createNative(h, C);
-    return createWebSpeech(h);
+    let nativeFailure = null;
+    if (C && C.isNativePlatform && C.isNativePlatform()) {
+      const native = createNative(h, C);
+      if (native && native.available) return native;
+      nativeFailure = (native && native.failed) || 'native プラグインが応答しません';
+    }
+    const web = createWebSpeech(h);
+    web.nativeFailure = nativeFailure; // native を期待したのに web に落ちた＝診断に出す
+    return web;
   }
 
   const api = { createTranscriber };

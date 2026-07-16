@@ -1,5 +1,39 @@
 # voice-calendar — CHANGELOG（build log・最新が上）
 
+## v13 — 🔴 実機で全ボタン無反応：registerPlugin は native に存在しない（＋音声の失敗がフォームを殺していた） (2026-07-16)
+
+**背景**
+- TestFlight 1.0 を実機で開いたら **🎤・発話として送る・カレンダーに保存・クリアの全ボタンが無反応**。フォームへの手入力だけが可能（＝HTML は生きている）。
+
+**症状 → 原因（2つの別々のバグ）**
+1. **🔴 真因: `Capacitor.registerPlugin` は native に存在しない。**
+   - 裏取り: `@capacitor/ios` の `assets/native-bridge.js` を grep → 注入されるのは `Plugins` / `isPluginAvailable` / `addListener` などで **`registerPlugin` は無い**（あれは npm `@capacitor/core` 側の API ＝**バンドラ前提**。我々はバンドラ無し運用）。
+   - さらに `JSExport.swift` を読むと、**登録済みプラグインごとに document-start でこう注入**していた:
+     `var p = (a.Plugins = a.Plugins || {}); var t = (p['SpeechRecognition'] = {}); t.addListener = ...` ＋ 宣言した `pluginMethods`。
+     → **`Capacitor.Plugins.<jsName>` が本命**。`registerPlugin` を呼べば必ず TypeError。
+   - **あの日は既にこの罠を踏んで学習済みだった**: index.html の実コードは
+     `(_cap.Plugins && _cap.Plugins.PhotoLibrary) || (typeof _cap.registerPlugin === 'function' ? _cap.registerPlugin('PhotoLibrary') : null)`。
+     私は app-shortcuts の **doc コメント**（「registerPlugin として直接アクセスする」）だけを読んで真似し、**実際の呼び出し箇所を読まなかった**。
+2. **🔴 設計欠陥: 音声の失敗がフォームごと殺していた。**
+   - その TypeError が index.html のインラインスクリプトを止め、**それ以降の全リスナー登録が飛んだ**。だから**音声と何の関係もない「保存」「クリア」まで死んだ**。**背骨①「フォームが単一の真実」の違反**——音声はフォームの補助であって前提ではない。
+
+**対処**
+- `nativePlugin(C, name)` を transcriber.js / adapters/calendar.js に追加＝**Plugins.X が本命・registerPlugin は「あれば使う」保険**（あの日と同じ形）。
+- **createTranscriber は何があっても throw しない**（native 失敗時は理由を `.nativeFailure` に入れて web へフォールバック）。テキスト送信（`send()`）も**転写層に依存させず** `onUtterance` を直接呼ぶ＝音声が全滅してもフォームは完全に使える。
+- **画面に診断を出す**（`<details>「診断」`）: 環境（native/web）・音声エンジン・native 失敗理由・4層の読込・**初期化が最後まで通ったか**・捕捉した全エラー。**head の自己完結コードで実装**＝診断は「診断される側」に依存しない（本体が全滅しても出る）。`window.addEventListener('error', …, true)` で `<script>` の読込失敗（resource error）も拾う。エラーがあれば自動で開く。
+- **`tests/transcriber.test.js` 6本を追加**して固定（registerPlugin 無し native／addListener が throw／Plugins.X 優先／simulate は native 全滅でも動く）。
+
+**ハマったところ（切り分けの記録）**
+- 「?v= が native の WebView で効かないのでは」と疑い `WebViewAssetHandler.swift` を確認 → `let stringToLoad = url.path`（**クエリを含まない**）＋ `Cache-Control: no-cache` → **v10 の ?v= は無罪**と確認して次へ進めた。**疑いを1つずつ潰す**のが速い。
+
+**結果**
+- テスト 98/98（parser 72 + schema 14 + transcriber 6 + version 6）。preview E2E: **実機と同じ形の Capacitor 偽装**（Plugins.X あり・registerPlugin 無し）→ engine=sfspeech・throw なし／最悪ケース（両方無し）→ web へフォールバック＋理由記録・throw なし／全ボタン生存・診断パネル表示・初期化完了・console 0。
+
+**教訓**
+- **他プロジェクトの資産は「コメント」でなく「実際に動いている呼び出し箇所」を読む。** v10（BUILD 運用の前提＝単一ファイルを見落とし）に続き**2度目の同型ミス**。あの日には答えが最初から書いてあった。
+- **補助機能の失敗が本体を殺す構造を作らない。** 「保存とクリアまで死んだ」のは音声のバグではなく**私の初期化設計のバグ**。ユーザーの報告（「保存、クリアすら無反応」）の "すら" が、単なる音声の不具合でないことを示す最良の手がかりだった。
+- **実機にコンソールが無い環境では、診断を画面に出すのが最優先の投資。** 1回の確認に Codemagic 15分＋TestFlight 処理がかかる＝盲目のまま回すと破滅的に遅い。
+
 ## v12 — 🎉 初回 Codemagic ビルド成功→TestFlight 1.0 配信＋輸出コンプライアンスを恒久回答 (2026-07-16)
 
 **背景 / 結果**
