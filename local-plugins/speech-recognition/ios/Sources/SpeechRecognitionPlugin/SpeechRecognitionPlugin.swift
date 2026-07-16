@@ -37,6 +37,10 @@ public class SpeechRecognitionPlugin: CAPPlugin, CAPBridgedPlugin {
     private var finalizeTimer: Timer?
     private var lastPartial = ""      // 確定の保険に使う最後の途中結果
     private var finished = false      // final/error を JS へ二重に流さないためのガード
+    /// 話し終わってから確定するまでの無音（秒）。JS の詳細設定 silenceMs から渡る（v19）。
+    /// 既定 1.8s は v15/v16 の決め打ち＝「長い=待たされる/短い=切られる」は実機でしか分からないと
+    /// 明言していた箇所なので、ユーザーが自分で調整できるようにした。
+    private var silenceSec: TimeInterval = 1.8
 
     private func debug(_ msg: String) {
         notifyListeners("debug", data: ["msg": msg])
@@ -50,6 +54,10 @@ public class SpeechRecognitionPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     @objc func start(_ call: CAPPluginCall) {
+        // 詳細設定（v19）。範囲外は既定に丸める＝壊れた設定でも動く
+        if let ms = call.getDouble("silenceMs"), ms >= 500, ms <= 10000 {
+            silenceSec = ms / 1000
+        }
         SFSpeechRecognizer.requestAuthorization { [weak self] auth in
             guard let self = self else { return }
             guard auth == .authorized else {
@@ -111,8 +119,8 @@ public class SpeechRecognitionPlugin: CAPPlugin, CAPBridgedPlugin {
             audioEngine = engine
             request = req
             notifyListeners("state", data: ["state": "listening"])
-            debug("開始 onDevice=\(onDevice)")
-            armSilenceTimer(seconds: 6.0) // 無音のまま6秒 → 打ち切り
+            debug("開始 onDevice=\(onDevice) 無音\(String(format: "%.1f", silenceSec))s")
+            armSilenceTimer(seconds: 6.0) // 一言も聞こえないまま6秒 → 打ち切り（設定とは別）
 
             task = recognizer.recognitionTask(with: req) { [weak self] result, error in
                 guard let self = self else { return }
@@ -125,7 +133,7 @@ public class SpeechRecognitionPlugin: CAPPlugin, CAPBridgedPlugin {
                         } else {
                             self.lastPartial = text
                             self.notifyListeners("interim", data: ["text": text])
-                            self.armSilenceTimer(seconds: 1.8) // 部分結果が止まって1.8秒 → 発話終わり
+                            self.armSilenceTimer(seconds: self.silenceSec) // 部分結果が止まって N 秒 → 発話終わり
                         }
                     }
                     if let error = error {

@@ -56,9 +56,10 @@
     return {
       available: true,
       engine: 'sfspeech',
-      start() {
+      // opts.silenceMs: 話し終わってから確定するまでの無音（v19 の設定。native へ渡す）
+      start(opts) {
         try {
-          plugin.start().catch((e) => {
+          plugin.start(opts || {}).catch((e) => {
             listening = false;
             h.onState('idle');
             h.onError((e && e.message) || String(e));
@@ -66,7 +67,7 @@
         } catch (e) { h.onError((e && e.message) || String(e)); }
       },
       stop() { try { plugin.stop().catch(() => {}); } catch {} },
-      toggle() { listening ? this.stop() : this.start(); },
+      toggle(opts) { listening ? this.stop() : this.start(opts); },
       isListening: () => listening,
       simulate(text) { const t = String(text || '').trim(); if (t) h.onFinal(t, { engine: 'simulated' }); },
     };
@@ -111,7 +112,7 @@
     return {
       available: !!SR,
       engine: SR ? 'webspeech' : 'none',
-      start,
+      start, // opts（silenceMs 等）は web では効かない＝Web Speech API 側が無音判定を持つ
       stop,
       toggle() { listening ? stop() : start(); },
       isListening: () => listening,

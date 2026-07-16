@@ -41,7 +41,7 @@ window.__vcRenderDiag = function () {
   var rows = [];
   rows.push(['環境', native ? 'native (Capacitor)' : 'web ブラウザ']);
   rows.push(['音声エンジン', (window.__vcEngine || '(未初期化)') + (window.__vcNativeFailure ? ' ← native 失敗: ' + window.__vcNativeFailure : '')]);
-  var layers = ['VCStore', 'VCParser', 'VCTranscriber', 'VCAdapter']
+  var layers = ['VCSettings', 'VCStore', 'VCParser', 'VCTranscriber', 'VCAdapter']
     .map(function (n) { return (window[n] ? '✅' : '❌') + n; }).join(' ');
   rows.push(['層の読込', layers]);
   rows.push(['初期化', window.__vcInitDone ? '✅ 完了' : '❌ 途中で停止']);
@@ -147,6 +147,18 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
   .history-list .h-undo { margin-top: 6px; padding: 6px 12px; border: 1px solid var(--line); border-radius: 8px;
     background: transparent; color: var(--accent); font-size: 12px; cursor: pointer; font-family: inherit; }
   .history-list .h-undo:active { opacity: .6; }
+
+  /* ---- 詳細設定 ---- */
+  .set-item { padding: 12px 0; border-bottom: 1px solid var(--line); }
+  .set-item:last-child { border-bottom: none; }
+  .set-head { display: flex; align-items: center; gap: 10px; }
+  .set-head label { flex: 1; font-size: 14px; color: var(--ink); }
+  .set-item .set-hint { font-size: 11px; color: var(--sub); margin-top: 4px; line-height: 1.45; }
+  .set-item select { border: 1px solid var(--line); border-radius: 8px; padding: 5px 8px; font-size: 14px;
+    background: var(--card); color: var(--ink); font-family: inherit; }
+  .set-item input[type="checkbox"] { width: 20px; height: 20px; }
+  .set-native { font-size: 10px; color: var(--sub); border: 1px solid var(--line); border-radius: 4px;
+    padding: 1px 5px; margin-left: 6px; white-space: nowrap; }
   .history-actions { text-align: right; padding: 8px 0; }
   .history-actions button { border: none; background: transparent; color: var(--sub); font-size: 12px; cursor: pointer; }
 
@@ -236,6 +248,16 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
     </div>
   </details>
 
+  <!-- 詳細設定（v19）: 実機FBで「人によって望む挙動が違う」と分かった決定だけを露出する。
+       既定は全部これまでの実挙動＝触らない人の体験は変わらない -->
+  <details class="optional" id="settingsBox">
+    <summary>詳細設定</summary>
+    <div class="card2">
+      <div id="settingsList"></div>
+      <div class="history-actions"><button id="settingsReset" type="button">既定に戻す</button></div>
+    </div>
+  </details>
+
   <!-- 診断（v13）: 実機（iPhone）にコンソールが無いので、環境・層の読込・エラーを画面に出す。
        エラーがあれば自動で開く＝黙って壊れない -->
   <details class="optional" id="diagBox">
@@ -253,18 +275,24 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
      理由: この版文字列は index.html にしかないが、ロジックは別ファイル＝別キャッシュ。
      付けないと「フッタは新しいのにパーサは古い」という嘘の状態が成立する（v9 で実際に踏んだ）。
      index.html が更新されれば src の URL も変わる → JS も必ず新しく取り直される。 -->
-<script src="engine/schema.js?v=18"></script>
-<script src="engine/parser.js?v=18"></script>
-<script src="input/transcriber.js?v=18"></script>
-<script src="adapters/calendar.js?v=18"></script>
+<script src="engine/settings.js?v=19"></script>
+<script src="engine/schema.js?v=19"></script>
+<script src="engine/parser.js?v=19"></script>
+<script src="input/transcriber.js?v=19"></script>
+<script src="adapters/calendar.js?v=19"></script>
 <script>
 'use strict';
-const BUILD = 'v18：来歴から↩ワンタップで巻き戻し(意図せず新規になった時の逃げ道)｜v17：欄指定発話(終了22時·場所 立川)｜v16：空の確定を捨てない(実機で自動入力成立🎉)｜v15：補完確定＋Swift診断 · 2026-07-17';
+const BUILD = 'v19：詳細設定(新規扱い·手入力保護·欄ロック·任意欄の自動オープン·既定の長さ·無音の長さ)｜v18：来歴から↩巻き戻し｜v17：欄指定発話｜v16：空の確定を捨てない(実機で自動入力成立🎉) · 2026-07-17';
 console.log('BUILD:', BUILD);
 document.getElementById('build').textContent = BUILD;
 
+// ===== 詳細設定（v19）=====
+// engine は設定の保存先も UI も知らない＝述語で注入する（setLockSource と同じ流儀）
+const settings = VCSettings.createSettings();
+
 // ===== 共有状態（単一の真実） =====
 const store = VCStore.createDraftStore();
+store.setPolicySource((k) => settings.get(k));
 
 // ===== 描画は1つ: store → フォーム =====
 const FIELD_INPUT = {
@@ -300,8 +328,9 @@ function render(change) {
       void row.offsetWidth; // アニメ再発火
       row.classList.add('flash');
     }
-    // 任意欄に書かれたら畳みを開く（見えないところに書かない）
-    if (change.fields.some((f) => OPTIONAL_FIELDS.includes(f))) {
+    // 任意欄に書かれたら畳みを開く（見えないところに書かない）。設定で切れる＝
+    // SPEC §12「フォームのプレッシャー」＝“見なくてよさ”がノールックの前提
+    if (settings.get('autoOpenOptional') && change.fields.some((f) => OPTIONAL_FIELDS.includes(f))) {
       document.getElementById('optional').open = true;
     }
     if (change.skipped.length) {
@@ -487,7 +516,8 @@ window.__vcEngine = transcriber.engine;
 window.__vcNativeFailure = transcriber.nativeFailure || null;
 
 if (transcriber.available) {
-  micBtn.addEventListener('click', () => transcriber.toggle());
+  // 無音の長さは押すたびに設定から読む（設定変更が次の発話から効く）
+  micBtn.addEventListener('click', () => transcriber.toggle({ silenceMs: settings.get('silenceMs') }));
 } else {
   micBtn.disabled = true;
   micState.textContent = transcriber.nativeFailure
@@ -507,9 +537,61 @@ function send() {
   onUtterance(t, { engine: 'simulated' });
 }
 
+// ===== 詳細設定の描画 =====
+function renderSettings() {
+  const list = document.getElementById('settingsList');
+  list.innerHTML = '';
+  for (const d of settings.DEFS) {
+    const item = document.createElement('div');
+    item.className = 'set-item';
+    const head = document.createElement('div');
+    head.className = 'set-head';
+    const label = document.createElement('label');
+    label.setAttribute('for', `set-${d.key}`);
+    label.textContent = d.label;
+    if (d.native) {
+      // web（Pages）では効かない設定＝native の音声プラグインに渡す値だと明示する
+      const tag = document.createElement('span');
+      tag.className = 'set-native';
+      tag.textContent = 'アプリのみ';
+      label.append(' ', tag);
+    }
+    let input;
+    if (d.type === 'number') {
+      input = document.createElement('select');
+      for (const opt of d.options) {
+        const o = document.createElement('option');
+        o.value = String(opt);
+        o.textContent = d.fmt ? d.fmt(opt) : String(opt);
+        if (settings.get(d.key) === opt) o.selected = true;
+        input.appendChild(o);
+      }
+      input.addEventListener('change', () => settings.set(d.key, Number(input.value)));
+    } else {
+      input = document.createElement('input');
+      input.type = 'checkbox';
+      input.checked = !!settings.get(d.key);
+      input.addEventListener('change', () => settings.set(d.key, input.checked));
+    }
+    input.id = `set-${d.key}`;
+    head.append(label, input);
+    const hint = document.createElement('div');
+    hint.className = 'set-hint';
+    hint.textContent = d.hint;
+    item.append(head, hint);
+    list.appendChild(item);
+  }
+}
+document.getElementById('settingsReset').addEventListener('click', () => {
+  settings.resetAll();
+  renderSettings();
+  toast('詳細設定を既定に戻しました');
+});
+renderSettings();
+
 // ===== 保存: DraftEvent → アダプタ =====
 document.getElementById('save').addEventListener('click', async () => {
-  const res = VCAdapter.materialize(store.get(), new Date());
+  const res = VCAdapter.materialize(store.get(), new Date(), { defaultDurationMin: settings.get('defaultDurationMin') });
   if (!res.ok) { toast(`⚠ ${res.problems.join(' / ')}`); return; }
   const adapter = VCAdapter.pickAdapter();
   try {

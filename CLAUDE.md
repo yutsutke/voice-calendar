@@ -24,6 +24,7 @@ SPEC.md                  # 要件定義 v0（設計の正・背骨）
 index.html               # UI = フォーム描画 + 2入口の配線だけ（ロジックは持たない）。root が本体＝Pages 配信元
 engine/parser.js         # 解釈層: interpret(text, now) 純関数。確定的日本語日時パーサ（LLMなし）
 engine/schema.js         # 共有状態層: DraftEvent ストア + fieldState + 欄ロック（衝突ポリシー §8）
+engine/settings.js       # 詳細設定（v19）: 値の入れ物のみ・DOM も宿主も知らない。既定=従来挙動
 input/transcriber.js     # 転写層: WebSpeech(web/iOS Safari) / 将来 SFSpeechRecognizer プラグイン。simulate() でテキスト注入
 adapters/calendar.js     # 永続層: materialize(保存時既定値はここに集約) + ics(web) / eventkit(iOS,未実装)
 scripts/sync-web.mjs     # root の web 本体 → www/（Capacitor webDir）を生成。cap の前に必ず実行（npm run cap:sync）
@@ -34,7 +35,8 @@ local-plugins/           # ローカル Capacitor プラグイン（SPM）。命
 ios/                     # cap add ios の生成物をコミット（spike と同流儀）。Info.plist に権限4つ
 codemagic.yaml           # Mac なしビルド → TestFlight（あの日の実績ワークフロー）
 tests/parser.test.js     # パーサ単体テスト — 決め打ちルールはテストが仕様
-tests/schema.test.js     # 共有状態＋欄ロックのテスト（v3 の実バグの回帰込み）
+tests/schema.test.js     # 共有状態＋欄ロック＋設定注入のテスト（v3 の実バグの回帰込み）
+tests/settings.test.js   # 詳細設定（既定=従来挙動を固定・壊れた保存値でも動く）
 tests/transcriber.test.js# 転写層の「壊れ方」（v13: registerPlugin 無し native で throw しない・Plugins.X 優先）
 tests/version.test.js    # BUILD と script の ?v= の一致を強制（v10 の罠の再発防止）。`npm test` で全部走る
 .claude/launch.json      # dev サーバ (port 5275。5273=spike / 5274=madeleine / 8123=terrain-game と衝突回避)
@@ -46,6 +48,16 @@ tests/version.test.js    # BUILD と script の ?v= の一致を強制（v10 の
 - **BUILD は native 専用の変更でも上げる**: web が 1 バイトも変わらなくても、**フッタの BUILD が「実機に届いた TestFlight ビルドの識別子」**として機能するため（版表示に嘘をつかせない＝v10 の教訓）。
 - **web 実機確認 = GitHub Pages**: https://yutsutke.github.io/voice-calendar/ （main の root を配信）。push が実機確認の前提＝ワークフローの一部（あの日と同じ）。iPhone Safari の webkitSpeechRecognition で実発話を試す（PC にマイクが無いため実発話検証は iPhone が主戦場）。
 - **パーサの決め打ちルールを変えるときは tests/parser.test.js を必ず同時に更新**（テストがルールの仕様書）。
+
+## 🚨 詳細設定を足す基準（v19）
+
+**「あると便利そう」で設定を足さない**（SPEC §12「多様性が出る前に可変機構を作らない」）。足してよいのは **実機FBで実際に迷い・事故が起きた決定** だけ。
+
+- **各設定に `why`（なぜ設定になったか）を engine/settings.js に必ず書く** ＝ 将来「これ要る？」を判断できる。設定は足すより**消す方が難しい**。
+- **既定は必ず「これまでの実挙動」**＝触らない人の体験は1ミリも変わらない（tests/settings.test.js で固定）。
+- **engine に設定の保存先も UI も持ち込まない**: `store.setPolicySource(fn)` で述語を注入（`setLockSource` と同じ）＝中立スキーマの原則（SPEC §6）を守る。未注入なら既定で動く。
+- 壊れた保存値・未知のキーは**既定にフォールバック**して動く（黙って壊れない）。
+- native にしか効かない設定は UI に「アプリのみ」バッジを出す（web=Pages で触っても効かないため）。
 
 ## 🚨 黙って捨てない（v16 で実機が沈黙した場所）
 

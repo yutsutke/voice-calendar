@@ -25,7 +25,10 @@
 
   const pad2 = (n) => String(n).padStart(2, '0');
 
-  function materialize(draft, now) {
+  // opts.defaultDurationMin: 終了を言わなかった時に付ける長さ（既定 60分 = v1 の決め打ち。v19 で設定可能に）
+  function materialize(draft, now, opts) {
+    const durMin = (opts && typeof opts.defaultDurationMin === 'number' && opts.defaultDurationMin > 0)
+      ? opts.defaultDurationMin : 60;
     const problems = [];
     const warnings = [];
     if (!draft.startDate && !draft.startTime) {
@@ -61,9 +64,9 @@
           const [ey, emo, eda] = draft.endDate.split('-').map(Number);
           end = new Date(ey, emo - 1, eda, eh, em);
         } else end = new Date(y, mo - 1, da, eh, em);
-        if (end <= start) { end = new Date(start.getTime() + 60 * 60 * 1000); warnings.push('終了が開始以前だったため開始+1時間にしました'); }
+        if (end <= start) { end = new Date(start.getTime() + durMin * 60000); warnings.push(`終了が開始以前だったため開始+${durMin}分にしました`); }
       } else {
-        end = new Date(start.getTime() + 60 * 60 * 1000); // 既定: +1時間
+        end = new Date(start.getTime() + durMin * 60000); // 既定の長さ（設定 defaultDurationMin）
       }
     }
 

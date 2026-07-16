@@ -40,7 +40,22 @@
 
     const isEmptyVal = (f, v) => (f === 'allDay' ? v === false : !v);
     const emit = (change) => listeners.forEach((fn) => fn(change));
-    const isLocked = (f) => locks.has(f) || !!(lockSource && lockSource(f));
+
+    // 設定は「宿主に聞く」（v19）。engine は設定の保存先も UI も知らない＝中立のまま
+    // （setLockSource と同じ注入方式）。未注入なら既定＝これまでの実挙動。
+    let policySource = null;
+    const POLICY_DEFAULTS = { plainUtteranceIsNew: true, protectManualEdits: true, lockEditingField: true };
+    const policy = (k) => {
+      if (policySource) {
+        const v = policySource(k);
+        if (v !== undefined) return v;
+      }
+      return POLICY_DEFAULTS[k];
+    };
+
+    const isLocked = (f) => (policy('lockEditingField') ? (locks.has(f) || !!(lockSource && lockSource(f))) : false);
+    // 言い直しで掃除する欄か（v19: 手入力の保護は設定で切れる）
+    const shouldClear = (f) => origin[f] === 'voice' || (origin[f] === 'human' && !policy('protectManualEdits'));
 
     return {
       get: () => ({ ...draft }),
@@ -52,6 +67,8 @@
 
       // 宿主（UI）が「編集中か」の正を注入する。DOM なら activeElement 基準＝描画スキップと同じ根拠。
       setLockSource(fn) { lockSource = typeof fn === 'function' ? fn : null; },
+      // 宿主（UI）が詳細設定を注入する（v19）。fn(key) が undefined を返せば既定＝従来挙動。
+      setPolicySource(fn) { policySource = typeof fn === 'function' ? fn : null; },
 
       // 入口A: 人間の直接操作
       setByHuman(field, value) {
@@ -90,7 +107,7 @@
             fieldState[f] = 'confirmed';
             origin[f] = 'voice';
             written.push(f);
-          } else if (!targeted && origin[f] === 'voice' && !isLocked(f)) {
+          } else if (!targeted && policy('plainUtteranceIsNew') && shouldClear(f) && !isLocked(f)) {
             draft[f] = f === 'allDay' ? false : '';
             fieldState[f] = 'empty';
             origin[f] = null;

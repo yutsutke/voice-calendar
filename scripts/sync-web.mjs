@@ -9,7 +9,7 @@ const root = process.cwd();
 const out = join(root, 'www');
 
 // バンドルに含める web アセット（必要なものだけ。docs/tests/native プロジェクト等は含めない）。
-const ASSETS = ['index.html', 'engine', 'input', 'adapters'];
+const ASSETS = ['index.html', 'engine', 'input', 'adapters']; // engine/ 配下は settings/schema/parser を含む
 
 rmSync(out, { recursive: true, force: true });
 mkdirSync(out, { recursive: true });

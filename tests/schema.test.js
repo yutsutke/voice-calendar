@@ -215,6 +215,52 @@ t('不正な snapshot では restore が false を返す（黙って壊さない
   eq(s.get().title, 'A', 'state は無傷');
 });
 
+// ===== 詳細設定の注入（v19）: setPolicySource が実挙動を変えるか =====
+t('未注入なら既定＝これまでの実挙動（新規扱い・手入力保護・ロック）', () => {
+  const s = createDraftStore();
+  s.applyVoicePatch({ title: 'A', startTime: '15:00' }, 'x');
+  s.setByHuman('location', '駅前');
+  const r = s.applyVoicePatch({ title: 'B' }, 'y');
+  eq(r.cleared, ['startTime'], '音声欄は掃除');
+  eq(s.get().location, '駅前', '手入力は保護');
+});
+
+t('plainUtteranceIsNew=false なら掃除しない（消えるのが嫌な人向け）', () => {
+  const s = createDraftStore();
+  s.setPolicySource((k) => (k === 'plainUtteranceIsNew' ? false : undefined));
+  s.applyVoicePatch({ title: 'A', startTime: '15:00' }, 'x');
+  const r = s.applyVoicePatch({ title: 'B' }, 'y');
+  eq(r.cleared, [], '掃除されない');
+  eq(s.get().startTime, '15:00', '前の入力が残る');
+  eq(s.get().title, 'B', '言及した欄は更新される');
+});
+
+t('protectManualEdits=false なら手入力も掃除される', () => {
+  const s = createDraftStore();
+  s.setPolicySource((k) => (k === 'protectManualEdits' ? false : undefined));
+  s.setByHuman('location', '駅前');
+  s.applyVoicePatch({ title: 'A' }, 'x');
+  eq(s.get().location, '', '手入力も新規で消える');
+});
+
+t('lockEditingField=false なら編集中でも音声が書き込む', () => {
+  const s = createDraftStore();
+  s.setPolicySource((k) => (k === 'lockEditingField' ? false : undefined));
+  s.lock('title');
+  const r = s.applyVoicePatch({ title: '声' }, 'x');
+  eq(r.skipped, [], 'スキップされない');
+  eq(s.get().title, '声', '書き込まれる');
+  eq(s.getFieldState('title'), 'confirmed', 'locked 扱いにならない');
+});
+
+t('policySource が undefined を返した設定は既定にフォールバック', () => {
+  const s = createDraftStore();
+  s.setPolicySource(() => undefined); // 何も答えない注入
+  s.applyVoicePatch({ title: 'A', startTime: '15:00' }, 'x');
+  const r = s.applyVoicePatch({ title: 'B' }, 'y');
+  eq(r.cleared, ['startTime'], '既定どおり掃除される');
+});
+
 // ===== 来歴（SPEC §5-①: note に流し込まない） =====
 t('転写は来歴として貯まり、note には流し込まれない', () => {
   const s = createDraftStore();
