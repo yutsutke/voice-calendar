@@ -21,14 +21,17 @@
       rec.interimResults = true;
       rec.continuous = false; // 1回の押下 = 1発話。話し終わりで自動停止
       rec.onresult = (e) => {
-        let interim = '', final = '';
+        let interim = '', final = '', confidence = null;
         for (let i = e.resultIndex; i < e.results.length; i++) {
           const r = e.results[i];
-          if (r.isFinal) final += r[0].transcript;
-          else interim += r[0].transcript;
+          if (r.isFinal) {
+            final += r[0].transcript;
+            if (typeof r[0].confidence === 'number') confidence = r[0].confidence;
+          } else interim += r[0].transcript;
         }
         if (interim) h.onInterim(interim);
-        if (final) h.onFinal(final.trim(), { engine: 'webspeech' });
+        // confidence は来歴に残す: 「認識が悪いのか、解釈が悪いのか」の切り分け（SPEC §10）に使う
+        if (final) h.onFinal(final.trim(), { engine: 'webspeech', confidence });
       };
       rec.onend = () => { listening = false; h.onState('idle'); };
       rec.onerror = (e) => { listening = false; h.onState('idle'); h.onError(e.error || 'speech-error'); };

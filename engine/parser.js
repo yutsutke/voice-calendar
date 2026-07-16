@@ -8,9 +8,12 @@
 //
 // 確定として扱う決め打ちルール（テストで固定。変えるときはテストも変える）:
 //   - 素の曜日「金曜」= 直近の未来のその曜日（今日を含む）
-//   - 「来週X曜」= 次の月曜始まりの週の X 曜
-//   - 「今週X曜」で過去日になる場合 = 埋めない（素通し）
+//   - 「来週(の)X曜」= 次の月曜始まりの週の X 曜。「の」は挟んでよい（実発話FBより）
+//   - 「今週X曜」「先週X曜」「昨日」「一昨日」= 過去の日付も埋める
+//     （実発話FBで「昨日の11時半暇だった」＝過去の実績を記録する用途が実在した）
 //   - 「N日」= 今月の N 日（今日より前なら来月）／「N月N日」= 今年（過去なら来年）
+//   - 「N日後/N週間後/Nか月後/N年後」= 相対日。数は算用数字と漢数字（一〜九十九）
+//     か月後の月末越えは月末に丸める（1/31 の1か月後 = 2/28）
 //   - 時刻だけで日付がない場合 = その時刻がまだ来ていなければ今日、過ぎていれば明日
 //   - 修飾なしの 1〜6 時（「3時」）= 午前/午後が曖昧 → 埋めない（素通し）。7〜24時は文字どおり
 //   - 「XからYまで」で Y ≤ X かつ X が18時以降 = 日またぎとして翌日扱い。それ以外は end を埋めない
@@ -38,6 +41,24 @@
   // 月曜=0 … 日曜=6（日本の週感覚。「来週」= 次の月曜始まりの週）
   const weekIdxMon = (d) => (d.getDay() + 6) % 7;
   const JP_WEEKDAY = { 月: 0, 火: 1, 水: 2, 木: 3, 金: 4, 土: 5, 日: 6 };
+  // 月単位の加算は月末に丸める（1/31 の1か月後 = 2/28。JS Date の自然なオーバーフロー 3/3 は使わない）
+  const addMonthsClamped = (d, n) => {
+    const y = d.getFullYear(), m = d.getMonth() + n;
+    const last = new Date(y, m + 1, 0).getDate();
+    return new Date(y, m, Math.min(d.getDate(), last));
+  };
+  // 漢数字（一〜九十九）→ 整数。算用数字はそのまま
+  const jpNum = (s) => {
+    if (/^\d+$/.test(s)) return +s;
+    const D = { 一: 1, 二: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9 };
+    const i = s.indexOf('十');
+    if (i < 0) return D[s] || null;
+    const tens = i === 0 ? 1 : D[s.slice(0, i)];
+    const rest = s.slice(i + 1);
+    const ones = rest ? D[rest] : 0;
+    if (tens == null || ones == null) return null;
+    return tens * 10 + ones;
+  };
 
   // ---------- 本体 ----------
   function interpret(rawText, now) {
@@ -102,37 +123,48 @@
       // new Date(y, m+1, 0) = その月の最終日
       pushCand(new Date(today.getFullYear(), today.getMonth() + shift + 1, 0), a, b);
     }
-    // 4) 相対日（長いものから）
+    // 4) N{日|週間|か月|年}後（相対。実発話FB「一か月後旅行」から。素のN日より先に拾う）
+    for (const { m, a, b } of findAll(/([0-9]+|[一二三四五六七八九]?十[一二三四五六七八九]?|[一二三四五六七八九])(日|週間|[かヶヵカケ箇]月|年)後/g)) {
+      const n = jpNum(m[1]);
+      if (n == null || n === 0) continue;
+      const unit = m[2];
+      let d;
+      if (unit === '日') d = addDays(today, n);
+      else if (unit === '週間') d = addDays(today, n * 7);
+      else if (unit === '年') d = addMonthsClamped(today, n * 12);
+      else d = addMonthsClamped(today, n); // ◯か月
+      pushCand(d, a, b);
+    }
+    // 5) 相対日（長いものから。一昨日は昨日を、明々後日は明後日/明日を含むので順序が大事）
+    //    過去（昨日/一昨日）も埋める＝実績の記録という用途が実在（実発話FB）
     const REL = [
+      [/一昨日|おととい/g, -2],
       [/明々後日|明明後日|しあさって/g, 3],
       [/明後日|あさって/g, 2],
+      [/昨日|きのう/g, -1],
       [/明日|あした|あす/g, 1],
       [/今日|きょう|本日/g, 0],
     ];
     for (const [re, days] of REL) {
       for (const { a, b } of findAll(re)) pushCand(addDays(today, days), a, b);
     }
-    // 5) 曜日（再来週/来週/今週/素）
-    for (const { m, a, b } of findAll(/(再来週|来週|今週)?(月|火|水|木|金|土|日)曜日?/g)) {
+    // 6) 曜日（再来週/来週/今週/先週/素。「来週の月曜」の「の」も許す＝実発話FB）
+    for (const { m, a, b } of findAll(/(再来週|来週|今週|先週)?の?(月|火|水|木|金|土|日)曜日?/g)) {
       const scope = m[1] || '';
       const wd = JP_WEEKDAY[m[2]];
       const thisMonday = addDays(today, -weekIdxMon(today));
       let d;
       if (scope === '来週') d = addDays(thisMonday, 7 + wd);
       else if (scope === '再来週') d = addDays(thisMonday, 14 + wd);
-      else if (scope === '今週') {
-        d = addDays(thisMonday, wd);
-        if (d < today) {
-          notes.push(`「${m[0]}」は過去の日付になるため入れていません`);
-          continue; // consume しない＝タイトルに残って見える
-        }
-      } else {
+      else if (scope === '先週') d = addDays(thisMonday, -7 + wd);
+      else if (scope === '今週') d = addDays(thisMonday, wd); // 過去でも埋める（実績記録の用途）
+      else {
         // 素の曜日 = 直近の未来（今日を含む）
         d = addDays(today, (wd - weekIdxMon(today) + 7) % 7);
       }
       pushCand(d, a, b);
     }
-    // 6) 素のN日（今月、過ぎていれば来月）。「N日間」「7月N日」等は除外/消費済み
+    // 7) 素のN日（今月、過ぎていれば来月）。「N日間」「7月N日」「N日後」等は除外/消費済み
     for (const { m, a, b } of findAll(/(\d{1,2})日(?![間時分月])/g)) {
       const da = +m[1];
       if (da < 1 || da > 31) continue;

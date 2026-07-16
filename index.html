@@ -68,6 +68,18 @@
   details.optional[open] > summary::before { content: '▾ '; }
   details.optional .card2 { background: var(--card); border-radius: 16px; padding: 2px 16px; box-shadow: 0 1px 3px rgb(0 0 0 / .06); }
 
+  /* ---- 来歴 ---- */
+  .history-list { font-size: 13px; }
+  .history-list .h-item { padding: 9px 0; border-bottom: 1px solid var(--line); }
+  .history-list .h-item:last-child { border-bottom: none; }
+  .history-list .h-time { color: var(--sub); font-size: 11px; margin-right: 6px; }
+  .history-list .h-text { color: var(--ink); overflow-wrap: anywhere; }
+  .history-list .h-result { color: var(--sub); font-size: 12px; margin-top: 2px; }
+  .history-list .h-note { color: var(--warn); }
+  .history-list .h-empty { color: var(--sub); padding: 10px 0; }
+  .history-actions { text-align: right; padding: 8px 0; }
+  .history-actions button { border: none; background: transparent; color: var(--sub); font-size: 12px; cursor: pointer; }
+
   /* ---- 保存 ---- */
   .actions { display: flex; gap: 10px; margin-top: 16px; }
   #save { flex: 1; padding: 14px; border: none; border-radius: 14px; background: var(--accent); color: var(--accent-ink); font-size: 16px; font-weight: 600; cursor: pointer; }
@@ -144,6 +156,16 @@
     <button id="clear" type="button">クリア</button>
   </div>
 
+  <!-- 来歴（SPEC §5-①）: 音声の生テキストと解釈結果の記録。
+       「言ったのに変な値が入った」の原因切り分け（認識か解釈か）はここを見る -->
+  <details class="optional" id="historyBox">
+    <summary>来歴（最近の発話と解釈）</summary>
+    <div class="card2">
+      <div id="historyList" class="history-list"></div>
+      <div class="history-actions"><button id="historyClear" type="button">来歴を消す</button></div>
+    </div>
+  </details>
+
   <footer id="build"></footer>
 </main>
 <div class="toast" id="toast"></div>
@@ -154,7 +176,7 @@
 <script src="adapters/calendar.js"></script>
 <script>
 'use strict';
-const BUILD = 'v4：rootに本体→sync-webでwww生成・GitHub Pages配信(iPhone実発話へ)｜v3：欄ロック一本化｜v2：クリアで畳む｜v1：一本道(web) · 2026-07-16';
+const BUILD = 'v5：実発話FB第1回反映(昨日/一昨日/来週の◯曜/N後·漢数字)＋来歴パネル｜v4：Pages配信｜v3：欄ロック一本化｜v2：クリアで畳む｜v1：一本道 · 2026-07-16';
 console.log('BUILD:', BUILD);
 document.getElementById('build').textContent = BUILD;
 
@@ -233,7 +255,7 @@ const notesEl = document.getElementById('notes');
 const micBtn = document.getElementById('mic');
 const micState = document.getElementById('micState');
 
-function onUtterance(text) {
+function onUtterance(text, meta) {
   transcriptEl.innerHTML = '';
   const span = document.createElement('span');
   span.className = 'final';
@@ -241,16 +263,80 @@ function onUtterance(text) {
   transcriptEl.appendChild(span);
   const { patch, notes } = VCParser.interpret(text, new Date());
   notesEl.textContent = notes.join(' ／ ');
+  let skipped = [];
   if (Object.keys(patch).length === 0) {
     toast('解釈できる項目がありませんでした（フォームは手で入力できます）');
+  } else {
+    skipped = store.applyVoicePatch(patch, text).skipped;
+  }
+  logHistory({ at: Date.now(), text, conf: meta && meta.confidence, patch, notes, skipped });
+}
+
+// ===== 来歴（SPEC §5-①）: 生テキスト＋解釈結果を端末内に記録（外部送信しない） =====
+const HISTORY_KEY = 'vc_history_v1';
+function loadHistory() { try { return JSON.parse(localStorage.getItem(HISTORY_KEY)) || []; } catch { return []; } }
+function logHistory(entry) {
+  const h = loadHistory();
+  h.unshift(entry);
+  try { localStorage.setItem(HISTORY_KEY, JSON.stringify(h.slice(0, 30))); } catch {}
+  renderHistory();
+}
+function patchSummary(patch, skipped) {
+  const parts = [];
+  if ('title' in patch) parts.push(`タイトル「${patch.title}」`);
+  if (patch.startDate || patch.startTime) parts.push(`開始 ${[patch.startDate, patch.startTime].filter(Boolean).join(' ')}`);
+  if (patch.endDate || patch.endTime) parts.push(`終了 ${[patch.endDate, patch.endTime].filter(Boolean).join(' ')}`);
+  if (patch.allDay) parts.push('終日');
+  let s = parts.length ? `→ ${parts.join('・')}` : '→ 解釈できる項目なし';
+  if (skipped && skipped.length) s += `／✋スキップ: ${skipped.map(fieldLabel).join('・')}`;
+  return s;
+}
+function renderHistory() {
+  const list = document.getElementById('historyList');
+  list.innerHTML = '';
+  const h = loadHistory();
+  if (!h.length) {
+    const d = document.createElement('div');
+    d.className = 'h-empty';
+    d.textContent = 'まだ発話がありません';
+    list.appendChild(d);
     return;
   }
-  store.applyVoicePatch(patch, text);
+  for (const e of h) {
+    const item = document.createElement('div');
+    item.className = 'h-item';
+    const line1 = document.createElement('div');
+    const time = document.createElement('span');
+    time.className = 'h-time';
+    const dt = new Date(e.at);
+    time.textContent = `${dt.getMonth() + 1}/${dt.getDate()} ${String(dt.getHours()).padStart(2, '0')}:${String(dt.getMinutes()).padStart(2, '0')}`
+      + (typeof e.conf === 'number' ? ` 認識${Math.round(e.conf * 100)}%` : '');
+    const text = document.createElement('span');
+    text.className = 'h-text';
+    text.textContent = `🗣 ${e.text}`;
+    line1.append(time, text);
+    const line2 = document.createElement('div');
+    line2.className = 'h-result';
+    line2.textContent = patchSummary(e.patch || {}, e.skipped);
+    item.append(line1, line2);
+    if (e.notes && e.notes.length) {
+      const n = document.createElement('div');
+      n.className = 'h-result h-note';
+      n.textContent = `⚠ ${e.notes.join(' ／ ')}`;
+      item.appendChild(n);
+    }
+    list.appendChild(item);
+  }
 }
+document.getElementById('historyClear').addEventListener('click', () => {
+  try { localStorage.removeItem(HISTORY_KEY); } catch {}
+  renderHistory();
+});
+renderHistory();
 
 const transcriber = VCTranscriber.createTranscriber({
   onInterim(t) { transcriptEl.textContent = `… ${t}`; },
-  onFinal(t) { onUtterance(t); },
+  onFinal(t, meta) { onUtterance(t, meta); },
   onState(s) {
     micBtn.classList.toggle('listening', s === 'listening');
     micState.textContent = s === 'listening' ? '聞いています…（もう一度押すと停止）' : '';

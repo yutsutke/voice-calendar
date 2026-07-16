@@ -55,7 +55,20 @@ check('金曜 飲み会', { title: '飲み会', startDate: '2026-07-17' }); // �
 check('月曜日の朝9時 ゴミ出し', { title: 'ゴミ出し', startDate: '2026-07-20', startTime: '09:00' });
 check('今週金曜15時 面談', { title: '面談', startDate: '2026-07-17', startTime: '15:00' });
 check('再来週水曜 出社', { title: '出社', startDate: '2026-07-29' });
-check('今週月曜 レビュー', { title: '今週月曜 レビュー', startDate: undefined }); // 過去 → 素通し（発話は見えるまま）
+check('今週月曜 レビュー', { title: 'レビュー', startDate: '2026-07-13' }); // 過去でも埋める（実績記録の用途が実在＝実発話FB）
+check('先週の金曜日 飲み会だった', { title: '飲み会だった', startDate: '2026-07-10' });
+
+// ===== 実発話FB 第1回（2026-07-16 iPhone）から追加 =====
+check('昨日の11時半暇だった', { title: '暇だった', startDate: '2026-07-15', startTime: '11:30' }); // FB①: 昨日が無く「明日」になっていた
+check('一昨日ジム', { title: 'ジム', startDate: '2026-07-14' }); // FB②
+check('来週の月曜日旅行', { title: '旅行', startDate: '2026-07-20' }); // FB③: 「の」未対応で素の月曜として解釈されていた
+check('来週の金曜旅行', { title: '旅行', startDate: '2026-07-24' }); // 「の」対応の本丸: 素の金曜(7/17)と1週間違う
+check('一か月後旅行', { title: '旅行', startDate: '2026-08-16' }); // FB④: 相対日＋漢数字が無く素通しだった
+check('1ヶ月後 契約更新', { title: '契約更新', startDate: '2026-08-16' });
+check('2週間後 検診', { title: '検診', startDate: '2026-07-30' });
+check('三日後 打ち合わせ', { title: '打ち合わせ', startDate: '2026-07-19' });
+check('十日後 締め切り', { title: '締め切り', startDate: '2026-07-26' });
+check('1ヶ月後 家賃', { title: '家賃', startDate: '2026-02-28' }, { now: new Date(2026, 0, 31, 10, 0) }); // 月末越えは月末に丸める
 
 // ===== 時刻の形 =====
 check('明日15時半 カフェ', { title: 'カフェ', startDate: '2026-07-17', startTime: '15:30' });
