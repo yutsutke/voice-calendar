@@ -11,7 +11,11 @@
 //   - 「来週(の)X曜」= 次の月曜始まりの週の X 曜。「の」は挟んでよい（実発話FBより）
 //   - 「今週X曜」「先週X曜」「昨日」「一昨日」= 過去の日付も埋める
 //     （実発話FBで「昨日の11時半暇だった」＝過去の実績を記録する用途が実在した）
-//   - 「N日」= 今月の N 日（今日より前なら来月）／「N月N日」= 今年（過去なら来年）
+//   - **言っていない上位単位（年・月）は「今日に最も近いもの」を選ぶ**（v8。過去も一級市民＝v5の学び）
+//     「N月(の)N日」= 最も近い年（7/16 に「6月30日」→ 16日前の 6/30。「1月5日」→ 173日先の来年 1/5）
+//     「N日」= 最も近い月（7/16 に「20日」→ 今月20日。7/28 に「5日」→ 8日後の来月5日）
+//     存在しない日付（2月30日 等）は埋めない（素通し）
+//     ※ 半年前後の中間帯は本質的に曖昧（「3月1日」＝4か月前 or 8か月先）。v1 の 'guessed'（仮）表示の第一候補
 //   - 「N日後/N週間後/Nか月後/N年後」= 相対日。数は算用数字と漢数字（一〜九十九）
 //     か月後の月末越えは月末に丸める（1/31 の1か月後 = 2/28）
 //   - 時刻だけで日付がない場合 = その時刻がまだ来ていなければ今日、過ぎていれば明日
@@ -46,6 +50,16 @@
     const y = d.getFullYear(), m = d.getMonth() + n;
     const last = new Date(y, m + 1, 0).getDate();
     return new Date(y, m, Math.min(d.getDate(), last));
+  };
+  // 年・月を言っていない日付は「今日に最も近い候補」を選ぶ（v8）。
+  //   makeDate(k) = k 年（または k か月）ずらした候補、valid(c) = その候補が実在するか。
+  //   候補が全て無効（2月30日 等）なら null → 呼び手は素通しする（AI は創作しない）。
+  // 「過去なら未来へ倒す」を捨てた理由: 昨日/一昨日は過去に入るのに 6月30日 は来年に飛ぶ、という
+  // 非一貫が実発話FBで露呈した（この製品は予定だけでなく実績も声で入れる＝v5 の学び）。
+  const nearestBy = (today, makeDate, valid) => {
+    const cands = [-1, 0, 1].map(makeDate).filter(valid);
+    if (!cands.length) return null;
+    return cands.reduce((best, c) => (Math.abs(c - today) < Math.abs(best - today) ? c : best));
   };
   // 漢数字（一〜九十九）→ 整数。算用数字はそのまま
   const jpNum = (s) => {
@@ -96,9 +110,13 @@
     // ===== 日付候補の収集（優先順。span 重複は先勝ち） =====
     // 候補 = { date: Date, a, b }。複数候補が「別の日」を指したら曖昧 → 日付は埋めない。
     const dateCands = [];
-    const overlapsCand = (a, b) => dateCands.some((c) => a < c.b && c.a < b);
+    // 無効な日付（2月30日 等）のスパン: 消費しない（タイトルに残して見せる＝素通し）が、
+    // 後続パターンによる再解釈は禁止する。これが無いと「2月30日」の「30日」を素のN日が拾い、
+    // 言っていない 7/30 を創作してしまう（背骨: AI は創作しない）。
+    const blocked = [];
+    const overlaps = (list, a, b) => list.some((c) => a < c.b && c.a < b);
     const pushCand = (date, a, b) => {
-      if (!isFree(a, b) || overlapsCand(a, b)) return;
+      if (!date || !isFree(a, b) || overlaps(dateCands, a, b) || overlaps(blocked, a, b)) return;
       dateCands.push({ date, a, b });
     };
 
@@ -107,8 +125,13 @@
     for (const { m, a, b } of findAll(/(\d{1,2})月の?(\d{1,2})日/g)) {
       const mo = +m[1], da = +m[2];
       if (mo < 1 || mo > 12 || da < 1 || da > 31) continue;
-      let d = new Date(today.getFullYear(), mo - 1, da);
-      if (d < today) d = new Date(today.getFullYear() + 1, mo - 1, da);
+      // 年は言っていない → 最も近い年（過去も可）。2月30日 等の存在しない日は素通し
+      const d = nearestBy(
+        today,
+        (k) => new Date(today.getFullYear() + k, mo - 1, da),
+        (c) => c.getMonth() === mo - 1 && c.getDate() === da
+      );
+      if (!d) { blocked.push({ a, b }); notes.push(`「${m[0]}」は存在しない日付なので入れていません`); continue; }
       pushCand(d, a, b);
     }
     // 2) 来月N日 / 今月N日
@@ -118,13 +141,11 @@
       if (da < 1 || da > 31) continue;
       pushCand(new Date(today.getFullYear(), today.getMonth() + shift, da), a, b);
     }
-    // 3) N月の末（「7月の末」「9月末」。過去なら来年）
+    // 3) N月の末（「7月の末」「9月末」）。年は言っていない → 最も近い年
     for (const { m, a, b } of findAll(/(\d{1,2})月の?末/g)) {
       const mo = +m[1];
       if (mo < 1 || mo > 12) continue;
-      let d = new Date(today.getFullYear(), mo, 0); // = mo 月の最終日
-      if (d < today) d = new Date(today.getFullYear() + 1, mo, 0);
-      pushCand(d, a, b);
+      pushCand(nearestBy(today, (k) => new Date(today.getFullYear() + k, mo, 0), () => true), a, b); // new Date(y, mo, 0) = mo 月の最終日
     }
     // 3.5) 月末（来月の末 / 今月の末 / 来月末 / 今月末 / 月末。「の」を許す＝実発話FB。
     //      素の「末」は拾わない＝「週末」を月末と誤読しないため）
@@ -175,12 +196,16 @@
       }
       pushCand(d, a, b);
     }
-    // 7) 素のN日（今月、過ぎていれば来月）。「N日間」「7月N日」「N日後」等は除外/消費済み
+    // 7) 素のN日。月は言っていない → 最も近い月（7/16 の「20日」= 今月20日、7/28 の「5日」= 来月5日）。
+    //    「N日間」「7月N日」「N日後」等は除外/消費済み。31日 が無い月の候補は valid で弾く
     for (const { m, a, b } of findAll(/(\d{1,2})日(?![間時分月])/g)) {
       const da = +m[1];
       if (da < 1 || da > 31) continue;
-      const shift = da < today.getDate() ? 1 : 0;
-      pushCand(new Date(today.getFullYear(), today.getMonth() + shift, da), a, b);
+      pushCand(nearestBy(
+        today,
+        (k) => new Date(today.getFullYear(), today.getMonth() + k, da),
+        (c) => c.getDate() === da
+      ), a, b);
     }
 
     // 日付の確定判定：ユニークな日が1つだけなら採用（同じ日を2回言うのは OK）
