@@ -102,8 +102,9 @@
       dateCands.push({ date, a, b });
     };
 
-    // 1) N月N日（過去なら来年）
-    for (const { m, a, b } of findAll(/(\d{1,2})月(\d{1,2})日/g)) {
+    // 1) N月(の)N日（過去なら来年。「7月の28日」の「の」も許す＝実発話FB。
+    //    「の」未対応だと月が黙って無視され、素のN日として解釈される＝「12月の5日」が8月になる事故）
+    for (const { m, a, b } of findAll(/(\d{1,2})月の?(\d{1,2})日/g)) {
       const mo = +m[1], da = +m[2];
       if (mo < 1 || mo > 12 || da < 1 || da > 31) continue;
       let d = new Date(today.getFullYear(), mo - 1, da);
