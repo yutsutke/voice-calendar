@@ -29,7 +29,8 @@ adapters/calendar.js     # 永続層: materialize(保存時既定値はここに
 scripts/sync-web.mjs     # root の web 本体 → www/（Capacitor webDir）を生成。cap の前に必ず実行（npm run cap:sync）
 www/                     # 生成物（gitignore）。手で編集しない
 tests/parser.test.js     # パーサ単体テスト — 決め打ちルールはテストが仕様
-tests/schema.test.js     # 共有状態＋欄ロックのテスト（v3 の実バグの回帰込み）。`npm test` で両方走る
+tests/schema.test.js     # 共有状態＋欄ロックのテスト（v3 の実バグの回帰込み）
+tests/version.test.js    # BUILD と script の ?v= の一致を強制（v10 の罠の再発防止）。`npm test` で全部走る
 .claude/launch.json      # dev サーバ (port 5275。5273=spike / 5274=madeleine / 8123=terrain-game と衝突回避)
 ```
 
@@ -64,7 +65,9 @@ tests/schema.test.js     # 共有状態＋欄ロックのテスト（v3 の実�
 - `git add` は個別ファイル指定（`-A` を避ける）。
 - **例外（要確認）**: force push / `reset --hard` / ブランチ削除 / `--no-verify` / 新規 GitHub リポ作成・公開設定。
 - **セッションを閉じる前に TODO.md（現在地）と CHANGELOG.md（vN 追記・最新が上）を必ず更新**。CHANGELOG の型は photo-memory-spike と同じ（背景 / 設計判断 / ハマったところ / 結果・観察 / 教訓 / 残課題）。
-- `www/index.html` 冒頭の `const BUILD` を commit ごとに上げる（キャッシュ切り分け用。コンソールとフッタに出る）。
+- **`index.html` 冒頭の `const BUILD` を commit ごとに上げ、同時に script の `?v=N` も同じ数字にする**（`npm test` の version.test.js が一致を強制＝忘れると落ちる）。
+  - ⚠️ **なぜ両方必要か（v10 で踏んだ罠）**: BUILD は index.html にしか無いが、ロジックは engine/ input/ adapters/ の**別ファイル＝別キャッシュ**。`?v=` が無いと「index.html は新しいのに parser.js は古い」＝**フッタが新版だと嘘をつくのに挙動は旧版**になる。あの日は単一 index.html なのでこの罠が無い＝**運用を移植する時は前提ごと確認する**。
+- **実機 FB を受けたら、まず切り分け**: ①フッタの BUILD 版 ②それでも怪しければ**オリジンを直接叩く**（`Invoke-WebRequest https://yutsutke.github.io/voice-calendar/engine/parser.js` で該当コードの有無）。「キャッシュでしょう」と決めつけない——v10 は自分の設計欠陥だった。Pages CDN は `max-age=600`（push 後10分は旧版が出る）。
 
 ## スコープを膨らませない歯止め（SPEC §3「v0 で作らない」）
 
