@@ -176,7 +176,7 @@
 <script src="adapters/calendar.js"></script>
 <script>
 'use strict';
-const BUILD = 'v5：実発話FB第1回反映(昨日/一昨日/来週の◯曜/N後·漢数字)＋来歴パネル｜v4：Pages配信｜v3：欄ロック一本化｜v2：クリアで畳む｜v1：一本道 · 2026-07-16';
+const BUILD = 'v6：発話=言い直し(前回の音声欄は--:--に掃除·手入力は残す)＋今月の末/N月の末/N後の今日｜v5：実発話FB第1回＋来歴｜v4：Pages配信｜v3：欄ロック一本化｜v2：クリアで畳む · 2026-07-16';
 console.log('BUILD:', BUILD);
 document.getElementById('build').textContent = BUILD;
 
@@ -263,13 +263,16 @@ function onUtterance(text, meta) {
   transcriptEl.appendChild(span);
   const { patch, notes } = VCParser.interpret(text, new Date());
   notesEl.textContent = notes.join(' ／ ');
-  let skipped = [];
+  let skipped = [], cleared = [];
   if (Object.keys(patch).length === 0) {
+    // 何も解釈できない発話（咳・雑音など）ではフォームを触らない＝掃除もしない
     toast('解釈できる項目がありませんでした（フォームは手で入力できます）');
   } else {
-    skipped = store.applyVoicePatch(patch, text).skipped;
+    const r = store.applyVoicePatch(patch, text);
+    skipped = r.skipped;
+    cleared = r.cleared;
   }
-  logHistory({ at: Date.now(), text, conf: meta && meta.confidence, patch, notes, skipped });
+  logHistory({ at: Date.now(), text, conf: meta && meta.confidence, patch, notes, skipped, cleared });
 }
 
 // ===== 来歴（SPEC §5-①）: 生テキスト＋解釈結果を端末内に記録（外部送信しない） =====
@@ -281,7 +284,7 @@ function logHistory(entry) {
   try { localStorage.setItem(HISTORY_KEY, JSON.stringify(h.slice(0, 30))); } catch {}
   renderHistory();
 }
-function patchSummary(patch, skipped) {
+function patchSummary(patch, skipped, cleared) {
   const parts = [];
   if ('title' in patch) parts.push(`タイトル「${patch.title}」`);
   if (patch.startDate || patch.startTime) parts.push(`開始 ${[patch.startDate, patch.startTime].filter(Boolean).join(' ')}`);
@@ -289,6 +292,7 @@ function patchSummary(patch, skipped) {
   if (patch.allDay) parts.push('終日');
   let s = parts.length ? `→ ${parts.join('・')}` : '→ 解釈できる項目なし';
   if (skipped && skipped.length) s += `／✋スキップ: ${skipped.map(fieldLabel).join('・')}`;
+  if (cleared && cleared.length) s += `／🧹 前回の${cleared.map(fieldLabel).join('・')}を空に`;
   return s;
 }
 function renderHistory() {
@@ -317,7 +321,7 @@ function renderHistory() {
     line1.append(time, text);
     const line2 = document.createElement('div');
     line2.className = 'h-result';
-    line2.textContent = patchSummary(e.patch || {}, e.skipped);
+    line2.textContent = patchSummary(e.patch || {}, e.skipped, e.cleared);
     item.append(line1, line2);
     if (e.notes && e.notes.length) {
       const n = document.createElement('div');

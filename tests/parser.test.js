@@ -70,6 +70,15 @@ check('三日後 打ち合わせ', { title: '打ち合わせ', startDate: '2026-
 check('十日後 締め切り', { title: '締め切り', startDate: '2026-07-26' });
 check('1ヶ月後 家賃', { title: '家賃', startDate: '2026-02-28' }, { now: new Date(2026, 0, 31, 10, 0) }); // 月末越えは月末に丸める
 
+// ===== 実発話FB 第2回（2026-07-16 iPhone・来歴パネルより）から追加 =====
+check('今月の末仕事', { title: '仕事', startDate: '2026-07-31' }); // FB: 「の」未対応で素通しだった
+check('来月の末 支払い', { title: '支払い', startDate: '2026-08-31' });
+check('7月の末 帰省', { title: '帰省', startDate: '2026-07-31' });
+check('9月末 出張', { title: '出張', startDate: '2026-09-30' });
+check('2月末 決算', { title: '決算', startDate: '2027-02-28' }); // 過去の月 → 来年
+check('1ヵ月後の今日暇', { title: '暇', startDate: '2026-08-16' }); // FB: 「の今日」を別日付と誤判定していた
+check('週末 キャンプ', { title: '週末 キャンプ', startDate: undefined }); // 「週末」を月末と誤読しないガード
+
 // ===== 時刻の形 =====
 check('明日15時半 カフェ', { title: 'カフェ', startDate: '2026-07-17', startTime: '15:30' });
 check('明日15時30分 カフェ', { title: 'カフェ', startDate: '2026-07-17', startTime: '15:30' });

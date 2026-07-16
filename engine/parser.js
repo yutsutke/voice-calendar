@@ -117,14 +117,24 @@
       if (da < 1 || da > 31) continue;
       pushCand(new Date(today.getFullYear(), today.getMonth() + shift, da), a, b);
     }
-    // 3) 月末（来月末 / 今月末 / 月末）
-    for (const { m, a, b } of findAll(/来月末|今月末|月末/g)) {
-      const shift = m[0] === '来月末' ? 1 : 0;
+    // 3) N月の末（「7月の末」「9月末」。過去なら来年）
+    for (const { m, a, b } of findAll(/(\d{1,2})月の?末/g)) {
+      const mo = +m[1];
+      if (mo < 1 || mo > 12) continue;
+      let d = new Date(today.getFullYear(), mo, 0); // = mo 月の最終日
+      if (d < today) d = new Date(today.getFullYear() + 1, mo, 0);
+      pushCand(d, a, b);
+    }
+    // 3.5) 月末（来月の末 / 今月の末 / 来月末 / 今月末 / 月末。「の」を許す＝実発話FB。
+    //      素の「末」は拾わない＝「週末」を月末と誤読しないため）
+    for (const { m, a, b } of findAll(/(来月|今月)の?末|月末/g)) {
+      const shift = m[1] === '来月' ? 1 : 0;
       // new Date(y, m+1, 0) = その月の最終日
       pushCand(new Date(today.getFullYear(), today.getMonth() + shift + 1, 0), a, b);
     }
     // 4) N{日|週間|か月|年}後（相対。実発話FB「一か月後旅行」から。素のN日より先に拾う）
-    for (const { m, a, b } of findAll(/([0-9]+|[一二三四五六七八九]?十[一二三四五六七八九]?|[一二三四五六七八九])(日|週間|[かヶヵカケ箇]月|年)後/g)) {
+    //    「1ヵ月後の今日」の「の今日」も同じ日付なので一緒に消費（実発話FB: 複数日付と誤判定していた）
+    for (const { m, a, b } of findAll(/([0-9]+|[一二三四五六七八九]?十[一二三四五六七八九]?|[一二三四五六七八九])(日|週間|[かヶヵカケ箇]月|年)後(?:の(?:今日|きょう))?/g)) {
       const n = jpNum(m[1]);
       if (n == null || n === 0) continue;
       const unit = m[2];

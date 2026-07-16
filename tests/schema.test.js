@@ -92,6 +92,46 @@ t('fieldState は empty → confirmed（AI は創作しない＝空は空のま�
   eq(s.getFieldState('title'), 'empty', '空にしたら empty へ戻る');
 });
 
+// ===== 発話 = 言い直し（再描画）: 前回の音声欄は掃除、人の欄は残す（実発話FB第2回） =====
+t('新しい発話が触れなかった音声欄は空に戻る（--:--）', () => {
+  const s = createDraftStore();
+  s.applyVoicePatch({ title: '食事', startDate: '2026-07-15', startTime: '11:30' }, '昨日の11時半食事');
+  const r = s.applyVoicePatch({ title: '仕事', startDate: '2026-07-31' }, '今月の末仕事');
+  eq(s.get().startTime, '', '前回の 11:30 が残らない');
+  eq(s.getFieldState('startTime'), 'empty', 'fieldState も empty へ');
+  eq(r.cleared, ['startTime'], 'cleared に報告される');
+  eq(s.get().title, '仕事', '言及した欄は新しい値');
+});
+
+t('人が手で入れた欄は音声の言い直しで消えない', () => {
+  const s = createDraftStore();
+  s.applyVoicePatch({ title: '歯医者', startTime: '15:00' }, 'x');
+  s.setByHuman('location', '駅前クリニック');
+  const r = s.applyVoicePatch({ title: '美容院' }, 'y');
+  eq(s.get().location, '駅前クリニック', '手入力の場所は残る');
+  eq(s.get().startTime, '', '音声由来の時刻は掃除される');
+  eq(r.cleared, ['startTime'], 'cleared は音声由来のみ');
+});
+
+t('編集中ロックの欄は掃除もされない（§8: 編集中の経路を保護）', () => {
+  const s = createDraftStore();
+  s.applyVoicePatch({ title: 'A', startTime: '15:00' }, 'x');
+  s.lock('startTime');
+  s.applyVoicePatch({ title: 'B' }, 'y');
+  eq(s.get().startTime, '15:00', 'ロック中は掃除されない');
+  s.unlock('startTime');
+});
+
+t('手で書いた欄も発話が言及すれば上書きされる（編集中でなければ）', () => {
+  const s = createDraftStore();
+  s.setByHuman('title', '手のタイトル');
+  s.applyVoicePatch({ title: '声のタイトル' }, 'x');
+  eq(s.get().title, '声のタイトル', '言及あり=上書き');
+  const r = s.applyVoicePatch({ startTime: '09:00' }, 'y');
+  eq(s.get().title, '', '直前の発話の title は音声由来になったので掃除される');
+  eq(r.cleared, ['title'], 'cleared');
+});
+
 // ===== 来歴（SPEC §5-①: note に流し込まない） =====
 t('転写は来歴として貯まり、note には流し込まれない', () => {
   const s = createDraftStore();

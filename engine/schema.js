@@ -31,6 +31,8 @@
     let draft = emptyDraft();
     // FieldState: 'empty' | 'confirmed'（'guessed' は v1、'locked' は isLocked で導出）
     let fieldState = Object.fromEntries(FIELDS.map((f) => [f, 'empty']));
+    // 誰が書いたか: 'voice' | 'human' | null。音声の再描画（下記）で「音声の残りだけ掃除」に使う
+    let origin = Object.fromEntries(FIELDS.map((f) => [f, null]));
     const locks = new Set();
     let lockSource = null; // (field) => boolean : 宿主に「今この欄を人が編集中か」を聞く述語
     const transcripts = []; // 来歴（SPEC §5-①）: note には流し込まない。端末内に留める
@@ -43,6 +45,7 @@
     return {
       get: () => ({ ...draft }),
       getFieldState: (f) => (isLocked(f) ? 'locked' : fieldState[f]),
+      getFieldOrigin: (f) => origin[f],
       isLocked,
       getTranscripts: () => transcripts.slice(),
       subscribe(fn) { listeners.add(fn); return () => listeners.delete(fn); },
@@ -54,7 +57,9 @@
       setByHuman(field, value) {
         if (!FIELDS.includes(field)) return;
         draft[field] = value;
-        fieldState[field] = isEmptyVal(field, value) ? 'empty' : 'confirmed';
+        const empty = isEmptyVal(field, value);
+        fieldState[field] = empty ? 'empty' : 'confirmed';
+        origin[field] = empty ? null : 'human';
         emit({ type: 'human', fields: [field] });
       },
 
@@ -62,25 +67,40 @@
       lock(field) { if (FIELDS.includes(field)) { locks.add(field); emit({ type: 'lock', field }); } },
       unlock(field) { if (locks.delete(field)) emit({ type: 'unlock', field }); },
 
-      // 入口B: 音声＝型付きの構造化パッチ。locked の欄はスキップ（上書きしない）
+      // 入口B: 音声＝型付きの構造化パッチ。locked の欄はスキップ（上書きしない）。
+      //
+      // v0 の発話セマンティクス = 「1発話 = 1つの予定の言い直し（再描画）」:
+      // 発話が触れなかった欄のうち **前回の音声が書いた欄は空に掃除する**（実発話FB:
+      // 「時間が読み取れなかったのに前回の時間が残って混乱」→ --:-- に戻る方が分かる）。
+      // 人が手で入れた欄（origin='human'）と編集中ロックの欄は消さない＝人の入力の保護（§8 の精神）。
+      // 発話の断片で欄を「追加」するのは v1 の差分パッチの主戦場（SPEC §11）。
       applyVoicePatch(patch, transcriptText) {
         const transcript = { id: 't' + Date.now() + '-' + transcripts.length, text: transcriptText, createdAt: new Date() };
         transcripts.push(transcript);
-        const written = [], skipped = [];
-        for (const [k, v] of Object.entries(patch || {})) {
-          if (!FIELDS.includes(k)) continue;
-          if (isLocked(k)) { skipped.push(k); continue; }
-          draft[k] = v;
-          fieldState[k] = 'confirmed';
-          written.push(k);
+        const written = [], skipped = [], cleared = [];
+        for (const f of FIELDS) {
+          const mentioned = patch && Object.prototype.hasOwnProperty.call(patch, f);
+          if (mentioned) {
+            if (isLocked(f)) { skipped.push(f); continue; }
+            draft[f] = patch[f];
+            fieldState[f] = 'confirmed';
+            origin[f] = 'voice';
+            written.push(f);
+          } else if (origin[f] === 'voice' && !isLocked(f)) {
+            draft[f] = f === 'allDay' ? false : '';
+            fieldState[f] = 'empty';
+            origin[f] = null;
+            cleared.push(f);
+          }
         }
-        emit({ type: 'voice', fields: written, skipped, transcript });
-        return { written, skipped, transcript };
+        emit({ type: 'voice', fields: written, skipped, cleared, transcript });
+        return { written, skipped, cleared, transcript };
       },
 
       reset() {
         draft = emptyDraft();
         fieldState = Object.fromEntries(FIELDS.map((f) => [f, 'empty']));
+        origin = Object.fromEntries(FIELDS.map((f) => [f, null]));
         locks.clear();
         emit({ type: 'reset', fields: FIELDS.slice() });
       },
