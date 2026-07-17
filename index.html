@@ -175,13 +175,9 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
   .set-item input[type="checkbox"] { width: 20px; height: 20px; }
   .set-native { font-size: 10px; color: var(--sub); border: 1px solid var(--line); border-radius: 4px;
     padding: 1px 5px; margin-left: 6px; white-space: nowrap; }
-  /* 保存先カレンダー（v23）: 値は EKCalendar の識別子＝人が読めない。
-     現在地を「名前（アカウント）」で見せ、変更はシステムの選択画面に任せる */
+  /* 保存先の現在地（v23→v26: 選択は撤去し「今どこへ入るか」の表示だけ残した） */
   .set-item .set-cur { font-size: 12px; color: var(--ink); margin-top: 6px; overflow-wrap: anywhere; }
   .set-item .set-cur.warn { color: var(--warn); }
-  .set-pick { border: 1px solid var(--line); border-radius: 8px; padding: 5px 10px; font-size: 13px;
-    background: var(--card); color: var(--accent); font-family: inherit; cursor: pointer; white-space: nowrap; }
-  .set-pick:active { opacity: .6; }
   .history-actions { text-align: right; padding: 8px 0; }
   .history-actions button { border: none; background: transparent; color: var(--sub); font-size: 12px; cursor: pointer; }
 
@@ -317,14 +313,14 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
      理由: この版文字列は index.html にしかないが、ロジックは別ファイル＝別キャッシュ。
      付けないと「フッタは新しいのにパーサは古い」という嘘の状態が成立する（v9 で実際に踏んだ）。
      index.html が更新されれば src の URL も変わる → JS も必ず新しく取り直される。 -->
-<script src="engine/settings.js?v=25"></script>
-<script src="engine/schema.js?v=25"></script>
-<script src="engine/parser.js?v=25"></script>
-<script src="input/transcriber.js?v=25"></script>
-<script src="adapters/calendar.js?v=25"></script>
+<script src="engine/settings.js?v=26"></script>
+<script src="engine/schema.js?v=26"></script>
+<script src="engine/parser.js?v=26"></script>
+<script src="input/transcriber.js?v=26"></script>
+<script src="adapters/calendar.js?v=26"></script>
 <script>
 'use strict';
-const BUILD = 'v25：選んだカレンダーを現物で保持（識別子の再解決に頼らない＝選んだ直後から確実に効く）｜v24：開いた瞬間に録音（起動/復帰・白紙の時だけ・アプリのみ）｜v23：保存先を見る/選ぶ＋権限復帰導線 · 2026-07-17';
+const BUILD = 'v26：保存先の選択を撤去＝OS の既定カレンダー1本（今どこへ入るかの表示は残す）｜v24：開いた瞬間に録音（起動/復帰・白紙の時だけ・アプリのみ）｜v23：権限拒否からの復帰導線 · 2026-07-17';
 console.log('BUILD:', BUILD);
 document.getElementById('build').textContent = BUILD;
 
@@ -638,16 +634,7 @@ function renderSettings() {
       label.append(' ', tag);
     }
     let input;
-    if (d.type === 'text') {
-      // 保存先カレンダー（v23）: 値は EKCalendar の識別子＝人が読めないので入力欄にしない。
-      // 一覧も出せない（write-only ではアプリがカレンダーリストを読めない）＝
-      // **選択はシステムの画面（EKCalendarChooser）に委ねる**。アプリは選ばれた1件だけを受け取る。
-      input = document.createElement('button');
-      input.type = 'button';
-      input.className = 'set-pick';
-      input.textContent = '変更';
-      input.addEventListener('click', pickCalendar);
-    } else if (d.type === 'number') {
+    if (d.type === 'number') {
       input = document.createElement('select');
       for (const opt of d.options) {
         const o = document.createElement('option');
@@ -669,16 +656,33 @@ function renderSettings() {
     hint.className = 'set-hint';
     hint.textContent = d.hint;
     item.append(head, hint);
-    if (d.type === 'text') {
-      // 現在の保存先＝「見る」の要求。非同期で埋まる（native に聞くため）
-      const cur = document.createElement('div');
-      cur.className = 'set-cur';
-      cur.id = `cur-${d.key}`;
-      cur.textContent = '確認中…';
-      item.append(cur);
-    }
     list.appendChild(item);
   }
+
+  // 保存先＝**設定ではなく事実**（v26 で選択を撤去）。それでも「今どこへ入るか」は見せる:
+  // OS の既定が iCloud か Google かで行き先が変わり、見えないと「保存できたのに見つからない」の
+  // 原因に辿り着けない（v23 の要求「見れたり」はここで生きている）。変える道は OS 設定への案内。
+  const info = document.createElement('div');
+  info.className = 'set-item';
+  const ihead = document.createElement('div');
+  ihead.className = 'set-head';
+  const ilabel = document.createElement('label');
+  ilabel.textContent = '保存先';
+  const itag = document.createElement('span');
+  itag.className = 'set-native';
+  itag.textContent = 'アプリのみ';
+  ilabel.append(' ', itag);
+  ihead.append(ilabel);
+  const ihint = document.createElement('div');
+  ihint.className = 'set-hint';
+  ihint.textContent = '変えるには iOS の「設定 → アプリ → カレンダー → デフォルトカレンダー」。Google に入れたい時は、先に設定でカレンダーのアカウントに Google を追加して、それを既定にする（アプリは Google と直接通信せず、OS が同期する）。';
+  const cur = document.createElement('div');
+  cur.className = 'set-cur';
+  cur.id = 'cur-calendarTarget';
+  cur.textContent = '確認中…';
+  info.append(ihead, ihint, cur);
+  list.appendChild(info);
+
   refreshCalendarTarget();
 }
 // ===== 保存先カレンダー（v23）＋ 権限の復帰導線 =====
@@ -711,21 +715,20 @@ function handleCalendarError(err, prefix) {
   toast(`${prefix}: ${(err && err.message) || err}`);
 }
 
-/// 現在の保存先を表示する（権限は要求しない＝設定を開いただけでダイアログを出さない）。
+/// 今どこへ入るかを表示する（権限は要求しない＝設定を開いただけでダイアログを出さない）。
 async function refreshCalendarTarget() {
-  const el = document.getElementById('cur-targetCalendarId');
+  const el = document.getElementById('cur-calendarTarget');
   const adapter = VCAdapter.pickAdapter();
   const show = (cls, text) => { if (el) { el.className = cls; el.textContent = text; } };
 
   if (typeof adapter.getTarget !== 'function') {
     window.__vcCalTarget = 'web（.ics をダウンロード）';
-    show('set-cur', 'この画面（web）では .ics ファイルを落とします。保存先を選べるのはアプリだけです。');
+    show('set-cur', 'この画面（web）では .ics ファイルを落とします。カレンダーに直接入るのはアプリだけです。');
     window.__vcRenderDiag();
     return;
   }
   try {
-    const chosen = settings.get('targetCalendarId');
-    const t = await adapter.getTarget(chosen);
+    const t = await adapter.getTarget();
     if (!t.authorized) {
       window.__vcCalTarget = '(未許可＝保存時に確認)';
       show('set-cur', 'まだカレンダーの許可がありません。保存するときに確認します。');
@@ -734,19 +737,8 @@ async function refreshCalendarTarget() {
       show('set-cur warn', `⚠ ${t.warning || '書き込み先のカレンダーが見つかりません（OS のカレンダー設定を確認）'}`);
     } else {
       const who = t.source ? `${t.title}（${t.source}）` : t.title;
-      // 解決の経路（v25）: id=識別子で復元できた / held=チューザーの現物を保持中（識別子復元は
-      // 効かない＝アプリを終了すると既定に戻る）/ fallback=既定へ倒れた（warning 付き）
-      let restored = '未選択(既定)';
-      if (chosen) {
-        if (t.resolvedBy === 'held') restored = '識別子復元:NG（現物を保持中＝終了まで有効）';
-        else restored = t.resolvedById ? '識別子復元:OK' : '識別子復元:NG→既定';
-      }
-      window.__vcCalTarget = `${who}｜${t.sourceType}｜${restored}`;
-      const label = chosen
-        ? (t.resolvedBy === 'held' ? '選んだカレンダー（アプリ終了までの一時保持）' : '選んだカレンダー')
-        : 'OS の既定カレンダー';
-      show(t.warning ? 'set-cur warn' : 'set-cur',
-        t.warning ? `⚠ ${t.warning}` : `${who} — ${label}`);
+      window.__vcCalTarget = `${who}｜${t.sourceType}`;
+      show('set-cur', `${who} — OS の既定カレンダー`);
     }
   } catch (err) {
     // 取れないこと自体を表に出す（黙って空欄にしない＝v16）
@@ -754,26 +746,6 @@ async function refreshCalendarTarget() {
     show('set-cur warn', `⚠ 保存先を確認できません: ${(err && err.message) || err}`);
   }
   window.__vcRenderDiag();
-}
-
-/// システムの選択画面（EKCalendarChooser）を出す。write-only のまま動く＝
-/// 「追加のみ」の軽い権限を保ったまま選べる（アプリは一覧を読まない）。
-async function pickCalendar() {
-  const adapter = VCAdapter.pickAdapter();
-  if (typeof adapter.chooseCalendar !== 'function') {
-    toast('保存先を選べるのはアプリだけです（web は .ics ダウンロード）');
-    return;
-  }
-  try {
-    const r = await adapter.chooseCalendar();
-    if (r.cancelled) return; // 何も選ばず閉じた＝**変更しない**（黙って既定に戻さない）
-    settings.set('targetCalendarId', r.id || '');
-    permBanner(false);
-    await refreshCalendarTarget();
-    toast(`✅ 保存先を「${r.title}」にしました`);
-  } catch (err) {
-    handleCalendarError(err, 'カレンダーを選べませんでした');
-  }
 }
 
 document.getElementById('settingsReset').addEventListener('click', () => {
@@ -789,7 +761,7 @@ document.getElementById('save').addEventListener('click', async () => {
   if (!res.ok) { toast(`⚠ ${res.problems.join(' / ')}`); return; }
   const adapter = VCAdapter.pickAdapter();
   try {
-    const saved = (await adapter.save(res.event, { calendarId: settings.get('targetCalendarId') })) || {};
+    const saved = (await adapter.save(res.event)) || {};
     permBanner(false);
     // toast は1つしか出せない＝1行にまとめる。**どこに入れたか**を必ず出す（v23）＝
     // 「保存できたのに見つからない」（既定が iCloud か Google かで行き先が変わる）を防ぐ
@@ -797,7 +769,6 @@ document.getElementById('save').addEventListener('click', async () => {
     if (saved.calendarTitle) msg += ` → ${saved.calendarTitle}`;
     else if (adapter.name === 'ics') msg += '（.ics をダウンロード）';
     if (res.warnings.length) msg += `（${res.warnings.join('・')}）`;
-    if (saved.warning) msg += ` ⚠ ${saved.warning}`;
     toast(msg);
     store.reset();
     transcriptEl.textContent = '';

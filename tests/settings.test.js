@@ -39,7 +39,7 @@ t('既定値がこれまでの実挙動と一致する（触らない人の体�
   eq(s.get('autoOpenOptional'), true, '任意欄は自動オープン（v1）');
   eq(s.get('defaultDurationMin'), 60, '終了なし→+1時間（v1 の決め打ち）');
   eq(s.get('silenceMs'), 1800, '無音1.8秒（v15/v16 の決め打ち）');
-  eq(s.get('targetCalendarId'), '', '保存先=空=OS の既定カレンダー（v22 までの決め打ちと同じ挙動）');
+  eq(s.get('targetCalendarId'), undefined, '🚫 保存先の選択は v26 で撤去（write-only では効かない＝復活させない）');
 });
 
 t('全ての設定に label / hint / why がある（なぜ設定にしたかを残す）', () => {
@@ -54,22 +54,19 @@ t('set した値が保存され、次回の起動で復元される', () => {
   const s1 = createSettings();
   s1.set('plainUtteranceIsNew', false);
   s1.set('silenceMs', 2500);
-  s1.set('targetCalendarId', 'CAL-ABC-123');
   const s2 = createSettings(); // 再起動相当
   eq(s2.get('plainUtteranceIsNew'), false, 'boolean が復元');
   eq(s2.get('silenceMs'), 2500, 'number が復元');
-  eq(s2.get('targetCalendarId'), 'CAL-ABC-123', 'text（保存先の識別子）が復元');
   eq(s2.get('protectManualEdits'), true, '触っていない設定は既定のまま');
 });
 
-// 保存先を選んだ状態から「既定に戻す」で OS の既定カレンダーへ戻れること
-// （選択が復元できない端末に持ち込んだ時の逃げ道＝設定から抜け出せなくならない）
-t('resetAll で保存先も既定（OS の既定カレンダー）に戻る', () => {
+// v26 で撤去した設定の残骸が端末に残っていても無害であること
+// （v23-v25 を使った端末には targetCalendarId が localStorage に残っている）
+t('撤去した設定の保存値が残っていても壊れない（未知のキーは無視）', () => {
+  localStorage.setItem(KEY, JSON.stringify({ targetCalendarId: 'CAL-OLD', silenceMs: 2500 }));
   const s = createSettings();
-  s.set('targetCalendarId', 'CAL-XYZ');
-  s.resetAll();
-  eq(s.get('targetCalendarId'), '', '空＝OS の既定カレンダーへ');
-  eq(createSettings().get('targetCalendarId'), '', '再起動しても既定');
+  eq(s.get('targetCalendarId'), undefined, '撤去した設定は復活しない');
+  eq(s.get('silenceMs'), 2500, '生きている設定は復元される');
 });
 
 t('resetAll で既定に戻り、保存も消える', () => {
@@ -89,11 +86,10 @@ t('壊れた JSON でも既定で動く（黙って壊れない）', () => {
 });
 
 t('型が違う保存値は無視して既定を使う', () => {
-  localStorage.setItem(KEY, JSON.stringify({ silenceMs: 'あああ', plainUtteranceIsNew: 'yes', targetCalendarId: 42 }));
+  localStorage.setItem(KEY, JSON.stringify({ silenceMs: 'あああ', plainUtteranceIsNew: 'yes' }));
   const s = createSettings();
   eq(s.get('silenceMs'), 1800, 'number でない → 既定');
   eq(s.get('plainUtteranceIsNew'), true, 'boolean でない → 既定');
-  eq(s.get('targetCalendarId'), '', 'string でない → 既定＝OS の既定カレンダーへ倒れる');
 });
 
 t('未知のキーを set しても壊れない', () => {

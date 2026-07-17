@@ -26,11 +26,11 @@ engine/parser.js         # 解釈層: interpret(text, now) 純関数。確定的
 engine/schema.js         # 共有状態層: DraftEvent ストア + fieldState + 欄ロック（衝突ポリシー §8）
 engine/settings.js       # 詳細設定（v19）: 値の入れ物のみ・DOM も宿主も知らない。既定=従来挙動
 input/transcriber.js     # 転写層: WebSpeech(web/iOS Safari) / 将来 SFSpeechRecognizer プラグイン。simulate() でテキスト注入
-adapters/calendar.js     # 永続層: materialize(保存時既定値はここに集約) + ics(web) / eventkit(iOS・保存先の取得/選択も)
+adapters/calendar.js     # 永続層: materialize(保存時既定値はここに集約) + ics(web) / eventkit(iOS・保存先は OS 既定1本)
 scripts/sync-web.mjs     # root の web 本体 → www/（Capacitor webDir）を生成。cap の前に必ず実行（npm run cap:sync）
 www/                     # 生成物（gitignore）。手で編集しない
 local-plugins/           # ローカル Capacitor プラグイン（SPM）。命名規約: npm名 kebab → PascalCase 一致必須
-  calendar-events/       #   EventKit 保存（iOS17+ 書き込み専用アクセス・openSettings 復帰導線）
+  calendar-events/       #   EventKit 保存（iOS17+ 書込専用・OS 既定カレンダーへ・openSettings 復帰導線）
   speech-recognition/    #   SFSpeechRecognizer 転写（on-device 優先・無音1.8s自動確定/6s打ち切り）
 ios/                     # cap add ios の生成物をコミット（spike と同流儀）。Info.plist に権限4つ
 codemagic.yaml           # Mac なしビルド → TestFlight（あの日の実績ワークフロー）
@@ -99,8 +99,8 @@ function nativePlugin(C, name) {
 
 - **start/end は date/time の部分フィールドに分割保持**（`startDate/startTime/endDate/endTime`）。「日付だけ確定・時刻は空」を創作なしに表現するため。Date への実体化は保存アダプタで。
 - **保存時の既定値はアダプタに集約**：時刻なし→終日 / 終了なし→開始+1h / タイトルなし→「予定」（warning 表示）。解釈層は埋めない。
-- **保存先カレンダーはシステムに選ばせる（v23）**：iOS17 の**書き込み専用アクセスではアプリはカレンダー一覧を読めない**（既存イベントもリストも不可）＝**自前の一覧 UI は原理的に作れない**。`EKCalendarChooser`（EventKitUI のシステム UI）は **write-only のまま動き**、選ばれた1件だけが返る＝「追加のみ」の軽い権限を保ったまま選べる（Apple 明記＝full access への格上げ不要＝SPEC §3「読みは v1」を守れる）。`defaultCalendarForNewEvents` も write-only で動く（WWDC23 のコード例）。
-- 🚨 **`calendar(withIdentifier:)` は write-only では効かない疑い濃厚（実機FB第17回: 選んだのに既定へ入った）**。v25 の対処＝**チューザーが渡した EKCalendar を現物のままプロセス内で保持**（識別子からの再解決に頼らない）: 選んだ直後〜アプリ終了までは確実に選んだ先へ書ける。再起動後は再解決に賭け、ダメなら**既定へ倒して warning ＋「変更」で選び直しを促す**（**黙って別のカレンダーに入れない**＝v16「黙って捨てない」の保存版）。診断 `保存先 …｜識別子復元:OK / NG（現物を保持中） / NG→既定` が解決経路そのものを出す。**「常に Google に入れたい」の恒久解は iOS 設定 → カレンダー → デフォルトカレンダー を Google にする**（`defaultCalendarForNewEvents` は write-only で確実に動く＝WWDC23。アプリ内選択は「普段と違う所に入れたい時」用）。
+- **保存先は OS の既定カレンダー1本（v26 で確定・実機で成立）**：`defaultCalendarForNewEvents` は write-only で確実に動く（WWDC23 のコード例／実機FB第18回「デフォルトカレンダーに書き込み成功」）。**Google に入れたい人は iOS 設定 → カレンダー → デフォルトカレンダーを Google に**（アプリは Google と直接通信しない＝OS が同期する＝SPEC §1-6）。「今どこへ入るか」は詳細設定の情報行と診断に出す（設定ではなく**事実**の表示＝「保存できたのに見つからない」を防ぐ）。
+- 🚫 **アプリ内カレンダー選択を作り直さない（v23→v25 で作り、v26 で撤去した）**：iOS17 の write-only では**アプリはカレンダー一覧を読めない**＝自前 UI は不可能。`EKCalendarChooser` は write-only でも開くが、**選択を次の起動へ持ち越せない**——保存できるのは識別子だけで `calendar(withIdentifier:)` が write-only で機能しない（実機FB第17回「選んだカレンダーになっているのに iOS のカレンダーに保存される」）。チューザーが渡す EKCalendar の現物をプロセス内で保持すれば当座は書けるが（v25）、**再起動のたび選び直し＝実用に耐えない**。作り直すなら full access への格上げが要る＝「追加のみ」の軽さ（v0 の売り・SPEC §3）とのトレードオフ。**理由の全文は CalendarEventsPlugin.swift 冒頭**。tests/calendar.test.js が復活を機械的に禁止している。
 - **起動＝即録音（v24・実機FBの要求）**：起動/復帰（visibilitychange）で自動録音。**native のみ**（web はブラウザの権限モデルでタップ必須のまま）・**白紙の時だけ**（自動録音が拾う環境音が「言い直し」(v6) で下書きを消すのを防ぐ）・**start であって toggle でない**（自動起動が録音を止める事故の排除）。無音6秒打ち切り (v11) が自動停止を保証＝「止まる保証」が先にあるから足せた。Phase 3（Siri→開く→即話す）の「即話す」側はこれで完成済み。
 - **曖昧素通しの実挙動**：埋めなかった断片はタイトルに残る＝ユーザーに見える（例:「明日3時」→ 日付だけ入り、タイトルに「3時」が残る）。notes に理由を出す。
 - **発話＝言い直し（v6・実発話FBで確定）**：新しい発話が触れなかった欄のうち**前回の音声が書いた欄は空に掃除**（origin='voice' のみ）。**手入力（origin='human'）と編集中ロックは保護**。掃除は `cleared` として来歴に 🧹 表示（黙って消さない）。自由文での差分修正（「1時間後ろ倒し」）は v1 の主戦場のまま。

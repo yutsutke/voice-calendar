@@ -62,16 +62,11 @@
       fmt: (v) => `${(v / 1000).toFixed(1)}秒`,
       native: true, // native の音声プラグインに渡す（web では効かない）
     },
-    {
-      key: 'targetCalendarId',
-      label: '保存先のカレンダー',
-      hint: '空のままなら OS の既定カレンダー（設定 → カレンダー → デフォルトカレンダー）に入る。Google カレンダーへ入れたい時は、iOS の設定でカレンダーのアカウントに Google を追加してから「変更」で選ぶ（アプリは Google と直接通信しない＝OS が同期する）。',
-      why: 'v23 FB「どのカレンダーに書き出すか見れたり選べるといい」。既定が意図と違う人（Google と iCloud を併用）が居る＝保存先が見えないと「保存できたのに見つからない」事故になり、原因も分からない',
-      def: '',
-      type: 'text', // 値は EKCalendar の識別子＝人が読めない。UI は「現在地の表示＋システムの選択画面」（宿主側の判断）
-      native: true, // web は .ics ダウンロード＝保存先という概念が無い
-    },
   ];
+  // 🚫 targetCalendarId（保存先の選択）は **v26 で撤去**した。write-only では選択を次の起動へ
+  // 持ち越せず（実機FB第17回）、設定に残しても「選べるのに効かない」嘘になるため。
+  // 保存先を変える正しい道は **OS 設定 → カレンダー → デフォルトカレンダー**（実機で成立済み）。
+  // 「今どこへ入るか」の表示は設定ではなく事実＝詳細設定の情報行と診断に出す（index.html）。
 
   function load() {
     const out = {};
@@ -83,7 +78,6 @@
           const v = saved[d.key];
           if (v === undefined) continue;
           if (d.type === 'number' && typeof v === 'number') out[d.key] = v;
-          else if (d.type === 'text' && typeof v === 'string') out[d.key] = v;
           else if (!d.type && typeof v === 'boolean') out[d.key] = v;
         }
       }

@@ -2,32 +2,35 @@ import Foundation
 import UIKit
 import Capacitor
 import EventKit
-import EventKitUI
 
 /// DraftEvent → EventKit 保存（永続層アダプタの native 側。SPEC §5 永続層 / §6）。
 ///
 /// 契約（adapters/calendar.js の eventKitAdapter と一致させる）:
-///   save({ title, startMs, endMs, allDay, location, note, calendarId })
-///                                   → { id, calendarTitle, calendarSource, resolvedById, warning? }
-///   getTarget({ calendarId })       → { authorized, found, title, source, sourceType, id, resolvedById, warning? }
-///   chooseCalendar()                → { cancelled } | { id, title, source, sourceType, cancelled:false }
-///   openSettings()                  → {}
+///   save({ title, startMs, endMs, allDay, location, note })
+///                     → { id, calendarTitle, calendarSource }
+///   getTarget()       → { authorized, found, title, source, sourceType, id, warning? }
+///   openSettings()    → {}
 ///
 /// 権限:
 /// - iOS 17+ は **書き込み専用アクセス**（requestWriteOnlyAccessToEvents）＝「追加のみ」の軽い
 ///   ダイアログで、既存予定の読み取り権限を要求しない（SPEC §3: v0 は書くだけ。読みは v1）。
 ///   Info.plist: NSCalendarsWriteOnlyAccessUsageDescription
 /// - iOS 16 以前は従来の requestAccess(to: .event)。Info.plist: NSCalendarsUsageDescription
-/// - 拒否済みからの復帰導線として openSettings() を用意（あの日 v215 のカメラ権限の教訓:
-///   「拒否が残ると回復導線がない」を最初から塞ぐ）。※ v23 で JS 側の導線を実際に配線した
-///   ——それまでこのメソッドは**誰からも呼ばれていないデッドコード**だった。
+/// - 拒否済みからの復帰導線として openSettings()（あの日 v215 のカメラ権限の教訓:
+///   「拒否が残ると回復導線がない」を塞ぐ。JS 側の配線は v23）。
 ///
-/// 保存先カレンダー（v23）:
-/// - write-only では **アプリはカレンダー一覧を読めない**（既存イベントもカレンダーリストも不可）。
-///   → 一覧を自前 UI で見せる設計は不可能。**EKCalendarChooser（システム側の UI）**を出し、
-///   ユーザーが選んだ1件だけを受け取る＝「追加のみ」の軽い権限のまま選べる（Apple 明記:
-///   "EKEventEditViewController and EKCalendarChooser require write-only or full access"）。
-///   アプリが一覧を覗かない形はローカル完結の思想（SPEC §2）とも噛み合う。
+/// 保存先＝**OS の既定カレンダー1本**（defaultCalendarForNewEvents）。v26 でアプリ内の選択を撤去した。
+/// 🚫 **アプリ内カレンダー選択を作り直さないこと**（v23-v25 で作って実機で外した経緯）:
+/// - write-only では **アプリはカレンダー一覧を読めない**（既存イベントもリストも不可）＝自前の一覧 UI は不可能。
+/// - `EKCalendarChooser`（EventKitUI）は write-only でも開くが、**選択を次の起動へ持ち越せない**:
+///   保存できるのは識別子だけで、`calendar(withIdentifier:)` が write-only で機能しない
+///   （実機FB第17回「選んだカレンダーになっているのに iOS のカレンダーに保存される」）。
+///   チューザーが渡す EKCalendar の現物をプロセス内で保持すれば当座は書けるが（v25）、
+///   **アプリを再起動するたび選び直し**＝実用に耐えない。
+/// - 「常に別のカレンダーへ」の正解は **OS 設定 → カレンダー → デフォルトカレンダー**。
+///   defaultCalendarForNewEvents は write-only で確実に動く（WWDC23 のコード例）＝実機でも成立済み。
+///   Google も iOS にアカウントを足して既定にすれば OS が同期する（アプリは Google と直接通信しない＝SPEC §1-6）。
+/// - 作り直すなら full access への格上げが要る＝「追加のみ」の軽さ（v0 の売り）とのトレードオフ。
 @objc(CalendarEventsPlugin)
 public class CalendarEventsPlugin: CAPPlugin, CAPBridgedPlugin {
     public let identifier = "CalendarEventsPlugin"
@@ -35,24 +38,10 @@ public class CalendarEventsPlugin: CAPPlugin, CAPBridgedPlugin {
     public let pluginMethods: [CAPPluginMethod] = [
         CAPPluginMethod(name: "save", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getTarget", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "chooseCalendar", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "openSettings", returnType: CAPPluginReturnPromise)
     ]
 
     private let store = EKEventStore()
-
-    /// EKCalendarChooser は delegate で結果が返る＝その間 call を保持する
-    /// （Capacitor の Camera プラグインと同じ流儀）。
-    private var pendingChooserCall: CAPPluginCall?
-
-    /// 🔴 チューザーが選んで渡してきた EKCalendar を **オブジェクトのまま** 保持する（v25・実機FB第17回）。
-    /// v23-24 は識別子だけ保存し、保存のたびに calendar(withIdentifier:) で解決し直していた＝
-    /// write-only でその再解決が効かないと、**選んだ直後の保存ですら既定へ倒れる**
-    /// （実機の症状「選んだカレンダーになっているのに iOS のカレンダーに保存される」）。
-    /// チューザーは選ばれたカレンダーを**現物で**渡してくる＝再解決に頼る必要が無かった。
-    /// プロセス内で保持すれば、withIdentifier が効かなくても**アプリ生存中は確実に選んだ先へ書ける**。
-    /// アプリ再起動後だけは再解決に賭け、ダメなら既定へ倒して warning（選び直しの導線は JS 側）。
-    private var chosenCalendar: EKCalendar?
 
     // MARK: - 権限
 
@@ -92,28 +81,7 @@ public class CalendarEventsPlugin: CAPPlugin, CAPBridgedPlugin {
         }
     }
 
-    // MARK: - 保存先の解決
-
-    /// 保存先を決める。resolvedBy は解決の経路そのもの＝診断が機構を1回で確定させる（v22 の「起動Nms」の手）:
-    ///   "id"       … calendar(withIdentifier:) で復元できた（write-only でも効いた）
-    ///   "held"     … 復元は効かないが、チューザーが渡した現物を保持していた（＝選んだ先に書ける。
-    ///                アプリを終了すると失われる）
-    ///   "fallback" … どちらも無い（再起動後など）→ 既定へ倒す。**呼び手は必ず warning を出すこと**
-    ///                ＝黙って別のカレンダーに保存しない（v16「黙って捨てない」の保存版。
-    ///                  予定が意図と違う場所に静かに入るのは、入らないことより悪い）
-    ///   "default"  … そもそも選んでいない＝OS の既定カレンダー（正常系）
-    private func resolveCalendar(preferredId: String?) -> (calendar: EKCalendar?, resolvedBy: String) {
-        if let id = preferredId, !id.isEmpty {
-            if let cal = store.calendar(withIdentifier: id) {
-                return (cal, "id")
-            }
-            if let held = chosenCalendar, held.calendarIdentifier == id {
-                return (held, "held")
-            }
-            return (store.defaultCalendarForNewEvents, "fallback")
-        }
-        return (store.defaultCalendarForNewEvents, "default")
-    }
+    // MARK: - カレンダーの素性
 
     private func describe(_ cal: EKCalendar) -> [String: Any] {
         return [
@@ -124,8 +92,8 @@ public class CalendarEventsPlugin: CAPPlugin, CAPBridgedPlugin {
         ]
     }
 
-    /// 保存先の「素性」を人の言葉に。**明日の検証で「Google に出たか」を画面で見るための語**
-    /// （OS の既定が Google なら source.title が Gmail アカウント名・sourceType が calDAV になる。
+    /// 保存先の「素性」を人の言葉に。**「Google に出たか」を画面で見るための語**
+    /// （既定が Google なら source.title が Gmail アカウント名・sourceType が calDAV になる。
     ///  アプリは Google と直接通信しない＝SPEC §1-6 の証明が画面に出る）。
     private func sourceTypeName(_ t: EKSourceType?) -> String {
         guard let t = t else { return "" }
@@ -164,10 +132,9 @@ public class CalendarEventsPlugin: CAPPlugin, CAPBridgedPlugin {
         if let location = call.getString("location"), !location.isEmpty { event.location = location }
         if let note = call.getString("note"), !note.isEmpty { event.notes = note }
 
-        // 保存先: 選択済みがあればそこへ。無ければ既定カレンダーへ
-        // （OS 設定で Google を既定にしていれば OS が Google へ同期する。アプリは Google と直接通信しない＝SPEC §1-6）
-        let target = resolveCalendar(preferredId: call.getString("calendarId"))
-        guard let calendar = target.calendar else {
+        // 保存先は OS の既定カレンダー1本（v26）。ここを変えたい人は OS 設定のデフォルトカレンダーを変える
+        // ＝アプリ内選択は write-only では次の起動へ持ち越せず実用にならなかった（上のコメント参照）。
+        guard let calendar = store.defaultCalendarForNewEvents else {
             call.reject("書き込み先のカレンダーが見つかりません（OS のカレンダー設定を確認）")
             return
         }
@@ -176,17 +143,11 @@ public class CalendarEventsPlugin: CAPPlugin, CAPBridgedPlugin {
         do {
             try store.save(event, span: .thisEvent, commit: true)
             // **どこに入れたかを返す**＝JS が保存 toast に出す（「入ったが見つからない」を防ぐ）
-            var out: [String: Any] = [
+            call.resolve([
                 "id": event.eventIdentifier ?? "",
                 "calendarTitle": calendar.title,
-                "calendarSource": calendar.source?.title ?? "",
-                "resolvedBy": target.resolvedBy,
-                "resolvedById": target.resolvedBy == "id"
-            ]
-            if target.resolvedBy == "fallback" {
-                out["warning"] = "選んだカレンダーが見つからないため、既定のカレンダーに保存しました"
-            }
-            call.resolve(out)
+                "calendarSource": calendar.source?.title ?? ""
+            ])
         } catch {
             call.reject("カレンダーへの保存に失敗: \(error.localizedDescription)")
         }
@@ -194,15 +155,14 @@ public class CalendarEventsPlugin: CAPPlugin, CAPBridgedPlugin {
 
     // MARK: - getTarget
 
-    /// 現在の保存先を返す（**権限を要求しない**）。設定画面を開いただけでダイアログを出さないため、
+    /// 今どこへ入るかを返す（**権限を要求しない**）。設定画面を開いただけでダイアログを出さないため、
     /// 未許可なら authorized:false を返すだけにする（JS は「保存するときに聞きます」と出す）。
     @objc func getTarget(_ call: CAPPluginCall) {
         guard hasWriteAccess() else {
             call.resolve(["authorized": false, "found": false])
             return
         }
-        let target = resolveCalendar(preferredId: call.getString("calendarId"))
-        guard let cal = target.calendar else {
+        guard let cal = store.defaultCalendarForNewEvents else {
             call.resolve([
                 "authorized": true,
                 "found": false,
@@ -213,52 +173,7 @@ public class CalendarEventsPlugin: CAPPlugin, CAPBridgedPlugin {
         var out = describe(cal)
         out["authorized"] = true
         out["found"] = true
-        out["resolvedBy"] = target.resolvedBy
-        out["resolvedById"] = target.resolvedBy == "id"
-        if target.resolvedBy == "fallback" {
-            out["warning"] = "選んだカレンダーを復元できません（アプリの再起動で選択が失われた可能性）。このままだと既定のカレンダーに入ります — 「変更」で選び直してください"
-        }
         call.resolve(out)
-    }
-
-    // MARK: - chooseCalendar
-
-    /// カレンダーを選ぶ＝**システム側の UI（EKCalendarChooser）**を出す。
-    /// write-only のままで動く（アプリは一覧を読まない・選ばれた1件だけが返る）。
-    /// write-only では displayStyle は無視され .writableCalendarsOnly として振る舞う（Apple 明記）が、
-    /// 意図を明示するため .writableCalendarsOnly を渡す（書けないカレンダーを選ばせても保存に失敗するだけ）。
-    @objc func chooseCalendar(_ call: CAPPluginCall) {
-        withWriteAccess(call) { [weak self] in
-            guard let self = self else { return }
-            guard self.pendingChooserCall == nil else {
-                call.reject("カレンダー選択が既に開いています")
-                return
-            }
-            guard let host = self.bridge?.viewController else {
-                call.reject("カレンダー選択の画面を出せませんでした")
-                return
-            }
-
-            let chooser = EKCalendarChooser(
-                selectionStyle: .single,
-                displayStyle: .writableCalendarsOnly,
-                entityType: .event,
-                eventStore: self.store
-            )
-            chooser.showsDoneButton = true
-            chooser.showsCancelButton = true
-            chooser.delegate = self
-
-            self.pendingChooserCall = call
-            // Done / Cancel は navigation bar に出る＝UINavigationController に包む必要がある
-            let nav = UINavigationController(rootViewController: chooser)
-            // 🔴 スワイプで閉じさせない。EKCalendarChooser の delegate は **Done / Cancel 経由でしか
-            // 呼ばれない**ため、iOS13+ の下スワイプで閉じられると pendingChooserCall が宙に浮き、
-            // JS の Promise が永久に解決せず、以後ずっと「既に開いています」で選べなくなる。
-            // Cancel ボタンは出しているので、閉じる手段は失われない。
-            nav.isModalInPresentation = true
-            host.present(nav, animated: true, completion: nil)
-        }
     }
 
     /// 拒否済み権限からの復帰導線（設定アプリの本アプリのページを開く）
@@ -268,38 +183,6 @@ public class CalendarEventsPlugin: CAPPlugin, CAPBridgedPlugin {
                 UIApplication.shared.open(url)
             }
             call.resolve()
-        }
-    }
-}
-
-// MARK: - EKCalendarChooserDelegate
-
-extension CalendarEventsPlugin: EKCalendarChooserDelegate {
-    public func calendarChooserDidFinish(_ calendarChooser: EKCalendarChooser) {
-        finishChooser(calendarChooser.selectedCalendars.first)
-    }
-
-    public func calendarChooserDidCancel(_ calendarChooser: EKCalendarChooser) {
-        finishChooser(nil)
-    }
-
-    /// selected が nil = キャンセル、または何も選ばずに Done。
-    /// どちらも **cancelled:true ＝ 保存先を変更しない**（黙って既定に戻したりしない）。
-    private func finishChooser(_ selected: EKCalendar?) {
-        DispatchQueue.main.async {
-            self.bridge?.viewController?.dismiss(animated: true, completion: nil)
-            guard let call = self.pendingChooserCall else { return }
-            self.pendingChooserCall = nil
-            if let cal = selected {
-                // チューザーが渡した現物を保持（v25）＝識別子からの再解決（write-only で効くか未確定）に
-                // 頼らず、アプリ生存中は選んだ先へ確実に書けるようにする
-                self.chosenCalendar = cal
-                var out = self.describe(cal)
-                out["cancelled"] = false
-                call.resolve(out)
-            } else {
-                call.resolve(["cancelled": true])
-            }
         }
     }
 }
