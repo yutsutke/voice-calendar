@@ -42,8 +42,23 @@ public class SpeechRecognitionPlugin: CAPPlugin, CAPBridgedPlugin {
     /// 明言していた箇所なので、ユーザーが自分で調整できるようにした。
     private var silenceSec: TimeInterval = 1.8
 
+    /// 認識器に「出てくる語」を教える（v22・実機FB「場所は一度目だけミスる」）。
+    /// 欄指定発話（engine/parser.js の FIELD_KEYS）は**先頭の欄名が命**で、そこを外すと
+    /// 通常発話として解釈され「場所」が入らない。contextualStrings でこれらの語に寄せる。
+    private let fieldHints = ["場所", "メモ", "終了", "開始", "タイトル", "件名"]
+
     private func debug(_ msg: String) {
         notifyListeners("debug", data: ["msg": msg])
+    }
+
+    /// 🔴 v22: オーディオセッションの**カテゴリだけ**を起動時に設定しておく（マイクは掴まない）。
+    /// 実機FB「場所は一度目はミスるが2度目以降は急に理解する」の原因はここと見ている:
+    /// 毎回 cleanup で setActive(false) → 次の start でセッションが冷えており、
+    /// マイクが録り始めるまでの数百 ms で**冒頭の「場所」が欠ける** → 欄指定として解釈されない。
+    /// 2度目以降は直前まで動いていたぶん立ち上がりが速く、冒頭が録れる＝「急に理解する」の正体。
+    /// カテゴリ設定を前倒しすると setActive の実費が減り、初回の欠けが縮む。
+    public override func load() {
+        try? AVAudioSession.sharedInstance().setCategory(.record, mode: .measurement, options: .duckOthers)
     }
 
     @objc func available(_ call: CAPPluginCall) {
@@ -95,13 +110,16 @@ public class SpeechRecognitionPlugin: CAPPlugin, CAPBridgedPlugin {
             return
         }
 
+        let t0 = Date() // 起動〜録音開始の実測用（v22）
         do {
             let session = AVAudioSession.sharedInstance()
+            // カテゴリは load() で設定済み。冷えていた場合の保険として再設定（同じ値なら安い）
             try session.setCategory(.record, mode: .measurement, options: .duckOthers)
             try session.setActive(true, options: .notifyOthersOnDeactivation)
 
             let req = SFSpeechAudioBufferRecognitionRequest()
             req.shouldReportPartialResults = true
+            req.contextualStrings = fieldHints // 欄名に寄せる（v22・上の fieldHints 参照）
             let onDevice = recognizer.supportsOnDeviceRecognition
             if onDevice {
                 req.requiresOnDeviceRecognition = true // ローカル完結（対応端末・対応言語なら）
@@ -119,7 +137,10 @@ public class SpeechRecognitionPlugin: CAPPlugin, CAPBridgedPlugin {
             audioEngine = engine
             request = req
             notifyListeners("state", data: ["state": "listening"])
-            debug("開始 onDevice=\(onDevice) 無音\(String(format: "%.1f", silenceSec))s")
+            // 起動〜録音開始までの実測（v22）: 実機FB「場所は一度目だけミスる」の裏取り用。
+            // 初回だけ warm が大きければ「冒頭が欠けて欄名を落としている」仮説の証拠になる。
+            let warmMs = Int(Date().timeIntervalSince(t0) * 1000)
+            debug("開始 onDevice=\(onDevice) 無音\(String(format: "%.1f", silenceSec))s 起動\(warmMs)ms")
             armSilenceTimer(seconds: 6.0) // 一言も聞こえないまま6秒 → 打ち切り（設定とは別）
 
             task = recognizer.recognitionTask(with: req) { [weak self] result, error in
@@ -237,6 +258,8 @@ public class SpeechRecognitionPlugin: CAPPlugin, CAPBridgedPlugin {
         request = nil
         task?.cancel()
         task = nil
+        // セッションは必ず手放す（マイク使用中インジケータを残さない＝ローカル完結の思想 SPEC §2）。
+        // 立ち上がりの速さは load() のカテゴリ前倒しで稼ぐ（繋ぎっぱなしにはしない）。
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
     }
 }

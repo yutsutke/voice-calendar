@@ -287,14 +287,14 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
      理由: この版文字列は index.html にしかないが、ロジックは別ファイル＝別キャッシュ。
      付けないと「フッタは新しいのにパーサは古い」という嘘の状態が成立する（v9 で実際に踏んだ）。
      index.html が更新されれば src の URL も変わる → JS も必ず新しく取り直される。 -->
-<script src="engine/settings.js?v=21"></script>
-<script src="engine/schema.js?v=21"></script>
-<script src="engine/parser.js?v=21"></script>
-<script src="input/transcriber.js?v=21"></script>
-<script src="adapters/calendar.js?v=21"></script>
+<script src="engine/settings.js?v=22"></script>
+<script src="engine/schema.js?v=22"></script>
+<script src="engine/parser.js?v=22"></script>
+<script src="input/transcriber.js?v=22"></script>
+<script src="adapters/calendar.js?v=22"></script>
 <script>
 'use strict';
-const BUILD = 'v21：来歴に扱いモードのバッジ(🆕新規/🎯欄指定·消した新規は警告色)｜v20：↩を「行に見えている状態に戻す」に修正＋Pages復旧(.nojekyll)｜v19：詳細設定6項目｜v18：来歴から↩巻き戻し · 2026-07-17';
+const BUILD = 'v22：欄名を認識器に教える(contextualStrings)＋セッション前倒しで初回の冒頭欠けを縮める｜v21：来歴に扱いモードのバッジ｜v20：↩を行の状態に戻す｜v19：詳細設定6項目 · 2026-07-17';
 console.log('BUILD:', BUILD);
 document.getElementById('build').textContent = BUILD;
 
