@@ -62,7 +62,14 @@
           plugin.start(opts || {}).catch((e) => {
             listening = false;
             h.onState('idle');
-            h.onError((e && e.message) || String(e));
+            // v31: 完全終了→Siri 起動の一瞬はマイク HW が未準備で native が AUDIO_NOT_READY を返す
+            // （クラッシュではなく graceful に中止するよう Swift を直した）。これは一過性なので
+            // **トーストで騒がず診断だけに出す**。呼び手（起動時自動録音）が静かにリトライする。
+            if (e && e.code === 'AUDIO_NOT_READY') {
+              if (h.onDebug) h.onDebug('起動直後マイク未準備（リトライ）');
+            } else {
+              h.onError((e && e.message) || String(e));
+            }
           });
         } catch (e) { h.onError((e && e.message) || String(e)); }
       },

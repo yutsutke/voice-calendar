@@ -128,6 +128,19 @@ public class SpeechRecognitionPlugin: CAPPlugin, CAPBridgedPlugin {
             let engine = AVAudioEngine()
             let input = engine.inputNode
             let format = input.outputFormat(forBus: 0)
+            // 🔴 v31: 完全終了→Siri 起動の一瞬は、Siri がまだ audio session（マイク）を握っていて、
+            // 入力フォーマットが sampleRate=0 の無効値になることがある。その format で installTap すると
+            // **NSException（Swift の do/catch では捕まらない）でプロセスごとクラッシュ**する
+            // ＝実機症状「待機（バックグラウンド）からは開けるが、完全終了だと Siri 起動でクラッシュ」の正体。
+            // → 無効なら installTap せず graceful に中止。JS 側が数百 ms 後にリトライ＝HW が温まれば録れる。
+            // この guard は安全（正常な format なら従来どおり・異常時だけクラッシュを回避）。
+            guard format.sampleRate > 0, format.channelCount > 0 else {
+                debug("マイク未準備 sr=\(format.sampleRate) ch=\(format.channelCount) → 中止（起動直後にSiriがHWを解放中の可能性）")
+                cleanup()
+                notifyListeners("state", data: ["state": "idle"])
+                call.reject("マイクの準備ができていません（もう一度）", "AUDIO_NOT_READY")
+                return
+            }
             input.installTap(onBus: 0, bufferSize: 1024, format: format) { buffer, _ in
                 req.append(buffer)
             }

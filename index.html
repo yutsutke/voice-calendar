@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
-<title>声で入れるカレンダー（仮）</title>
+<title>ボイスカレンダー</title>
 <script>
 // ⚠️ 最初に置くこと（層スクリプトより前）。iPhone にはコンソールが無く、Mac が無いので
 // Safari Web Inspector も使えない＝**エラーを画面に出さないと永久に盲目**（1回の確認に
@@ -94,7 +94,6 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
   }
   main { max-width: 560px; margin: 0 auto; }
   h1 { font-size: 17px; font-weight: 600; text-align: center; margin: 4px 0 14px; }
-  h1 .kari { font-weight: 400; color: var(--sub); font-size: 13px; }
 
   /* ---- 録音（入口B） ---- */
   .mic-wrap { text-align: center; margin-bottom: 6px; }
@@ -209,7 +208,7 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
 </head>
 <body>
 <main>
-  <h1>🎤 声で入れるカレンダー <span class="kari">（仮）</span></h1>
+  <h1>🎤 ボイスカレンダー</h1>
 
   <div class="mic-wrap">
     <button id="mic" type="button" aria-label="録音">🎤</button>
@@ -313,14 +312,14 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
      理由: この版文字列は index.html にしかないが、ロジックは別ファイル＝別キャッシュ。
      付けないと「フッタは新しいのにパーサは古い」という嘘の状態が成立する（v9 で実際に踏んだ）。
      index.html が更新されれば src の URL も変わる → JS も必ず新しく取り直される。 -->
-<script src="engine/settings.js?v=30"></script>
-<script src="engine/schema.js?v=30"></script>
-<script src="engine/parser.js?v=30"></script>
-<script src="input/transcriber.js?v=30"></script>
-<script src="adapters/calendar.js?v=30"></script>
+<script src="engine/settings.js?v=31"></script>
+<script src="engine/schema.js?v=31"></script>
+<script src="engine/parser.js?v=31"></script>
+<script src="input/transcriber.js?v=31"></script>
+<script src="adapters/calendar.js?v=31"></script>
 <script>
 'use strict';
-const BUILD = 'v30：アプリアイコン（声の波形×カレンダー・App Store 提出要件対応）｜v29：Siri に別名「ボイカレ」｜v28：話し終わったら自動保存（設定・既定オフ）｜v27：日時を言わなければ「今」 · 2026-07-18';
+const BUILD = 'v31：ボイスカレンダーに改称・完全終了→Siri 起動のクラッシュ修正・詳細情報に「起動」｜v30：アプリアイコン｜v29：Siri 別名「ボイカレ」｜v28：話し終わったら自動保存 · 2026-07-18';
 console.log('BUILD:', BUILD);
 document.getElementById('build').textContent = BUILD;
 
@@ -622,7 +621,20 @@ window.__vcAutoRecord = autoRecord; // E2E がガードを検証する入口
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible') autoRecord('復帰');
 });
-autoRecord('起動');
+// v31: 完全終了→Siri 起動の一瞬はマイク HW が未準備（Siri がまだ audio session を握っている）で、
+// native は AUDIO_NOT_READY で graceful に中止する（Swift 側でクラッシュを塞いだ）。
+// 数百 ms で温まるので、起動時だけ静かにリトライして v24 の「即録音」を保つ（トーストは出さない）。
+(function startupAutoRecord() {
+  autoRecord('起動');                                       // 1回目（即）
+  let tries = 0;
+  const iv = setInterval(() => {
+    if (transcriber.isListening() || ++tries > 3) { clearInterval(iv); return; } // 録れた/上限で終了
+    if (transcriber.engine !== 'sfspeech') { clearInterval(iv); return; }         // web はタップ必須＝リトライ不要
+    const d = store.get();
+    if (VCStore.FIELDS.some((f) => d[f] !== '' && d[f] !== false)) { clearInterval(iv); return; } // 書きかけを守る
+    autoRecord('起動再試');
+  }, 600);
+})();
 
 // テキストを発話として注入。**転写層に依存させない**（音声が壊れていても文字で入れられる＝
 // フォームが本体・音声は補助。v13 の教訓）
@@ -680,6 +692,25 @@ function renderSettings() {
     item.append(head, hint);
     list.appendChild(item);
   }
+
+  // 起動の挙動＝事実の表示（v31・実機FBの要望「詳細情報に起動を／Siri でボイカレでも開く」）。
+  // 設定ではなく「こう動く」を伝える（保存先の情報行と同じ流儀）。自動録音は native のみ＝バッジ。
+  const launch = document.createElement('div');
+  launch.className = 'set-item';
+  const lhead = document.createElement('div');
+  lhead.className = 'set-head';
+  const llabel = document.createElement('label');
+  llabel.textContent = '起動';
+  const ltag = document.createElement('span');
+  ltag.className = 'set-native';
+  ltag.textContent = 'アプリのみ';
+  llabel.append(' ', ltag);
+  lhead.append(llabel);
+  const lhint = document.createElement('div');
+  lhint.className = 'set-hint';
+  lhint.textContent = 'アプリを開く/戻ると、白紙のときだけ自動で録音が始まります（黙っていれば数秒で止まります）。Siri では「ボイカレ 開いて」または「ボイスカレンダー 開いて」で開けます。';
+  launch.append(lhead, lhint);
+  list.appendChild(launch);
 
   // 保存先＝**設定ではなく事実**（v26 で選択を撤去）。それでも「今どこへ入るか」は見せる:
   // OS の既定が iCloud か Google かで行き先が変わり、見えないと「保存できたのに見つからない」の
