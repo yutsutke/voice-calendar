@@ -313,14 +313,14 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
      理由: この版文字列は index.html にしかないが、ロジックは別ファイル＝別キャッシュ。
      付けないと「フッタは新しいのにパーサは古い」という嘘の状態が成立する（v9 で実際に踏んだ）。
      index.html が更新されれば src の URL も変わる → JS も必ず新しく取り直される。 -->
-<script src="engine/settings.js?v=27"></script>
-<script src="engine/schema.js?v=27"></script>
-<script src="engine/parser.js?v=27"></script>
-<script src="input/transcriber.js?v=27"></script>
-<script src="adapters/calendar.js?v=27"></script>
+<script src="engine/settings.js?v=28"></script>
+<script src="engine/schema.js?v=28"></script>
+<script src="engine/parser.js?v=28"></script>
+<script src="input/transcriber.js?v=28"></script>
+<script src="adapters/calendar.js?v=28"></script>
 <script>
 'use strict';
-const BUILD = 'v27：メモとして使う — 日時を言わなければ「今」で保存＋「今/現在」の語彙｜v26：保存先は OS の既定カレンダー1本｜v24：開いた瞬間に録音（起動/復帰・白紙の時だけ・アプリのみ） · 2026-07-17';
+const BUILD = 'v28：話し終わったら自動保存（設定・既定オフ・曖昧さゼロの時だけ）｜v27：日時を言わなければ「今」＋「今/現在」の語彙｜v26：保存先は OS の既定カレンダー1本｜v24：開いた瞬間に録音 · 2026-07-17';
 console.log('BUILD:', BUILD);
 document.getElementById('build').textContent = BUILD;
 
@@ -446,6 +446,28 @@ function onUtterance(text, meta) {
   // **副作用ではなく「適用したモード」そのもの**を記録する。設定でオフなら新規扱いにならない。
   const isNew = !targeted && !!settings.get('plainUtteranceIsNew');
   logHistory({ at: Date.now(), text, conf: meta && meta.confidence, fb: !!(meta && meta.fallback), tg: targeted, nw: isNew, patch, notes, skipped, cleared, err, after: changed ? store.snapshot() : null });
+
+  if (shouldAutoSave({ changed, targeted, notes, patch })) doSave({ auto: true });
+}
+
+/// 自動保存の条件（v28・実機FB「記録後、保存を自動にできる設定」）。
+/// **SPEC §2-4「ノールックの条件＝曖昧さゼロで黙って1個に確定できる時だけ」をそのまま条件にする。**
+/// 保存は不可逆（アプリに読み取り権限が無い＝入った予定はカレンダー側で手で消すしかない）＝
+/// 迷ったら保存しない（人がフォームを見て押せばいい＝失うのは1タップだけ）。
+function shouldAutoSave({ changed, targeted, notes, patch }) {
+  if (!settings.get('autoSaveAfterUtterance')) return false; // 既定オフ
+  if (!changed) return false;      // フォームが変わっていない＝空の予定を作らない
+  if (targeted) return false;      // 欄指定は**まだ組み立て中**（「場所 立川」で保存したら場所だけの予定が入る）
+  if (notes.length) return false;  // 解釈できなかった断片がある＝曖昧＝人に見せる（SPEC §7）
+  // 🔴 **日時を言っていない発話は自動保存しない**（v28 の検証で見つけた穴）:
+  // パーサは意味を判定しない＝「えーっと」もタイトルになり、v27 の「日時を言わなければ今」と
+  // 組み合わさって**今の日時で確定してしまう**（実測: 「えーっと」が自動保存された）。
+  // v24 の「開いた瞬間に録音」と重なると **アプリを開くだけで環境音が予定になる**＝致命的。
+  // → **日時を明示した発話だけ**＝「明日15時に歯医者」「今 牛乳買う」は入る（日時を言う＝意図の表明）。
+  //   「牛乳を買う」だけの発話はフォームに残る＝人が見て保存を押す（失うのは1タップ）。
+  //   v27 の「今/現在」の語彙が、ここで**意図の表明**として効いている。
+  if (!patch.startDate && !patch.startTime) return false;
+  return true;
 }
 
 // ===== 来歴（SPEC §5-①）: 生テキスト＋解釈結果を端末内に記録（外部送信しない） =====
@@ -756,7 +778,10 @@ document.getElementById('settingsReset').addEventListener('click', () => {
 renderSettings();
 
 // ===== 保存: DraftEvent → アダプタ =====
-document.getElementById('save').addEventListener('click', async () => {
+// opts.auto: 発話からの自動保存（v28）。**黙って保存しない**＝toast で「自動保存した」と告げる
+// （v16「黙って捨てない」の保存版。保存は不可逆＝入ったことが分からないのが一番困る）。
+async function doSave(opts) {
+  const auto = !!(opts && opts.auto);
   const res = VCAdapter.materialize(store.get(), new Date(), { defaultDurationMin: settings.get('defaultDurationMin') });
   if (!res.ok) { toast(`⚠ ${res.problems.join(' / ')}`); return; }
   const adapter = VCAdapter.pickAdapter();
@@ -765,7 +790,7 @@ document.getElementById('save').addEventListener('click', async () => {
     permBanner(false);
     // toast は1つしか出せない＝1行にまとめる。**どこに入れたか**を必ず出す（v23）＝
     // 「保存できたのに見つからない」（既定が iCloud か Google かで行き先が変わる）を防ぐ
-    let msg = '✅ 保存しました';
+    let msg = auto ? '✅ 自動保存しました' : '✅ 保存しました';
     if (saved.calendarTitle) msg += ` → ${saved.calendarTitle}`;
     else if (adapter.name === 'ics') msg += '（.ics をダウンロード）';
     if (res.warnings.length) msg += `（${res.warnings.join('・')}）`;
@@ -776,9 +801,10 @@ document.getElementById('save').addEventListener('click', async () => {
     document.getElementById('optional').open = false;
     refreshCalendarTarget(); // 初回保存で権限が付いた直後＝ここで初めて保存先が判明する
   } catch (err) {
-    handleCalendarError(err, '保存に失敗');
+    handleCalendarError(err, auto ? '自動保存に失敗' : '保存に失敗');
   }
-});
+}
+document.getElementById('save').addEventListener('click', () => doSave());
 
 document.getElementById('clear').addEventListener('click', () => {
   store.reset();
