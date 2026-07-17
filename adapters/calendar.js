@@ -8,8 +8,11 @@
 //
 // 宛先アダプタ:
 //   - icsAdapter      : web/開発用。.ics を生成してダウンロード（OS のカレンダーが開ける）
-//   - eventKitAdapter : iOS native（ローカルプラグイン calendar-events）— v0 後半で実装。
+//   - eventKitAdapter : iOS native（ローカルプラグイン calendar-events）＝ v11 実装・v12 でコンパイル通過。
 //                       fieldState / 来歴は宛先へ渡さず端末内に留める（ローカル完結）。
+//                       ※ 保存先カレンダーの getTarget / chooseCalendar は native のみ（v23）。
+//                          web には「保存先」という概念が無い（.ics を落とすだけ）＝ icsAdapter は持たない。
+//                          宿主は `typeof adapter.getTarget === 'function'` で見分ける。
 (function (global) {
   'use strict';
 
@@ -21,6 +24,14 @@
     if (C.Plugins && C.Plugins[name]) return C.Plugins[name];
     if (typeof C.registerPlugin === 'function') return C.registerPlugin(name);
     return null;
+  }
+
+  function requireCalendarPlugin() {
+    const C = global.Capacitor;
+    if (!C || !C.isNativePlatform || !C.isNativePlatform()) throw new Error('native 環境ではありません');
+    const plugin = nativePlugin(C, 'CalendarEvents');
+    if (!plugin) throw new Error('CalendarEvents プラグインが native に登録されていません');
+    return plugin;
   }
 
   const pad2 = (n) => String(n).padStart(2, '0');
@@ -116,15 +127,16 @@
     },
   };
 
-  // ---------- EventKit（iOS native）— プラグイン実装後に有効化 ----------
+  // ---------- EventKit（iOS native） ----------
   const eventKitAdapter = {
     name: 'eventkit',
     label: 'カレンダーに保存',
-    async save(ev) {
-      const C = global.Capacitor;
-      if (!C || !C.isNativePlatform || !C.isNativePlatform()) throw new Error('native 環境ではありません');
-      const plugin = nativePlugin(C, 'CalendarEvents');
-      if (!plugin) throw new Error('CalendarEvents プラグインが native に登録されていません');
+
+    // opts.calendarId: 保存先の指定（空＝OS の既定カレンダー）。
+    // 戻り値の calendarTitle/calendarSource は「どこに入れたか」＝保存 toast に出す（v23）。
+    // warning は「選んだ保存先が見つからず既定へ倒した」＝黙って別の場所に入れないための告知。
+    async save(ev, opts) {
+      const plugin = requireCalendarPlugin();
       const res = await plugin.save({
         title: ev.title,
         startMs: ev.start.getTime(),
@@ -132,8 +144,53 @@
         allDay: ev.allDay,
         location: ev.location,
         note: ev.note,
-      });
-      return { ok: true, method: 'eventkit', id: res && res.id };
+        calendarId: (opts && opts.calendarId) || '',
+      }) || {};
+      return {
+        ok: true,
+        method: 'eventkit',
+        id: res.id,
+        calendarTitle: res.calendarTitle || '',
+        calendarSource: res.calendarSource || '',
+        resolvedById: !!res.resolvedById,
+        warning: res.warning || '',
+      };
+    },
+
+    // 現在の保存先（権限は要求しない＝設定を開いただけでダイアログを出さない）。
+    // authorized:false = まだ許可を聞いていない／拒否された。
+    async getTarget(calendarId) {
+      const plugin = requireCalendarPlugin();
+      const res = await plugin.getTarget({ calendarId: calendarId || '' }) || {};
+      return {
+        authorized: !!res.authorized,
+        found: !!res.found,
+        id: res.id || '',
+        title: res.title || '',
+        source: res.source || '',
+        sourceType: res.sourceType || '',
+        resolvedById: !!res.resolvedById,
+        warning: res.warning || '',
+      };
+    },
+
+    // システムの選択画面（EKCalendarChooser）を出す。cancelled:true = 変更しない。
+    async chooseCalendar() {
+      const plugin = requireCalendarPlugin();
+      const res = await plugin.chooseCalendar() || {};
+      return {
+        cancelled: !!res.cancelled,
+        id: res.id || '',
+        title: res.title || '',
+        source: res.source || '',
+        sourceType: res.sourceType || '',
+      };
+    },
+
+    // 拒否済み権限からの復帰導線（設定アプリを開く）
+    async openSettings() {
+      const plugin = requireCalendarPlugin();
+      await plugin.openSettings();
     },
   };
 

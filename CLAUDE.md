@@ -26,7 +26,7 @@ engine/parser.js         # 解釈層: interpret(text, now) 純関数。確定的
 engine/schema.js         # 共有状態層: DraftEvent ストア + fieldState + 欄ロック（衝突ポリシー §8）
 engine/settings.js       # 詳細設定（v19）: 値の入れ物のみ・DOM も宿主も知らない。既定=従来挙動
 input/transcriber.js     # 転写層: WebSpeech(web/iOS Safari) / 将来 SFSpeechRecognizer プラグイン。simulate() でテキスト注入
-adapters/calendar.js     # 永続層: materialize(保存時既定値はここに集約) + ics(web) / eventkit(iOS,未実装)
+adapters/calendar.js     # 永続層: materialize(保存時既定値はここに集約) + ics(web) / eventkit(iOS・保存先の取得/選択も)
 scripts/sync-web.mjs     # root の web 本体 → www/（Capacitor webDir）を生成。cap の前に必ず実行（npm run cap:sync）
 www/                     # 生成物（gitignore）。手で編集しない
 local-plugins/           # ローカル Capacitor プラグイン（SPM）。命名規約: npm名 kebab → PascalCase 一致必須
@@ -38,6 +38,7 @@ tests/parser.test.js     # パーサ単体テスト — 決め打ちルールは
 tests/schema.test.js     # 共有状態＋欄ロック＋設定注入のテスト（v3 の実バグの回帰込み）
 tests/settings.test.js   # 詳細設定（既定=従来挙動を固定・壊れた保存値でも動く）
 tests/transcriber.test.js# 転写層の「壊れ方」（v13: registerPlugin 無し native で throw しない・Plugins.X 優先）
+tests/calendar.test.js   # 保存の native 契約（v23: 引数名がズレると黙って既定カレンダーに入る＝実機まで気づけない）
 tests/version.test.js    # BUILD と script の ?v= の一致を強制（v10 の罠の再発防止）。`npm test` で全部走る
 .claude/launch.json      # dev サーバ (port 5275。5273=spike / 5274=madeleine / 8123=terrain-game と衝突回避)
 ```
@@ -98,6 +99,8 @@ function nativePlugin(C, name) {
 
 - **start/end は date/time の部分フィールドに分割保持**（`startDate/startTime/endDate/endTime`）。「日付だけ確定・時刻は空」を創作なしに表現するため。Date への実体化は保存アダプタで。
 - **保存時の既定値はアダプタに集約**：時刻なし→終日 / 終了なし→開始+1h / タイトルなし→「予定」（warning 表示）。解釈層は埋めない。
+- **保存先カレンダーはシステムに選ばせる（v23）**：iOS17 の**書き込み専用アクセスではアプリはカレンダー一覧を読めない**（既存イベントもリストも不可）＝**自前の一覧 UI は原理的に作れない**。`EKCalendarChooser`（EventKitUI のシステム UI）は **write-only のまま動き**、選ばれた1件だけが返る＝「追加のみ」の軽い権限を保ったまま選べる（Apple 明記＝full access への格上げ不要＝SPEC §3「読みは v1」を守れる）。`defaultCalendarForNewEvents` も write-only で動く（WWDC23 のコード例）。
+- 🚨 **未確定（v23・実機で判定）: `calendar(withIdentifier:)` が write-only で効くか**＝Apple のドキュメントに記述が無い。**どちらに転んでも壊れない形**にしてある: 復元できれば選んだ保存先／できなければ**既定へ倒して warning を出す**（**黙って別のカレンダーに入れない**＝v16「黙って捨てない」の保存版。予定が意図と違う場所に静かに入るのは、入らないことより悪い）。実機の診断 `保存先 …｜識別子復元:OK/NG` で1回見れば確定する（v22 の「起動Nms」と同じ手）。**NG なら「選ぶ」は作り直しが要る**（毎回 chooser を出す or full access へ格上げ＝権限の軽さとのトレードオフ）。
 - **曖昧素通しの実挙動**：埋めなかった断片はタイトルに残る＝ユーザーに見える（例:「明日3時」→ 日付だけ入り、タイトルに「3時」が残る）。notes に理由を出す。
 - **発話＝言い直し（v6・実発話FBで確定）**：新しい発話が触れなかった欄のうち**前回の音声が書いた欄は空に掃除**（origin='voice' のみ）。**手入力（origin='human'）と編集中ロックは保護**。掃除は `cleared` として来歴に 🧹 表示（黙って消さない）。自由文での差分修正（「1時間後ろ倒し」）は v1 の主戦場のまま。
 - **例外＝欄指定発話（v17・実機で要求）**：**欄名で始まる**発話（タイトル/件名・場所・メモ・開始・終了）はその欄だけの差分＝`applyVoicePatch(patch, text, {targeted:true})` で**掃除しない**（「場所 立川」で直前の予定が消えたら本末転倒）。誤爆ガード2枚＝①欄名で*始まる*時だけ ②値が解釈できなければ通常解釈へフォールバック（発話を捨てない）。

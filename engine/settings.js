@@ -62,6 +62,15 @@
       fmt: (v) => `${(v / 1000).toFixed(1)}秒`,
       native: true, // native の音声プラグインに渡す（web では効かない）
     },
+    {
+      key: 'targetCalendarId',
+      label: '保存先のカレンダー',
+      hint: '空のままなら OS の既定カレンダー（設定 → カレンダー → デフォルトカレンダー）に入る。',
+      why: 'v23 FB「どのカレンダーに書き出すか見れたり選べるといい」。既定が意図と違う人（Google と iCloud を併用）が居る＝保存先が見えないと「保存できたのに見つからない」事故になり、原因も分からない',
+      def: '',
+      type: 'text', // 値は EKCalendar の識別子＝人が読めない。UI は「現在地の表示＋システムの選択画面」（宿主側の判断）
+      native: true, // web は .ics ダウンロード＝保存先という概念が無い
+    },
   ];
 
   function load() {
@@ -74,6 +83,7 @@
           const v = saved[d.key];
           if (v === undefined) continue;
           if (d.type === 'number' && typeof v === 'number') out[d.key] = v;
+          else if (d.type === 'text' && typeof v === 'string') out[d.key] = v;
           else if (!d.type && typeof v === 'boolean') out[d.key] = v;
         }
       }

@@ -41,6 +41,10 @@ window.__vcRenderDiag = function () {
   var rows = [];
   rows.push(['環境', native ? 'native (Capacitor)' : 'web ブラウザ']);
   rows.push(['音声エンジン', (window.__vcEngine || '(未初期化)') + (window.__vcNativeFailure ? ' ← native 失敗: ' + window.__vcNativeFailure : '')]);
+  // 保存先（v23）: 入口（音声）と対になる出口。「保存できたのに見つからない」を切り分ける。
+  // 併記の「識別子復元」は **write-only で calendar(withIdentifier:) が動くかの実測**＝
+  // Apple のドキュメントに記述が無く、実機で1回見れば確定する（v22 の「起動Nms」と同じ手）。
+  rows.push(['保存先', window.__vcCalTarget || '(未取得)']);
   var layers = ['VCSettings', 'VCStore', 'VCParser', 'VCTranscriber', 'VCAdapter']
     .map(function (n) { return (window[n] ? '✅' : '❌') + n; }).join(' ');
   rows.push(['層の読込', layers]);
@@ -171,6 +175,13 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
   .set-item input[type="checkbox"] { width: 20px; height: 20px; }
   .set-native { font-size: 10px; color: var(--sub); border: 1px solid var(--line); border-radius: 4px;
     padding: 1px 5px; margin-left: 6px; white-space: nowrap; }
+  /* 保存先カレンダー（v23）: 値は EKCalendar の識別子＝人が読めない。
+     現在地を「名前（アカウント）」で見せ、変更はシステムの選択画面に任せる */
+  .set-item .set-cur { font-size: 12px; color: var(--ink); margin-top: 6px; overflow-wrap: anywhere; }
+  .set-item .set-cur.warn { color: var(--warn); }
+  .set-pick { border: 1px solid var(--line); border-radius: 8px; padding: 5px 10px; font-size: 13px;
+    background: var(--card); color: var(--accent); font-family: inherit; cursor: pointer; white-space: nowrap; }
+  .set-pick:active { opacity: .6; }
   .history-actions { text-align: right; padding: 8px 0; }
   .history-actions button { border: none; background: transparent; color: var(--sub); font-size: 12px; cursor: pointer; }
 
@@ -179,6 +190,18 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
   #save { flex: 1; padding: 14px; border: none; border-radius: 14px; background: var(--accent); color: var(--accent-ink); font-size: 16px; font-weight: 600; cursor: pointer; }
   #save:active { opacity: .85; }
   #clear { padding: 14px 18px; border: 1px solid var(--line); border-radius: 14px; background: transparent; color: var(--sub); font-size: 14px; cursor: pointer; }
+
+  /* 権限が拒否されたときの復帰導線（v23）: iOS の権限ダイアログは初回の一度きり＝
+     拒否されるとアプリからは二度と出せない。これが無いと「保存に失敗」と出るだけで詰む
+     （あの日 v215 のカメラ権限の教訓「拒否が残ると回復導線がない」。Swift 側の openSettings は
+      v11 から在ったのに、v22 まで JS が呼んでいないデッドコードだった） */
+  .perm { display: none; align-items: center; gap: 10px; margin-top: 12px; padding: 10px 12px;
+    border: 1px solid var(--warn); border-radius: 12px; background: #ff950014; font-size: 13px; color: var(--ink); }
+  .perm.show { display: flex; }
+  .perm span { flex: 1; line-height: 1.45; }
+  .perm button { border: 1px solid var(--warn); border-radius: 8px; padding: 7px 12px; background: transparent;
+    color: var(--warn); font-size: 13px; font-family: inherit; cursor: pointer; white-space: nowrap; }
+  .perm button:active { opacity: .6; }
 
   .toast { position: fixed; left: 50%; bottom: calc(var(--sab) + 20px); transform: translateX(-50%) translateY(20px);
     background: var(--ink); color: var(--bg); padding: 10px 18px; border-radius: 12px; font-size: 14px;
@@ -250,6 +273,13 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
     <button id="clear" type="button">クリア</button>
   </div>
 
+  <!-- 権限の復帰導線（v23）: 拒否は初回ダイアログの一度きりで決まり、以後アプリからは聞けない。
+       ここが無いと「保存に失敗」の toast が出て消えるだけ＝行き止まりになる -->
+  <div class="perm" id="permBanner">
+    <span id="permText">カレンダーへの追加が許可されていません。</span>
+    <button id="permOpen" type="button">設定を開く</button>
+  </div>
+
   <!-- 来歴（SPEC §5-①）: 音声の生テキストと解釈結果の記録。
        「言ったのに変な値が入った」の原因切り分け（認識か解釈か）はここを見る -->
   <details class="optional" id="historyBox">
@@ -287,14 +317,14 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
      理由: この版文字列は index.html にしかないが、ロジックは別ファイル＝別キャッシュ。
      付けないと「フッタは新しいのにパーサは古い」という嘘の状態が成立する（v9 で実際に踏んだ）。
      index.html が更新されれば src の URL も変わる → JS も必ず新しく取り直される。 -->
-<script src="engine/settings.js?v=22"></script>
-<script src="engine/schema.js?v=22"></script>
-<script src="engine/parser.js?v=22"></script>
-<script src="input/transcriber.js?v=22"></script>
-<script src="adapters/calendar.js?v=22"></script>
+<script src="engine/settings.js?v=23"></script>
+<script src="engine/schema.js?v=23"></script>
+<script src="engine/parser.js?v=23"></script>
+<script src="input/transcriber.js?v=23"></script>
+<script src="adapters/calendar.js?v=23"></script>
 <script>
 'use strict';
-const BUILD = 'v22：欄名を認識器に教える(contextualStrings)＋セッション前倒しで初回の冒頭欠けを縮める｜v21：来歴に扱いモードのバッジ｜v20：↩を行の状態に戻す｜v19：詳細設定6項目 · 2026-07-17';
+const BUILD = 'v23：保存先カレンダーを見る/選ぶ(EKCalendarChooser・書込専用のまま)＋権限拒否からの復帰導線｜v22：欄名を認識器に教える(contextualStrings)｜v21：来歴に扱いモードのバッジ｜v20：↩を行の状態に戻す · 2026-07-17';
 console.log('BUILD:', BUILD);
 document.getElementById('build').textContent = BUILD;
 
@@ -585,7 +615,16 @@ function renderSettings() {
       label.append(' ', tag);
     }
     let input;
-    if (d.type === 'number') {
+    if (d.type === 'text') {
+      // 保存先カレンダー（v23）: 値は EKCalendar の識別子＝人が読めないので入力欄にしない。
+      // 一覧も出せない（write-only ではアプリがカレンダーリストを読めない）＝
+      // **選択はシステムの画面（EKCalendarChooser）に委ねる**。アプリは選ばれた1件だけを受け取る。
+      input = document.createElement('button');
+      input.type = 'button';
+      input.className = 'set-pick';
+      input.textContent = '変更';
+      input.addEventListener('click', pickCalendar);
+    } else if (d.type === 'number') {
       input = document.createElement('select');
       for (const opt of d.options) {
         const o = document.createElement('option');
@@ -607,9 +646,106 @@ function renderSettings() {
     hint.className = 'set-hint';
     hint.textContent = d.hint;
     item.append(head, hint);
+    if (d.type === 'text') {
+      // 現在の保存先＝「見る」の要求。非同期で埋まる（native に聞くため）
+      const cur = document.createElement('div');
+      cur.className = 'set-cur';
+      cur.id = `cur-${d.key}`;
+      cur.textContent = '確認中…';
+      item.append(cur);
+    }
     list.appendChild(item);
   }
+  refreshCalendarTarget();
 }
+// ===== 保存先カレンダー（v23）＋ 権限の復帰導線 =====
+// 「どこに書き出すか」が見えないと、保存できたのに見つからない事故の原因が分からない
+// （OS の既定が iCloud か Google かは人によって違う）。SPEC §1-6: アプリは Google と直接通信せず、
+// OS の既定カレンダーに書けば OS が同期する＝その証明が画面に出る。
+
+/// 権限が拒否されている告知。**toast で流さずバナーで残す**＝拒否後はアプリからダイアログを
+/// 出せない＝流れて消えると行き止まりになる（あの日 v215 のカメラ権限の教訓）。
+function permBanner(show, msg) {
+  const el = document.getElementById('permBanner');
+  if (!el) return;
+  if (msg) document.getElementById('permText').textContent = msg;
+  el.classList.toggle('show', !!show);
+}
+
+document.getElementById('permOpen').addEventListener('click', async () => {
+  const adapter = VCAdapter.pickAdapter();
+  if (typeof adapter.openSettings !== 'function') { toast('この画面（web）では設定を開けません'); return; }
+  try { await adapter.openSettings(); } catch (err) { toast(`設定を開けませんでした: ${(err && err.message) || err}`); }
+});
+
+// 拒否は Swift の reject 第2引数 'PERMISSION_DENIED' で来る
+function handleCalendarError(err, prefix) {
+  const code = err && (err.code || err.errorCode);
+  if (code === 'PERMISSION_DENIED') {
+    permBanner(true, 'カレンダーへの追加が許可されていません。「設定を開く」→ カレンダー を許可してください。');
+    return;
+  }
+  toast(`${prefix}: ${(err && err.message) || err}`);
+}
+
+/// 現在の保存先を表示する（権限は要求しない＝設定を開いただけでダイアログを出さない）。
+async function refreshCalendarTarget() {
+  const el = document.getElementById('cur-targetCalendarId');
+  const adapter = VCAdapter.pickAdapter();
+  const show = (cls, text) => { if (el) { el.className = cls; el.textContent = text; } };
+
+  if (typeof adapter.getTarget !== 'function') {
+    window.__vcCalTarget = 'web（.ics をダウンロード）';
+    show('set-cur', 'この画面（web）では .ics ファイルを落とします。保存先を選べるのはアプリだけです。');
+    window.__vcRenderDiag();
+    return;
+  }
+  try {
+    const chosen = settings.get('targetCalendarId');
+    const t = await adapter.getTarget(chosen);
+    if (!t.authorized) {
+      window.__vcCalTarget = '(未許可＝保存時に確認)';
+      show('set-cur', 'まだカレンダーの許可がありません。保存するときに確認します。');
+    } else if (!t.found) {
+      window.__vcCalTarget = '❌ 見つからない';
+      show('set-cur warn', `⚠ ${t.warning || '書き込み先のカレンダーが見つかりません（OS のカレンダー設定を確認）'}`);
+    } else {
+      const who = t.source ? `${t.title}（${t.source}）` : t.title;
+      // 選択済みなのに resolvedById=false ＝ 識別子から復元できず既定へ倒れた（＝warning 付き）
+      const restored = chosen ? (t.resolvedById ? '識別子復元:OK' : '識別子復元:NG') : '未選択(既定)';
+      window.__vcCalTarget = `${who}｜${t.sourceType}｜${restored}`;
+      show(t.warning ? 'set-cur warn' : 'set-cur',
+        t.warning ? `⚠ ${t.warning}`
+                  : `${who} — ${chosen ? '選んだカレンダー' : 'OS の既定カレンダー'}`);
+    }
+  } catch (err) {
+    // 取れないこと自体を表に出す（黙って空欄にしない＝v16）
+    window.__vcCalTarget = `エラー: ${(err && err.message) || err}`;
+    show('set-cur warn', `⚠ 保存先を確認できません: ${(err && err.message) || err}`);
+  }
+  window.__vcRenderDiag();
+}
+
+/// システムの選択画面（EKCalendarChooser）を出す。write-only のまま動く＝
+/// 「追加のみ」の軽い権限を保ったまま選べる（アプリは一覧を読まない）。
+async function pickCalendar() {
+  const adapter = VCAdapter.pickAdapter();
+  if (typeof adapter.chooseCalendar !== 'function') {
+    toast('保存先を選べるのはアプリだけです（web は .ics ダウンロード）');
+    return;
+  }
+  try {
+    const r = await adapter.chooseCalendar();
+    if (r.cancelled) return; // 何も選ばず閉じた＝**変更しない**（黙って既定に戻さない）
+    settings.set('targetCalendarId', r.id || '');
+    permBanner(false);
+    await refreshCalendarTarget();
+    toast(`✅ 保存先を「${r.title}」にしました`);
+  } catch (err) {
+    handleCalendarError(err, 'カレンダーを選べませんでした');
+  }
+}
+
 document.getElementById('settingsReset').addEventListener('click', () => {
   settings.resetAll();
   renderSettings();
@@ -623,15 +759,23 @@ document.getElementById('save').addEventListener('click', async () => {
   if (!res.ok) { toast(`⚠ ${res.problems.join(' / ')}`); return; }
   const adapter = VCAdapter.pickAdapter();
   try {
-    await adapter.save(res.event);
-    const w = res.warnings.length ? `（${res.warnings.join('・')}）` : '';
-    toast(`✅ 保存しました${adapter.name === 'ics' ? '（.ics をダウンロード）' : ''}${w}`);
+    const saved = (await adapter.save(res.event, { calendarId: settings.get('targetCalendarId') })) || {};
+    permBanner(false);
+    // toast は1つしか出せない＝1行にまとめる。**どこに入れたか**を必ず出す（v23）＝
+    // 「保存できたのに見つからない」（既定が iCloud か Google かで行き先が変わる）を防ぐ
+    let msg = '✅ 保存しました';
+    if (saved.calendarTitle) msg += ` → ${saved.calendarTitle}`;
+    else if (adapter.name === 'ics') msg += '（.ics をダウンロード）';
+    if (res.warnings.length) msg += `（${res.warnings.join('・')}）`;
+    if (saved.warning) msg += ` ⚠ ${saved.warning}`;
+    toast(msg);
     store.reset();
     transcriptEl.textContent = '';
     notesEl.textContent = '';
     document.getElementById('optional').open = false;
+    refreshCalendarTarget(); // 初回保存で権限が付いた直後＝ここで初めて保存先が判明する
   } catch (err) {
-    toast(`保存に失敗: ${err.message || err}`);
+    handleCalendarError(err, '保存に失敗');
   }
 });
 
