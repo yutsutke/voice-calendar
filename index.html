@@ -317,14 +317,14 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
      理由: この版文字列は index.html にしかないが、ロジックは別ファイル＝別キャッシュ。
      付けないと「フッタは新しいのにパーサは古い」という嘘の状態が成立する（v9 で実際に踏んだ）。
      index.html が更新されれば src の URL も変わる → JS も必ず新しく取り直される。 -->
-<script src="engine/settings.js?v=23"></script>
-<script src="engine/schema.js?v=23"></script>
-<script src="engine/parser.js?v=23"></script>
-<script src="input/transcriber.js?v=23"></script>
-<script src="adapters/calendar.js?v=23"></script>
+<script src="engine/settings.js?v=24"></script>
+<script src="engine/schema.js?v=24"></script>
+<script src="engine/parser.js?v=24"></script>
+<script src="input/transcriber.js?v=24"></script>
+<script src="adapters/calendar.js?v=24"></script>
 <script>
 'use strict';
-const BUILD = 'v23：保存先カレンダーを見る/選ぶ(EKCalendarChooser・書込専用のまま)＋権限拒否からの復帰導線｜v22：欄名を認識器に教える(contextualStrings)｜v21：来歴に扱いモードのバッジ｜v20：↩を行の状態に戻す · 2026-07-17';
+const BUILD = 'v24：開いた瞬間に録音（起動/復帰・白紙の時だけ・アプリのみ）｜v23：保存先カレンダーを見る/選ぶ＋権限拒否からの復帰導線｜v22：欄名を認識器に教える｜v21：来歴にバッジ · 2026-07-17';
 console.log('BUILD:', BUILD);
 document.getElementById('build').textContent = BUILD;
 
@@ -582,6 +582,29 @@ if (transcriber.available) {
     ? '音声認識が使えません（下のテキスト欄で入力できます）— 詳細は「診断」'
     : 'この環境では音声認識が使えません（下のテキスト欄で試せます）';
 }
+
+// ===== 起動＝即録音（v24・実機FB第16回の要求）=====
+// 「アプリを開いた瞬間に、すぐに録音できるようにしたい」＝開く→話す（マイクをタップしない）。
+// ノールックの入口であり、Phase 3（Siri 起動→即録音）の前提＝Siri は「開く」まで、ここが「即話せる」。
+// - native のみ: web のマイクはユーザー操作なしに開けない（ブラウザの権限モデル）＝Pages は従来どおりタップ。
+// - 書きかけがある時は録らない: 自動録音が拾った環境音は「発話=言い直し」(v6) で下書きを消し得る。
+//   開いた人が話す前提で良いのは白紙の時だけ（手で直しに戻った時の巻き添えを防ぐ）。
+// - 録音の 6 秒無音打ち切り（v11）が自動停止を保証＝開いて黙っていれば勝手に止まる。
+// 実機の診断に 🎙「自動録音（起動/復帰）」が出る＝動いた証拠（v15: 画面に出す以外に見る手段が無い）。
+function autoRecord(trigger) {
+  if (transcriber.isListening()) return 'listening';       // toggle ではなく start＝既に聞いていたら触らない
+  const d = store.get();
+  if (VCStore.FIELDS.some((f) => d[f] !== '' && d[f] !== false)) return 'draft'; // 書きかけを守る
+  if (transcriber.engine !== 'sfspeech') return `engine:${transcriber.engine}`;  // native の音声が生きている時だけ
+  window.__vcDebugNote(`🎙 自動録音（${trigger}）`);
+  transcriber.start({ silenceMs: settings.get('silenceMs') });
+  return 'started';
+}
+window.__vcAutoRecord = autoRecord; // E2E がガードを検証する入口
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') autoRecord('復帰');
+});
+autoRecord('起動');
 
 // テキストを発話として注入。**転写層に依存させない**（音声が壊れていても文字で入れられる＝
 // フォームが本体・音声は補助。v13 の教訓）
