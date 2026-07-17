@@ -117,12 +117,39 @@ t('native が何も返さなくても throw しない（undefined の戻り）',
 
 t('🔴「既定に倒れた」警告を落とさない（黙って別のカレンダーに保存しない）', async () => {
   await withCapacitor(nativeCap({
-    save: async () => ({ id: 'E1', calendarTitle: '個人', calendarSource: 'iCloud', resolvedById: false, warning: '選んだカレンダーが見つからないため、既定のカレンダーに保存しました' }),
+    save: async () => ({ id: 'E1', calendarTitle: '個人', calendarSource: 'iCloud', resolvedBy: 'fallback', resolvedById: false, warning: '選んだカレンダーが見つからないため、既定のカレンダーに保存しました' }),
   }), async () => {
     const r = await eventKitAdapter.save(EV, { calendarId: 'GONE' });
     eq(r.warning, '選んだカレンダーが見つからないため、既定のカレンダーに保存しました', '警告がそのまま画面まで届く');
-    eq(r.resolvedById, false, '識別子で復元できなかったことが分かる（診断に出す）');
+    eq(r.resolvedBy, 'fallback', '既定へ倒れた経路が分かる（診断に出す）');
+    eq(r.resolvedById, false, '識別子で復元できなかったことが分かる');
     eq(r.calendarTitle, '個人', '実際にどこへ入れたかが分かる');
+  });
+});
+
+// v25（実機FB第17回「選んだカレンダーになっているのに iOS のカレンダーに保存される」への対処）:
+// チューザーが渡した現物を Swift が保持 → 識別子の再解決（write-only で効くか未確定）が
+// 効かなくても、選んだ先へ書ける。この経路は warning ではない（意図どおりの保存先）が、
+// resolvedBy='held' で「再起動すると失われる」ことが診断から分かる。
+t('🔴 held（現物保持）の経路が warning なしで届く（選んだ先に書けている）', async () => {
+  await withCapacitor(nativeCap({
+    save: async () => ({ id: 'E1', calendarTitle: '仕事', calendarSource: 'Gmail', resolvedBy: 'held', resolvedById: false }),
+  }), async () => {
+    const r = await eventKitAdapter.save(EV, { calendarId: 'CAL-1' });
+    eq(r.resolvedBy, 'held', '現物保持で解決したことが分かる');
+    eq(r.resolvedById, false, '識別子からの復元では無い（実機の判定材料）');
+    eq(r.warning, '', '選んだ先に書けている＝警告ではない');
+    eq(r.calendarTitle, '仕事', '行き先は選んだカレンダー');
+  });
+});
+
+t('getTarget も resolvedBy を通す（held を診断が区別できる）', async () => {
+  await withCapacitor(nativeCap({
+    getTarget: async () => ({ authorized: true, found: true, title: '仕事', source: 'Gmail', sourceType: 'CalDAV（Google / iCloud など）', resolvedBy: 'held', resolvedById: false }),
+  }), async () => {
+    const t2 = await eventKitAdapter.getTarget('CAL-1');
+    eq(t2.resolvedBy, 'held');
+    eq(t2.resolvedById, false);
   });
 });
 

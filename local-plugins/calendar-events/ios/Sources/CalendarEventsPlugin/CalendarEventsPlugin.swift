@@ -45,6 +45,15 @@ public class CalendarEventsPlugin: CAPPlugin, CAPBridgedPlugin {
     /// （Capacitor の Camera プラグインと同じ流儀）。
     private var pendingChooserCall: CAPPluginCall?
 
+    /// 🔴 チューザーが選んで渡してきた EKCalendar を **オブジェクトのまま** 保持する（v25・実機FB第17回）。
+    /// v23-24 は識別子だけ保存し、保存のたびに calendar(withIdentifier:) で解決し直していた＝
+    /// write-only でその再解決が効かないと、**選んだ直後の保存ですら既定へ倒れる**
+    /// （実機の症状「選んだカレンダーになっているのに iOS のカレンダーに保存される」）。
+    /// チューザーは選ばれたカレンダーを**現物で**渡してくる＝再解決に頼る必要が無かった。
+    /// プロセス内で保持すれば、withIdentifier が効かなくても**アプリ生存中は確実に選んだ先へ書ける**。
+    /// アプリ再起動後だけは再解決に賭け、ダメなら既定へ倒して warning（選び直しの導線は JS 側）。
+    private var chosenCalendar: EKCalendar?
+
     // MARK: - 権限
 
     /// 現在の権限を**要求せずに**見る。設定画面を開いただけで権限ダイアログが出るのを避ける
@@ -85,26 +94,25 @@ public class CalendarEventsPlugin: CAPPlugin, CAPBridgedPlugin {
 
     // MARK: - 保存先の解決
 
-    /// 保存先を決める。
-    ///
-    /// 🔴 **write-only で calendar(withIdentifier:) が動くかは Apple のドキュメントに記述が無い**
-    /// （カレンダー一覧の読み取りは write-only では禁止＝識別子1件の解決も弾かれる可能性がある）。
-    /// → **どちらに転んでも壊れない形**にして実機で判定する（v22 の「起動Nms」と同じ手＝憶測で終わらせない）:
-    ///     解決できた   → その保存先を使う
-    ///     解決できない → 既定カレンダーへ倒し、**warning を返して画面に出す**
-    ///                    ＝**黙って別のカレンダーに保存しない**（v16「黙って捨てない」の保存版。
-    ///                      予定が意図と違う場所に静かに入るのは、入らないことより悪い）
-    /// resolvedById は診断に出す＝実機で1回見れば可否が確定する。
-    private func resolveCalendar(preferredId: String?) -> (calendar: EKCalendar?, warning: String?, resolvedById: Bool) {
+    /// 保存先を決める。resolvedBy は解決の経路そのもの＝診断が機構を1回で確定させる（v22 の「起動Nms」の手）:
+    ///   "id"       … calendar(withIdentifier:) で復元できた（write-only でも効いた）
+    ///   "held"     … 復元は効かないが、チューザーが渡した現物を保持していた（＝選んだ先に書ける。
+    ///                アプリを終了すると失われる）
+    ///   "fallback" … どちらも無い（再起動後など）→ 既定へ倒す。**呼び手は必ず warning を出すこと**
+    ///                ＝黙って別のカレンダーに保存しない（v16「黙って捨てない」の保存版。
+    ///                  予定が意図と違う場所に静かに入るのは、入らないことより悪い）
+    ///   "default"  … そもそも選んでいない＝OS の既定カレンダー（正常系）
+    private func resolveCalendar(preferredId: String?) -> (calendar: EKCalendar?, resolvedBy: String) {
         if let id = preferredId, !id.isEmpty {
             if let cal = store.calendar(withIdentifier: id) {
-                return (cal, nil, true)
+                return (cal, "id")
             }
-            return (store.defaultCalendarForNewEvents,
-                    "選んだカレンダーが見つからないため、既定のカレンダーに保存しました",
-                    false)
+            if let held = chosenCalendar, held.calendarIdentifier == id {
+                return (held, "held")
+            }
+            return (store.defaultCalendarForNewEvents, "fallback")
         }
-        return (store.defaultCalendarForNewEvents, nil, false)
+        return (store.defaultCalendarForNewEvents, "default")
     }
 
     private func describe(_ cal: EKCalendar) -> [String: Any] {
@@ -172,9 +180,12 @@ public class CalendarEventsPlugin: CAPPlugin, CAPBridgedPlugin {
                 "id": event.eventIdentifier ?? "",
                 "calendarTitle": calendar.title,
                 "calendarSource": calendar.source?.title ?? "",
-                "resolvedById": target.resolvedById
+                "resolvedBy": target.resolvedBy,
+                "resolvedById": target.resolvedBy == "id"
             ]
-            if let w = target.warning { out["warning"] = w }
+            if target.resolvedBy == "fallback" {
+                out["warning"] = "選んだカレンダーが見つからないため、既定のカレンダーに保存しました"
+            }
             call.resolve(out)
         } catch {
             call.reject("カレンダーへの保存に失敗: \(error.localizedDescription)")
@@ -202,8 +213,11 @@ public class CalendarEventsPlugin: CAPPlugin, CAPBridgedPlugin {
         var out = describe(cal)
         out["authorized"] = true
         out["found"] = true
-        out["resolvedById"] = target.resolvedById
-        if let w = target.warning { out["warning"] = w }
+        out["resolvedBy"] = target.resolvedBy
+        out["resolvedById"] = target.resolvedBy == "id"
+        if target.resolvedBy == "fallback" {
+            out["warning"] = "選んだカレンダーを復元できません（アプリの再起動で選択が失われた可能性）。このままだと既定のカレンダーに入ります — 「変更」で選び直してください"
+        }
         call.resolve(out)
     }
 
@@ -277,6 +291,9 @@ extension CalendarEventsPlugin: EKCalendarChooserDelegate {
             guard let call = self.pendingChooserCall else { return }
             self.pendingChooserCall = nil
             if let cal = selected {
+                // チューザーが渡した現物を保持（v25）＝識別子からの再解決（write-only で効くか未確定）に
+                // 頼らず、アプリ生存中は選んだ先へ確実に書けるようにする
+                self.chosenCalendar = cal
                 var out = self.describe(cal)
                 out["cancelled"] = false
                 call.resolve(out)

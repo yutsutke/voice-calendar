@@ -317,14 +317,14 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
      理由: この版文字列は index.html にしかないが、ロジックは別ファイル＝別キャッシュ。
      付けないと「フッタは新しいのにパーサは古い」という嘘の状態が成立する（v9 で実際に踏んだ）。
      index.html が更新されれば src の URL も変わる → JS も必ず新しく取り直される。 -->
-<script src="engine/settings.js?v=24"></script>
-<script src="engine/schema.js?v=24"></script>
-<script src="engine/parser.js?v=24"></script>
-<script src="input/transcriber.js?v=24"></script>
-<script src="adapters/calendar.js?v=24"></script>
+<script src="engine/settings.js?v=25"></script>
+<script src="engine/schema.js?v=25"></script>
+<script src="engine/parser.js?v=25"></script>
+<script src="input/transcriber.js?v=25"></script>
+<script src="adapters/calendar.js?v=25"></script>
 <script>
 'use strict';
-const BUILD = 'v24：開いた瞬間に録音（起動/復帰・白紙の時だけ・アプリのみ）｜v23：保存先カレンダーを見る/選ぶ＋権限拒否からの復帰導線｜v22：欄名を認識器に教える｜v21：来歴にバッジ · 2026-07-17';
+const BUILD = 'v25：選んだカレンダーを現物で保持（識別子の再解決に頼らない＝選んだ直後から確実に効く）｜v24：開いた瞬間に録音（起動/復帰・白紙の時だけ・アプリのみ）｜v23：保存先を見る/選ぶ＋権限復帰導線 · 2026-07-17';
 console.log('BUILD:', BUILD);
 document.getElementById('build').textContent = BUILD;
 
@@ -734,12 +734,19 @@ async function refreshCalendarTarget() {
       show('set-cur warn', `⚠ ${t.warning || '書き込み先のカレンダーが見つかりません（OS のカレンダー設定を確認）'}`);
     } else {
       const who = t.source ? `${t.title}（${t.source}）` : t.title;
-      // 選択済みなのに resolvedById=false ＝ 識別子から復元できず既定へ倒れた（＝warning 付き）
-      const restored = chosen ? (t.resolvedById ? '識別子復元:OK' : '識別子復元:NG') : '未選択(既定)';
+      // 解決の経路（v25）: id=識別子で復元できた / held=チューザーの現物を保持中（識別子復元は
+      // 効かない＝アプリを終了すると既定に戻る）/ fallback=既定へ倒れた（warning 付き）
+      let restored = '未選択(既定)';
+      if (chosen) {
+        if (t.resolvedBy === 'held') restored = '識別子復元:NG（現物を保持中＝終了まで有効）';
+        else restored = t.resolvedById ? '識別子復元:OK' : '識別子復元:NG→既定';
+      }
       window.__vcCalTarget = `${who}｜${t.sourceType}｜${restored}`;
+      const label = chosen
+        ? (t.resolvedBy === 'held' ? '選んだカレンダー（アプリ終了までの一時保持）' : '選んだカレンダー')
+        : 'OS の既定カレンダー';
       show(t.warning ? 'set-cur warn' : 'set-cur',
-        t.warning ? `⚠ ${t.warning}`
-                  : `${who} — ${chosen ? '選んだカレンダー' : 'OS の既定カレンダー'}`);
+        t.warning ? `⚠ ${t.warning}` : `${who} — ${label}`);
     }
   } catch (err) {
     // 取れないこと自体を表に出す（黙って空欄にしない＝v16）

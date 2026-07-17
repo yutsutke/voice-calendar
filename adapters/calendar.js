@@ -152,6 +152,9 @@
         id: res.id,
         calendarTitle: res.calendarTitle || '',
         calendarSource: res.calendarSource || '',
+        // resolvedBy: 保存先をどう決めたか（v25）: 'id'=識別子で復元 / 'held'=チューザーの現物を保持
+        // / 'fallback'=既定へ倒れた(要warning) / 'default'=未選択。診断が機構を1回で確定させる材料
+        resolvedBy: res.resolvedBy || '',
         resolvedById: !!res.resolvedById,
         warning: res.warning || '',
       };
@@ -169,6 +172,7 @@
         title: res.title || '',
         source: res.source || '',
         sourceType: res.sourceType || '',
+        resolvedBy: res.resolvedBy || '',
         resolvedById: !!res.resolvedById,
         warning: res.warning || '',
       };
