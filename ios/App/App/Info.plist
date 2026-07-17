@@ -24,6 +24,25 @@
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
+	<!-- Siri にアプリの別名を教える（v29・実機FB第21回「ヘイシリ ボイカレ開いてで開けるようにしたい」）。
+	     道1（SPEC §4）は「Hey Siri で開く → v24 の自動録音 → 話す → 保存」＝ここが最後のピース。
+	     表示名 VoiceCalendar（英字）への「ボイスカレンダー」は音の照合で通っていたが、
+	     カタカナ正式名も明示登録して照合を確実にする。iOS 16.4+（それ未満では無視されるだけ）。 -->
+	<key>INAlternativeAppNames</key>
+	<array>
+		<dict>
+			<key>INAlternativeAppName</key>
+			<string>ボイスカレンダー</string>
+			<key>INAlternativeAppNamePronunciationHint</key>
+			<string>ぼいすかれんだー</string>
+		</dict>
+		<dict>
+			<key>INAlternativeAppName</key>
+			<string>ボイカレ</string>
+			<key>INAlternativeAppNamePronunciationHint</key>
+			<string>ぼいかれ</string>
+		</dict>
+	</array>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>NSSpeechRecognitionUsageDescription</key>

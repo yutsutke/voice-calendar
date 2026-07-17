@@ -313,14 +313,14 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
      理由: この版文字列は index.html にしかないが、ロジックは別ファイル＝別キャッシュ。
      付けないと「フッタは新しいのにパーサは古い」という嘘の状態が成立する（v9 で実際に踏んだ）。
      index.html が更新されれば src の URL も変わる → JS も必ず新しく取り直される。 -->
-<script src="engine/settings.js?v=28"></script>
-<script src="engine/schema.js?v=28"></script>
-<script src="engine/parser.js?v=28"></script>
-<script src="input/transcriber.js?v=28"></script>
-<script src="adapters/calendar.js?v=28"></script>
+<script src="engine/settings.js?v=29"></script>
+<script src="engine/schema.js?v=29"></script>
+<script src="engine/parser.js?v=29"></script>
+<script src="input/transcriber.js?v=29"></script>
+<script src="adapters/calendar.js?v=29"></script>
 <script>
 'use strict';
-const BUILD = 'v28：話し終わったら自動保存（設定・既定オフ・曖昧さゼロの時だけ）｜v27：日時を言わなければ「今」＋「今/現在」の語彙｜v26：保存先は OS の既定カレンダー1本｜v24：開いた瞬間に録音 · 2026-07-17';
+const BUILD = 'v29：Siri に別名を登録 —「ヘイシリ ボイカレ開いて」で開く（＋カタカナ正式名も明示）｜v28：話し終わったら自動保存（設定・既定オフ）｜v27：日時を言わなければ「今」｜v24：開いた瞬間に録音 · 2026-07-17';
 console.log('BUILD:', BUILD);
 document.getElementById('build').textContent = BUILD;
 
