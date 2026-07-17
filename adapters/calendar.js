@@ -2,7 +2,8 @@
 //
 // materialize(draft, now): 中立スキーマ（date/time 部分フィールド）→ 具体イベントに実体化。
 // 保存時の既定値はここ（アダプタ境界）に集約する＝解釈層は創作しない（SPEC §7「空」）:
-//   - 時刻なし（日付のみ）        → 終日イベントとして保存
+//   - **日時を何も言わない**      → 今の日時（v27・メモ用途＝思いついたことを時系列に置く）
+//   - 時刻なし（日付のみ）        → 終日イベントとして保存（「明日 歯医者」に 22:45 を創作しない）
 //   - 終了なし（時刻あり）        → 開始 + 1時間
 //   - タイトルなし                → 「予定」（warning を出して見せる）
 //
@@ -38,6 +39,8 @@
   }
 
   const pad2 = (n) => String(n).padStart(2, '0');
+  const ymd = (d) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+  const hm = (d) => `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
 
   // opts.defaultDurationMin: 終了を言わなかった時に付ける長さ（既定 60分 = v1 の決め打ち。v19 で設定可能に）
   function materialize(draft, now, opts) {
@@ -45,21 +48,34 @@
       ? opts.defaultDurationMin : 60;
     const problems = [];
     const warnings = [];
-    if (!draft.startDate && !draft.startTime) {
-      problems.push('開始（日付か時刻）が未入力です');
+
+    // v27（実機FB第19回「メモアプリとしても使えそう」）:
+    // **日時を何も言わなかった発話は「今」として記録する**＝思いついたことを話すだけで時系列に残る。
+    // 日付だけ言った時（「明日 歯医者」）は従来どおり終日＝**言っていない時刻を創作しない**（SPEC §7）。
+    const noWhen = !draft.startDate && !draft.startTime;
+    if (noWhen && !draft.title && !draft.location && !draft.note) {
+      // 空のフォームでの保存＝事故（誤タップ・クリア忘れ）。「今の空予定」を作らない
+      problems.push('何も入力されていません');
       return { ok: false, problems, warnings };
     }
+
     let dateStr = draft.startDate;
-    if (!dateStr) {
-      dateStr = `${now.getFullYear()}-${pad2(now.getMonth() + 1)}-${pad2(now.getDate())}`;
+    let timeStr = draft.startTime;
+    if (noWhen) {
+      dateStr = ymd(now);
+      // 「終日」を自分でチェックした人には時刻を足さない（明示の指定が推測に勝つ＝v9）
+      if (draft.allDay) warnings.push('日付が未入力のため今日にしました');
+      else { timeStr = hm(now); warnings.push('日時が未入力のため今の日時にしました'); }
+    } else if (!dateStr) {
+      dateStr = ymd(now);
       warnings.push('日付が未入力のため今日にしました');
     }
     const [y, mo, da] = dateStr.split('-').map(Number);
     const title = draft.title || '予定';
     if (!draft.title) warnings.push('タイトルが未入力のため「予定」にしました');
 
-    const allDay = draft.allDay || !draft.startTime;
-    if (!draft.allDay && !draft.startTime) warnings.push('時刻が未入力のため終日の予定にしました');
+    const allDay = draft.allDay || !timeStr;
+    if (!draft.allDay && !timeStr) warnings.push('時刻が未入力のため終日の予定にしました');
 
     let start, end;
     if (allDay) {
@@ -70,7 +86,7 @@
         if (end < start) { end = start; warnings.push('終了日が開始日より前だったため同日にしました'); }
       } else end = start;
     } else {
-      const [sh, sm] = draft.startTime.split(':').map(Number);
+      const [sh, sm] = timeStr.split(':').map(Number);
       start = new Date(y, mo - 1, da, sh, sm);
       if (draft.endTime) {
         const [eh, em] = draft.endTime.split(':').map(Number);

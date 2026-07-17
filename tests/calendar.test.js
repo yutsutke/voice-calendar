@@ -182,17 +182,56 @@ t('【v13 の症状】プラグイン未登録なら理由の分かる throw（�
   });
 });
 
-// ===== materialize が保存先の追加で壊れていないこと（v23 の無退行） =====
-t('materialize は保存先に関係なく従来どおり（時刻なし→終日 / 終了なし→+既定）', () => {
+// ===== materialize の既定値（保存時の創作はここに集約） =====
+t('materialize は従来どおり（時刻なし→終日 / 終了なし→+既定）', () => {
   const now = new Date(2026, 6, 17, 9, 0);
   const allDay = materialize({ title: '旅行', startDate: '2026-07-20' }, now);
-  eq(allDay.event.allDay, true, '時刻なし→終日');
+  eq(allDay.event.allDay, true, '日付だけ→終日（言っていない時刻を創作しない）');
   const oneHour = materialize({ title: '歯医者', startDate: '2026-07-18', startTime: '15:00' }, now);
   eq(oneHour.event.end.getHours(), 16, '終了なし→開始+60分（既定）');
   const half = materialize({ title: '歯医者', startDate: '2026-07-18', startTime: '15:00' }, now, { defaultDurationMin: 30 });
   eq(half.event.end.getHours() * 60 + half.event.end.getMinutes(), 15 * 60 + 30, '設定した長さが効く');
-  const noStart = materialize({ title: 'x' }, now);
-  eq(noStart.ok, false, '開始が無ければ保存しない（創作しない）');
+});
+
+// v27（実機FB第19回「メモアプリとしても使えそう」）: 日時を何も言わなければ「今」として記録する
+t('🔴 日時を何も言わない → 今の日時で保存（メモ用途）', () => {
+  const now = new Date(2026, 6, 17, 22, 45);
+  const r = materialize({ title: '牛乳を買う' }, now);
+  eq(r.ok, true, '弾かれない（v26 までは「開始が未入力」で保存できなかった）');
+  eq(r.event.allDay, false, '終日ではなく時刻付き＝メモが時系列に並ぶ');
+  eq(r.event.start.getFullYear() * 10000 + (r.event.start.getMonth() + 1) * 100 + r.event.start.getDate(), 20260717, '今日');
+  eq(r.event.start.getHours() * 60 + r.event.start.getMinutes(), 22 * 60 + 45, '今の時刻');
+  eq(r.event.end.getHours(), 23, '終了は +60分（既定）');
+  ok(r.warnings.some((w) => w.includes('今の日時')), '黙って今にしない＝warning で見せる');
+});
+
+t('🔴 日付だけ言った時は今の時刻を創作しない（終日のまま）', () => {
+  const now = new Date(2026, 6, 17, 22, 45);
+  const r = materialize({ title: '歯医者', startDate: '2026-07-18' }, now);
+  eq(r.event.allDay, true, '「明日 歯医者」が明日の 22:45 になってはいけない（SPEC §7）');
+});
+
+t('🔴 空のフォームでは保存しない（「今の空予定」を作らない＝誤タップ・クリア忘れ）', () => {
+  const now = new Date(2026, 6, 17, 22, 45);
+  const r = materialize({}, now);
+  eq(r.ok, false, '何も入っていなければ保存しない');
+  ok(r.problems.length > 0, '理由を出す');
+});
+
+t('タイトルが無くても場所やメモがあれば「今」として保存できる', () => {
+  const now = new Date(2026, 6, 17, 22, 45);
+  const r = materialize({ note: '思いついたこと' }, now);
+  eq(r.ok, true, 'メモだけの記録も残せる');
+  eq(r.event.title, '予定', 'タイトルは既定');
+  eq(r.event.start.getHours(), 22, '今の時刻');
+});
+
+t('「終日」を自分でチェックしていれば、日時なしでも時刻を足さない（明示が推測に勝つ＝v9）', () => {
+  const now = new Date(2026, 6, 17, 22, 45);
+  const r = materialize({ title: '記念日', allDay: true }, now);
+  eq(r.ok, true);
+  eq(r.event.allDay, true, '終日のまま');
+  eq(r.event.start.getDate(), 17, '日付は今日');
 });
 
 (async () => {
