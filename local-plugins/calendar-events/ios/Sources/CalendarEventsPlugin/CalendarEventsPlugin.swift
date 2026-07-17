@@ -238,6 +238,11 @@ public class CalendarEventsPlugin: CAPPlugin, CAPBridgedPlugin {
             self.pendingChooserCall = call
             // Done / Cancel は navigation bar に出る＝UINavigationController に包む必要がある
             let nav = UINavigationController(rootViewController: chooser)
+            // 🔴 スワイプで閉じさせない。EKCalendarChooser の delegate は **Done / Cancel 経由でしか
+            // 呼ばれない**ため、iOS13+ の下スワイプで閉じられると pendingChooserCall が宙に浮き、
+            // JS の Promise が永久に解決せず、以後ずっと「既に開いています」で選べなくなる。
+            // Cancel ボタンは出しているので、閉じる手段は失われない。
+            nav.isModalInPresentation = true
             host.present(nav, animated: true, completion: nil)
         }
     }
