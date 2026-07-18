@@ -44,8 +44,8 @@ window.__vcRenderDiag = function () {
   // 保存先（v23）: 入口（音声）と対になる出口。「保存できたのに見つからない」を切り分ける。
   // 併記の「識別子復元」は **write-only で calendar(withIdentifier:) が動くかの実測**＝
   // Apple のドキュメントに記述が無く、実機で1回見れば確定する（v22 の「起動Nms」と同じ手）。
-  rows.push(['保存先', window.__vcCalTarget || '(未取得)']);
-  var layers = ['VCSettings', 'VCStore', 'VCParser', 'VCTranscriber', 'VCAdapter']
+  rows.push(['保存先カレンダー', window.__vcCalTarget || '(未取得)']);
+  var layers = ['VCSettings', 'VCStore', 'VCParser', 'VCTranscriber', 'VCAdapter', 'VCRecords']
     .map(function (n) { return (window[n] ? '✅' : '❌') + n; }).join(' ');
   rows.push(['層の読込', layers]);
   rows.push(['初期化', window.__vcInitDone ? '✅ 完了' : '❌ 途中で停止']);
@@ -163,6 +163,25 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
     .history-list .b-targeted { color: #30d158; }
   }
 
+  /* ---- リスト（v32: 保存した記録📝と予定📅の時系列） ---- */
+  .rec-filters { display: flex; gap: 18px; padding: 10px 2px 8px; font-size: 13px; border-bottom: 1px solid var(--line); }
+  .rec-filters label { display: flex; align-items: center; gap: 6px; cursor: pointer; user-select: none; }
+  .rec-filters input[type="checkbox"] { width: 16px; height: 16px; }
+  .rec-scroll { max-height: 320px; overflow-y: auto; position: relative; -webkit-overflow-scrolling: touch; }
+  .rec-day { font-size: 11px; font-weight: 600; color: var(--sub); padding: 8px 0 2px; }
+  .rec-now { display: flex; align-items: center; gap: 8px; color: var(--accent); font-size: 11px; font-weight: 600; padding: 4px 0; }
+  .rec-now::before, .rec-now::after { content: ''; flex: 1; border-top: 1px solid var(--accent); opacity: .45; }
+  .rec-item { display: flex; align-items: baseline; gap: 8px; padding: 7px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
+  .rec-item:last-child { border-bottom: none; }
+  .rec-time { flex: 0 0 3.2em; color: var(--sub); font-size: 12px; }
+  .rec-main { flex: 1; min-width: 0; }
+  .rec-title { overflow-wrap: anywhere; }
+  .rec-sub { color: var(--sub); font-size: 11px; margin-top: 1px; overflow-wrap: anywhere; }
+  .rec-del { border: none; background: transparent; color: var(--sub); font-size: 13px; cursor: pointer; padding: 2px 6px; align-self: center; }
+  .rec-del:active { opacity: .5; }
+  .rec-empty { color: var(--sub); padding: 12px 0; font-size: 13px; }
+  .rec-count { color: var(--sub); font-size: 11px; margin-left: 6px; font-weight: 400; }
+
   /* ---- 詳細設定 ---- */
   .set-item { padding: 12px 0; border-bottom: 1px solid var(--line); }
   .set-item:last-child { border-bottom: none; }
@@ -275,6 +294,21 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
     <button id="permOpen" type="button">設定を開く</button>
   </div>
 
+  <!-- リスト（v32）: このアプリで保存した記録📝と予定📅の時系列。カレンダーはアプリから読めない
+       （書き込み専用＝v23-v26）ため、保存時に端末内へ残した控え（adapters/records.js）を表示する。
+       出るのは保存先を「リスト」か「両方」にして保存した分だけ（カレンダーのみはカレンダーアプリで見る） -->
+  <details class="optional" id="recordsBox">
+    <summary>リスト（記録📝と予定📅）<span class="rec-count" id="recCount"></span></summary>
+    <div class="card2">
+      <div class="rec-filters">
+        <label><input type="checkbox" id="recShowPlan" checked> 📅 予定</label>
+        <label><input type="checkbox" id="recShowRecord" checked> 📝 記録</label>
+      </div>
+      <div class="rec-scroll" id="recScroll"><div id="recordsList"></div></div>
+      <div class="history-actions"><button id="recordsClear" type="button">リストを空にする</button></div>
+    </div>
+  </details>
+
   <!-- 来歴（SPEC §5-①）: 音声の生テキストと解釈結果の記録。
        「言ったのに変な値が入った」の原因切り分け（認識か解釈か）はここを見る -->
   <details class="optional" id="historyBox">
@@ -312,14 +346,15 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
      理由: この版文字列は index.html にしかないが、ロジックは別ファイル＝別キャッシュ。
      付けないと「フッタは新しいのにパーサは古い」という嘘の状態が成立する（v9 で実際に踏んだ）。
      index.html が更新されれば src の URL も変わる → JS も必ず新しく取り直される。 -->
-<script src="engine/settings.js?v=31"></script>
-<script src="engine/schema.js?v=31"></script>
-<script src="engine/parser.js?v=31"></script>
-<script src="input/transcriber.js?v=31"></script>
-<script src="adapters/calendar.js?v=31"></script>
+<script src="engine/settings.js?v=32"></script>
+<script src="engine/schema.js?v=32"></script>
+<script src="engine/parser.js?v=32"></script>
+<script src="input/transcriber.js?v=32"></script>
+<script src="adapters/calendar.js?v=32"></script>
+<script src="adapters/records.js?v=32"></script>
 <script>
 'use strict';
-const BUILD = 'v31：ボイスカレンダーに改称・完全終了→Siri 起動のクラッシュ修正・詳細情報に「起動」｜v30：アプリアイコン｜v29：Siri 別名「ボイカレ」｜v28：話し終わったら自動保存 · 2026-07-18';
+const BUILD = 'v32：保存先（カレンダー/リスト/両方）＋リスト＝記録📝と予定📅の時系列（開くと「今」へ）｜v31：ボイスカレンダーに改称・Siri cold 起動クラッシュ修正｜v30：アプリアイコン · 2026-07-18';
 console.log('BUILD:', BUILD);
 document.getElementById('build').textContent = BUILD;
 
@@ -571,6 +606,136 @@ document.getElementById('historyClear').addEventListener('click', () => {
 });
 renderHistory();
 
+// ===== リスト（v32）: 保存した記録📝と予定📅の時系列 =====
+// カレンダーは読めない（書き込み専用 v23-v26）＝「登録したものを見返す」は保存時に端末内へ残した
+// 台帳（adapters/records.js）から描く。予定/記録のトグルで「予定だけ・記録だけ・両方」の3通り。
+// 台帳が読み込めなくても本体（フォーム・保存）は殺さない（v13: 補助機能の失敗が本体を殺さない）。
+const REC_VIEW_KEY = 'vc_recview_v1';
+const recShowPlan = document.getElementById('recShowPlan');
+const recShowRecord = document.getElementById('recShowRecord');
+(function initRecView() {
+  try {
+    const v = JSON.parse(localStorage.getItem(REC_VIEW_KEY)) || {};
+    recShowPlan.checked = v.plan !== false;
+    recShowRecord.checked = v.record !== false;
+  } catch { /* 壊れた表示状態は既定（両方オン）で動く */ }
+})();
+function renderRecords() {
+  const listEl = document.getElementById('recordsList');
+  listEl.innerHTML = '';
+  if (!window.VCRecords) { // 読込失敗でもフォームと保存は生かす（v13）。原因は診断に出ている
+    const d = document.createElement('div');
+    d.className = 'rec-empty';
+    d.textContent = '⚠ リスト機能を読み込めませんでした（詳細は「診断」）';
+    listEl.appendChild(d);
+    return;
+  }
+  const all = VCRecords.list();
+  document.getElementById('recCount').textContent = all.length ? `${all.length}件` : '';
+  const rows = all.filter((r) => (r.kind === 'plan' ? recShowPlan.checked : recShowRecord.checked));
+  if (!rows.length) {
+    const d = document.createElement('div');
+    d.className = 'rec-empty';
+    d.textContent = all.length
+      ? '表示する種類が両方オフになっています（上の 📅/📝 をオンに）'
+      : 'まだ何もありません。詳細設定の「保存先」を「リスト」か「両方」にして保存すると、ここに時系列で残ります。';
+    listEl.appendChild(d);
+    return;
+  }
+  const now = Date.now();
+  let nowDone = false;
+  let lastDay = '';
+  for (const r of rows) {
+    // 「今」の線: 開始が未来の最初の行の直前（全部過去ならループ後に末尾）＝開いた時ここへスクロール
+    if (!nowDone && r.startMs > now) { listEl.appendChild(recNowMarker()); nowDone = true; }
+    const d = new Date(r.startMs);
+    const day = `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`;
+    if (day !== lastDay) {
+      const dv = document.createElement('div');
+      dv.className = 'rec-day';
+      dv.textContent = `${d.getMonth() + 1}月${d.getDate()}日（${'日月火水木金土'[d.getDay()]}）`;
+      listEl.appendChild(dv);
+      lastDay = day;
+    }
+    listEl.appendChild(recItem(r));
+  }
+  if (!nowDone) listEl.appendChild(recNowMarker());
+}
+function recNowMarker() {
+  const m = document.createElement('div');
+  m.className = 'rec-now';
+  m.textContent = '今';
+  return m;
+}
+function recItem(r) {
+  const item = document.createElement('div');
+  item.className = 'rec-item';
+  const time = document.createElement('span');
+  time.className = 'rec-time';
+  const d = new Date(r.startMs);
+  time.textContent = r.allDay ? '終日' : `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  const main = document.createElement('div');
+  main.className = 'rec-main';
+  const title = document.createElement('div');
+  title.className = 'rec-title';
+  title.textContent = `${r.kind === 'plan' ? '📅' : '📝'} ${r.title}`;
+  main.appendChild(title);
+  const subs = [];
+  if (r.location) subs.push(`📍${r.location}`);
+  if (r.note) subs.push(r.note);
+  if (r.dest === 'both') subs.push('カレンダーにも保存');
+  if (subs.length) {
+    const sub = document.createElement('div');
+    sub.className = 'rec-sub';
+    sub.textContent = subs.join('・');
+    main.appendChild(sub);
+  }
+  const del = document.createElement('button');
+  del.type = 'button';
+  del.className = 'rec-del';
+  del.setAttribute('aria-label', 'この行をリストから削除');
+  del.textContent = '✕';
+  del.addEventListener('click', () => {
+    try { VCRecords.remove(r.id); } catch (err) { toast(`削除に失敗: ${(err && err.message) || err}`); return; }
+    renderRecords();
+    // カレンダー側はアプリから消せない（読めない＝v26）。両方で入れた行は正直にそう言う
+    toast(r.dest === 'both' ? 'リストから削除しました（カレンダー側には残っています）' : 'リストから削除しました');
+  });
+  item.append(time, main, del);
+  return item;
+}
+for (const el of [recShowPlan, recShowRecord]) {
+  el.addEventListener('change', () => {
+    try { localStorage.setItem(REC_VIEW_KEY, JSON.stringify({ plan: recShowPlan.checked, record: recShowRecord.checked })); } catch {}
+    renderRecords();
+  });
+}
+// 開いたら「今」を中央へ＝「開くと、現在に近い記録のあたりが表示される」（要求そのもの）
+document.getElementById('recordsBox').addEventListener('toggle', () => {
+  if (!document.getElementById('recordsBox').open) return;
+  const sc = document.getElementById('recScroll');
+  const mk = sc.querySelector('.rec-now');
+  if (mk) sc.scrollTop = Math.max(0, mk.offsetTop - sc.clientHeight / 2);
+});
+// 全消しは2度押し（誤タップで台帳が丸ごと飛ぶのを防ぐ。確認ダイアログは出さない流儀のまま）
+let recClearArmedAt = 0;
+document.getElementById('recordsClear').addEventListener('click', () => {
+  const btn = document.getElementById('recordsClear');
+  if (!window.VCRecords) return;
+  if (Date.now() - recClearArmedAt < 4000) {
+    VCRecords.clear();
+    recClearArmedAt = 0;
+    btn.textContent = 'リストを空にする';
+    renderRecords();
+    toast('リストを空にしました');
+  } else {
+    recClearArmedAt = Date.now();
+    btn.textContent = 'もう一度押すと全部消えます';
+    setTimeout(() => { if (recClearArmedAt && Date.now() - recClearArmedAt >= 3900) { recClearArmedAt = 0; btn.textContent = 'リストを空にする'; } }, 4200);
+  }
+});
+renderRecords();
+
 const transcriber = VCTranscriber.createTranscriber({
   onInterim(t) { transcriptEl.textContent = `… ${t}`; },
   onFinal(t, meta) { onUtterance(t, meta); },
@@ -668,7 +833,18 @@ function renderSettings() {
       label.append(' ', tag);
     }
     let input;
-    if (d.type === 'number') {
+    if (d.type === 'enum') {
+      // 3択（v32 保存先）。value はコードの語彙・表示は日本語ラベル
+      input = document.createElement('select');
+      for (const opt of d.options) {
+        const o = document.createElement('option');
+        o.value = opt.value;
+        o.textContent = opt.label;
+        if (settings.get(d.key) === opt.value) o.selected = true;
+        input.appendChild(o);
+      }
+      input.addEventListener('change', () => settings.set(d.key, input.value));
+    } else if (d.type === 'number') {
       input = document.createElement('select');
       for (const opt of d.options) {
         const o = document.createElement('option');
@@ -720,7 +896,7 @@ function renderSettings() {
   const ihead = document.createElement('div');
   ihead.className = 'set-head';
   const ilabel = document.createElement('label');
-  ilabel.textContent = '保存先';
+  ilabel.textContent = '保存先のカレンダー';
   const itag = document.createElement('span');
   itag.className = 'set-native';
   itag.textContent = 'アプリのみ';
@@ -808,31 +984,80 @@ document.getElementById('settingsReset').addEventListener('click', () => {
 });
 renderSettings();
 
-// ===== 保存: DraftEvent → アダプタ =====
+// 保存ボタンは行き先を名乗る（v32）: 設定が「リスト」なのに「カレンダーに保存」では表示が嘘になる
+function updateSaveLabel() {
+  const dest = settings.get('recordDest');
+  document.getElementById('save').textContent =
+    dest === 'list' ? 'リストに記録' : dest === 'both' ? 'カレンダーとリストに保存' : 'カレンダーに保存';
+}
+settings.subscribe((k) => { if (k === 'recordDest' || k === null) updateSaveLabel(); }); // null = resetAll
+updateSaveLabel();
+
+// ===== 保存: DraftEvent → 保存先（v32: カレンダー / リスト / 両方＝設定 recordDest） =====
 // opts.auto: 発話からの自動保存（v28）。**黙って保存しない**＝toast で「自動保存した」と告げる
 // （v16「黙って捨てない」の保存版。保存は不可逆＝入ったことが分からないのが一番困る）。
 async function doSave(opts) {
   const auto = !!(opts && opts.auto);
-  const res = VCAdapter.materialize(store.get(), new Date(), { defaultDurationMin: settings.get('defaultDurationMin') });
+  const now = new Date();
+  const res = VCAdapter.materialize(store.get(), now, { defaultDurationMin: settings.get('defaultDurationMin') });
   if (!res.ok) { toast(`⚠ ${res.problems.join(' / ')}`); return; }
-  const adapter = VCAdapter.pickAdapter();
-  try {
-    const saved = (await adapter.save(res.event)) || {};
-    permBanner(false);
-    // toast は1つしか出せない＝1行にまとめる。**どこに入れたか**を必ず出す（v23）＝
-    // 「保存できたのに見つからない」（既定が iCloud か Google かで行き先が変わる）を防ぐ
-    let msg = auto ? '✅ 自動保存しました' : '✅ 保存しました';
-    if (saved.calendarTitle) msg += ` → ${saved.calendarTitle}`;
-    else if (adapter.name === 'ics') msg += '（.ics をダウンロード）';
-    if (res.warnings.length) msg += `（${res.warnings.join('・')}）`;
-    toast(msg);
+
+  const dest = settings.get('recordDest'); // 'calendar'（既定＝従来挙動） | 'list' | 'both'
+  const toCal = dest !== 'list';
+  const toList = dest !== 'calendar';
+  // 予定/記録は「開始が未来か」（adapters/records.js の kind と同じ式・同じ now で判定＝必ず一致）
+  const isRecord = res.event.start.getTime() <= now.getTime();
+
+  // ① カレンダー側から（権限拒否など“現実に失敗する方”が先＝失敗したら何も書かずフォームを残す。
+  //    リスト先行だと、カレンダー失敗→フォーム残る→再試行、で同じ記録がリストに二重に入る）
+  let calSaved = null;
+  let calAdapterName = '';
+  if (toCal) {
+    const adapter = VCAdapter.pickAdapter();
+    calAdapterName = adapter.name;
+    // 「両方」のときだけ、記録📝はカレンダー側でも予定と見分けが付くようタイトルに印を付ける
+    // （既定「カレンダーのみ」では付けない: 触らない人の体験を1ミリも変えない＝v19）
+    const calEvent = (dest === 'both' && isRecord)
+      ? Object.assign({}, res.event, { title: `📝 ${res.event.title}` })
+      : res.event;
+    try {
+      calSaved = (await adapter.save(calEvent)) || {};
+      permBanner(false);
+    } catch (err) {
+      handleCalendarError(err, auto ? '自動保存に失敗' : '保存に失敗');
+      return; // フォームは残す（従来どおり）
+    }
+  }
+
+  // ② リスト（端末内台帳）。書き込み失敗は台帳が投げる＝黙って捨てない（v16）
+  let listOk = false;
+  if (toList) {
+    try {
+      VCRecords.add(res.event, dest, now);
+      listOk = true;
+      renderRecords();
+    } catch (err) {
+      const m = (err && err.message) || err;
+      if (!calSaved) { toast(`⚠ リストへの記録に失敗: ${m}`); return; } // どこにも入っていない＝フォームを残す
+      toast(`⚠ カレンダーには入りましたが、リストへの記録に失敗しました: ${m}`); // 部分成功は正直に言う
+    }
+  }
+
+  // ③ どこかに入った＝後始末。toast は「どこに入れたか」を必ず名乗る（v23）
+  if (calSaved || listOk) {
+    if (!(toList && !listOk)) { // 部分失敗の警告 toast を成功 toast で上書きしない
+      const dests = [];
+      if (calSaved) dests.push(calSaved.calendarTitle || (calAdapterName === 'ics' ? '.ics ダウンロード' : 'カレンダー'));
+      if (listOk) dests.push(isRecord ? 'リスト（📝記録）' : 'リスト（📅予定）');
+      let msg = (auto ? '✅ 自動保存しました' : '✅ 保存しました') + ` → ${dests.join('・')}`;
+      if (res.warnings.length) msg += `（${res.warnings.join('・')}）`;
+      toast(msg);
+    }
     store.reset();
     transcriptEl.textContent = '';
     notesEl.textContent = '';
     document.getElementById('optional').open = false;
-    refreshCalendarTarget(); // 初回保存で権限が付いた直後＝ここで初めて保存先が判明する
-  } catch (err) {
-    handleCalendarError(err, auto ? '自動保存に失敗' : '保存に失敗');
+    if (toCal) refreshCalendarTarget(); // 初回保存で権限が付いた直後＝ここで初めて保存先が判明する
   }
 }
 document.getElementById('save').addEventListener('click', () => doSave());

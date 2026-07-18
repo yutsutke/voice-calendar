@@ -14,6 +14,19 @@
   // 各設定: 既定値・ラベル・説明・根拠（なぜ設定になったか＝将来「これ要る？」の判断材料）
   const DEFS = [
     {
+      key: 'recordDest',
+      label: '保存先',
+      hint: 'カレンダー: OS の既定カレンダーへ（今までの動き）。リスト: カレンダーには入れず、アプリ内の「リスト」に時系列で残す（この端末の中だけ・同期なし）。両方: 両方へ入れる＝記録（開始が今〜過去）はカレンダー側に 📝 が付く。※アプリはカレンダーを読めないため、カレンダーに入れた分を消すのはカレンダーアプリで。',
+      why: 'v32 ユーザー明示要求（2026-07-18）: v27 でメモ用途が成立した先の実問題＝記録が増えるとカレンダーが予定でいっぱいになる。メモ的な記録をカレンダーに入れずリストへ逃がす道（SPEC §12「用途が2つに割れてから可変機構を作る」の“割れた”局面）',
+      def: 'calendar',
+      type: 'enum',
+      options: [
+        { value: 'calendar', label: 'カレンダーのみ' },
+        { value: 'list', label: 'リストのみ' },
+        { value: 'both', label: '両方' },
+      ],
+    },
+    {
       key: 'plainUtteranceIsNew',
       label: '欄名なしの発話は「新規」にする',
       hint: 'オン: 前の音声入力を消して新しい予定として入れ直す（今までの動き）。オフ: 消さずに足すだけ。',
@@ -85,6 +98,7 @@
           const v = saved[d.key];
           if (v === undefined) continue;
           if (d.type === 'number' && typeof v === 'number') out[d.key] = v;
+          else if (d.type === 'enum' && (d.options || []).some((o) => o.value === v)) out[d.key] = v; // 選択肢に無い値は既定のまま
           else if (!d.type && typeof v === 'boolean') out[d.key] = v;
         }
       }
@@ -102,6 +116,7 @@
       set(key, value) {
         const d = DEFS.find((x) => x.key === key);
         if (!d) return;
+        if (d.type === 'enum' && !(d.options || []).some((o) => o.value === value)) return; // 未知の値で壊さない
         values[key] = value;
         try { global.localStorage.setItem(KEY, JSON.stringify(values)); } catch {}
         listeners.forEach((fn) => fn(key, value));

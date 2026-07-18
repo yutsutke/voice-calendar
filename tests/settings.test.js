@@ -40,6 +40,7 @@ t('既定値がこれまでの実挙動と一致する（触らない人の体�
   eq(s.get('defaultDurationMin'), 60, '終了なし→+1時間（v1 の決め打ち）');
   eq(s.get('silenceMs'), 1800, '無音1.8秒（v15/v16 の決め打ち）');
   eq(s.get('autoSaveAfterUtterance'), false, '🔴 自動保存はオフ＝保存は自分で押す（v27 までの動き）。保存は不可逆なので既定で勝手に入れない');
+  eq(s.get('recordDest'), 'calendar', '保存先はカレンダーのみ＝v31 までの動き（v32 のリストは opt-in）');
   eq(s.get('targetCalendarId'), undefined, '🚫 保存先の選択は v26 で撤去（write-only では効かない＝復活させない）');
 });
 
@@ -91,6 +92,17 @@ t('型が違う保存値は無視して既定を使う', () => {
   const s = createSettings();
   eq(s.get('silenceMs'), 1800, 'number でない → 既定');
   eq(s.get('plainUtteranceIsNew'), true, 'boolean でない → 既定');
+});
+
+t('enum（保存先 v32）: 未知の保存値は既定へ・未知の set は無視', () => {
+  localStorage.setItem(KEY, JSON.stringify({ recordDest: 'ほげ' }));
+  const s = createSettings();
+  eq(s.get('recordDest'), 'calendar', '選択肢に無い保存値 → 既定');
+  s.set('recordDest', 'list');
+  eq(s.get('recordDest'), 'list', '正しい値は通る');
+  s.set('recordDest', '変な値');
+  eq(s.get('recordDest'), 'list', '未知値の set は無視（実行中も壊れない）');
+  eq(createSettings().get('recordDest'), 'list', '正しい値は保存もされる');
 });
 
 t('未知のキーを set しても壊れない', () => {

@@ -27,6 +27,7 @@ engine/schema.js         # 共有状態層: DraftEvent ストア + fieldState + 
 engine/settings.js       # 詳細設定（v19）: 値の入れ物のみ・DOM も宿主も知らない。既定=従来挙動
 input/transcriber.js     # 転写層: WebSpeech(web/iOS Safari) / 将来 SFSpeechRecognizer プラグイン。simulate() でテキスト注入
 adapters/calendar.js     # 永続層: materialize(保存時既定値はここに集約) + ics(web) / eventkit(iOS・保存先は OS 既定1本)
+adapters/records.js      # ローカル記録台帳（v32）: 保存先「リスト/両方」の控えを端末内に保持（write-only でカレンダーは読めない→リスト表示の土台）
 scripts/sync-web.mjs     # root の web 本体 → www/（Capacitor webDir）を生成。cap の前に必ず実行（npm run cap:sync）
 www/                     # 生成物（gitignore）。手で編集しない
 local-plugins/           # ローカル Capacitor プラグイン（SPM）。命名規約: npm名 kebab → PascalCase 一致必須
@@ -39,6 +40,7 @@ tests/schema.test.js     # 共有状態＋欄ロック＋設定注入のテス�
 tests/settings.test.js   # 詳細設定（既定=従来挙動を固定・壊れた保存値でも動く）
 tests/transcriber.test.js# 転写層の「壊れ方」（v13: registerPlugin 無し native で throw しない・Plugins.X 優先）
 tests/calendar.test.js   # 保存の native 契約（v23: 引数名がズレると黙って既定カレンダーに入る＝実機まで気づけない）
+tests/records.test.js    # 記録台帳（v32: 書込失敗は黙らない・kind=予定/記録は保存時に確定・破損は読める行だけで動く）
 tests/version.test.js    # BUILD と script の ?v= の一致を強制（v10 の罠の再発防止）。`npm test` で全部走る
 .claude/launch.json      # dev サーバ (port 5275。5273=spike / 5274=madeleine / 8123=terrain-game と衝突回避)
 ```
