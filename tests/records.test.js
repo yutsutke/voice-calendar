@@ -158,12 +158,16 @@ t('now を渡し忘れても現在時刻で動く（0=1970 に化けて最古扱
   eq(rec.kind, 'plan', '1分後開始=予定');
 });
 
-t('上限 CAP を超えたら最古（savedAt 昇順）から落とす', () => {
-  for (let i = 0; i < R.CAP + 5; i++) R.add(ev(`E${i}`, 1000 + i), 'list', D(1000 + i));
+t('上限 CAP を超えたら最古（savedAt 昇順）から落とし、dropped で告げる（黙って捨てない）', () => {
+  let last = null;
+  for (let i = 0; i < R.CAP + 5; i++) last = R.add(ev(`E${i}`, 1000 + i), 'list', D(1000 + i));
   const l = R.list();
   eq(l.length, R.CAP, 'CAP 件に収まる');
   ok(!l.some((r) => r.title === 'E0'), '最古の E0 は落ちた');
   ok(l.some((r) => r.title === `E${R.CAP + 4}`), '最新は残る');
+  eq(last.dropped, 1, '超過時の add は dropped を返す＝呼び出し側が toast で告げる');
+  const fresh = R.add(ev('X', 1), 'list', D(R.CAP * 10)); // 追加でまた1件超過
+  eq(fresh.dropped, 1, '以後も1件ずつ告げる');
 });
 
 t('書き込み失敗は黙らず投げる（「入ったつもり」を作らない＝v16）', () => {

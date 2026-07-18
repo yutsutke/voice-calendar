@@ -97,7 +97,9 @@
     };
     all.push(rec);
     all.sort((a, b) => a.savedAt - b.savedAt); // 上限で落とすのは「最も古く保存したもの」
+    const dropped = Math.max(0, all.length - CAP);
     persist(all.slice(-CAP));
+    if (dropped) rec.dropped = dropped; // 黙って捨てない（v16）: 呼び出し側が toast で告げる。persist 後の付与＝保存 JSON には入らない
     return rec;
   }
 

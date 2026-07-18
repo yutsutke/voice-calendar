@@ -182,6 +182,21 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
   .rec-empty { color: var(--sub); padding: 12px 0; font-size: 13px; }
   .rec-count { color: var(--sub); font-size: 11px; margin-left: 6px; font-weight: 400; }
 
+  /* ---- 来歴の追加要素（v33） ---- */
+  .history-list .h-saved { color: var(--ok); font-size: 12px; margin-top: 2px; }
+  .history-list .h-more { margin-top: 8px; padding: 6px 12px; border: 1px solid var(--line); border-radius: 8px;
+    background: transparent; color: var(--sub); font-size: 12px; cursor: pointer; font-family: inherit; width: 100%; }
+  .history-list .h-more:active { opacity: .6; }
+
+  /* ---- 使い方の事例（v33） ---- */
+  .ex-head { font-size: 13px; font-weight: 600; padding: 10px 0 2px; }
+  .ex-item { padding: 9px 0; border-bottom: 1px solid var(--line); }
+  .ex-item:last-child { border-bottom: none; }
+  .ex-flow { font-size: 13px; color: var(--ink); overflow-wrap: anywhere; line-height: 1.55; }
+  .ex-note { font-size: 12px; color: var(--sub); margin-top: 3px; line-height: 1.5; }
+  .ex-tip { color: var(--warn); }
+  .ex-foot { font-size: 12px; color: var(--sub); padding: 8px 0 2px; line-height: 1.5; }
+
   /* ---- 詳細設定 ---- */
   .set-item { padding: 12px 0; border-bottom: 1px solid var(--line); }
   .set-item:last-child { border-bottom: none; }
@@ -294,6 +309,18 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
     <button id="permOpen" type="button">設定を開く</button>
   </div>
 
+  <!-- 来歴（SPEC §5-①）: 音声の生テキストと解釈結果の記録。
+       「言ったのに変な値が入った」の原因切り分け（認識か解釈か）はここを見る。
+       v33: リストより上に配置（ユーザー要望）・直近5件だけ表示（残りは「もっと見る」）・
+       自動保存が走った発話は💾を刻んでこのパネルを自動で開く（「自動記録の内容がみれて便利」） -->
+  <details class="optional" id="historyBox">
+    <summary>来歴（最近の発話と解釈）</summary>
+    <div class="card2">
+      <div id="historyList" class="history-list"></div>
+      <div class="history-actions"><button id="historyClear" type="button">来歴を消す</button></div>
+    </div>
+  </details>
+
   <!-- リスト（v32）: このアプリで保存した記録📝と予定📅の時系列。カレンダーはアプリから読めない
        （書き込み専用＝v23-v26）ため、保存時に端末内へ残した控え（adapters/records.js）を表示する。
        出るのは保存先を「リスト」か「両方」にして保存した分だけ（カレンダーのみはカレンダーアプリで見る） -->
@@ -306,16 +333,6 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
       </div>
       <div class="rec-scroll" id="recScroll"><div id="recordsList"></div></div>
       <div class="history-actions"><button id="recordsClear" type="button">リストを空にする</button></div>
-    </div>
-  </details>
-
-  <!-- 来歴（SPEC §5-①）: 音声の生テキストと解釈結果の記録。
-       「言ったのに変な値が入った」の原因切り分け（認識か解釈か）はここを見る -->
-  <details class="optional" id="historyBox">
-    <summary>来歴（最近の発話と解釈）</summary>
-    <div class="card2">
-      <div id="historyList" class="history-list"></div>
-      <div class="history-actions"><button id="historyClear" type="button">来歴を消す</button></div>
     </div>
   </details>
 
@@ -338,6 +355,42 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
     </div>
   </details>
 
+  <!-- 使い方の事例（v33・ユーザー起草）: 予定と記録それぞれの実際の流れ。ここの発話は全て
+       パーサ実測で裏取り済み（ドキュメントが嘘をつかない＝v10）。欄指定は空白なしでも通る。
+       「今」より「現在」が確実、は v27 の区切りガードの帰結（「今」は後ろに区切りが無いと日時にならない） -->
+  <details class="optional" id="examplesBox">
+    <summary>使い方の事例（予定と記録）</summary>
+    <div class="card2">
+      <div class="ex-head">📅 予定として使う</div>
+      <div class="ex-item">
+        <div class="ex-flow">Hey Siri → ボイカレ開いて → 「明日10時 会議」</div>
+        <div class="ex-note">明日10:00・タイトル「会議」でカレンダーに入ります。<br>※詳細設定「話し終わったら自動で保存する」に ☑ が必要。☑ なしの場合は「カレンダーに保存」ボタンを押します。</div>
+      </div>
+      <div class="ex-item">
+        <div class="ex-flow">Hey Siri → ボイカレ開いて → 「明日10時から11時まで会議」</div>
+        <div class="ex-note">開始10:00・終了11:00・タイトル「会議」で入ります。※☑ の要否は上と同じ。</div>
+      </div>
+      <div class="ex-item">
+        <div class="ex-flow">Hey Siri → ボイカレ開いて → 「明日10時 会議」→「場所 丸の内」→「タイトル 経営会議」→「終了時間 11時」→「メモ 資料を事前受け取り」→ 保存ボタン</div>
+        <div class="ex-note">1発話につき1項目ずつ直して組み立てる使い方。<br>※この使い方では自動保存の ☑ を<b>外す</b>必要があります（☑ があると最初の発話で先に保存されます）。</div>
+      </div>
+      <div class="ex-head">📝 記録として使う</div>
+      <div class="ex-item">
+        <div class="ex-flow">Hey Siri → ボイカレ開いて → 「現在 新宿駅に着いた」</div>
+        <div class="ex-note">今の日時・タイトル「新宿駅に着いた」で入ります。※自動保存に ☑ が必要。<br><span class="ex-tip">💡「今」より「現在」の方が確実に入ります（「今」は後ろに区切りが無いと日時になりません）。</span></div>
+      </div>
+      <div class="ex-item">
+        <div class="ex-flow">Hey Siri → ボイカレ開いて → 「新宿駅に着いた」→ 保存ボタン</div>
+        <div class="ex-note">日時を言わなかった発話は、保存ボタンで「今の日時」として入ります。<br>※日時を言っていない発話は、自動保存の ☑ があっても自動では入りません（フォームに残る＝ボタンで保存）。</div>
+      </div>
+      <div class="ex-item">
+        <div class="ex-flow">Hey Siri → ボイカレ開いて → 「現在 業務終了」→「場所 丸の内」→「メモ 直帰します」→ 保存ボタン</div>
+        <div class="ex-note">記録も欄指定で組み立てられます。※この使い方では自動保存の ☑ を<b>外す</b>必要があります。</div>
+      </div>
+      <div class="ex-foot">保存先を「リスト」「両方」にしている場合は、カレンダーの代わりに／加えてアプリ内のリストに入ります（詳細設定）。Siri で開けるのはアプリ版のみ（この web 版はマイクをタップ）。</div>
+    </div>
+  </details>
+
   <footer id="build"></footer>
 </main>
 <div class="toast" id="toast"></div>
@@ -346,15 +399,15 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
      理由: この版文字列は index.html にしかないが、ロジックは別ファイル＝別キャッシュ。
      付けないと「フッタは新しいのにパーサは古い」という嘘の状態が成立する（v9 で実際に踏んだ）。
      index.html が更新されれば src の URL も変わる → JS も必ず新しく取り直される。 -->
-<script src="engine/settings.js?v=32"></script>
-<script src="engine/schema.js?v=32"></script>
-<script src="engine/parser.js?v=32"></script>
-<script src="input/transcriber.js?v=32"></script>
-<script src="adapters/calendar.js?v=32"></script>
-<script src="adapters/records.js?v=32"></script>
+<script src="engine/settings.js?v=33"></script>
+<script src="engine/schema.js?v=33"></script>
+<script src="engine/parser.js?v=33"></script>
+<script src="input/transcriber.js?v=33"></script>
+<script src="adapters/calendar.js?v=33"></script>
+<script src="adapters/records.js?v=33"></script>
 <script>
 'use strict';
-const BUILD = 'v32：保存先（カレンダー/リスト/両方）＋リスト＝記録📝と予定📅の時系列（開くと「今」へ）｜v31：ボイスカレンダーに改称・Siri cold 起動クラッシュ修正｜v30：アプリアイコン · 2026-07-18';
+const BUILD = 'v33：来歴を上へ・直近5件＋もっと見る・自動保存を💾で来歴に刻んで開く・使い方の事例｜v32：保存先（カレンダー/リスト/両方）＋リスト｜v31：改称・Siri cold 修正 · 2026-07-18';
 console.log('BUILD:', BUILD);
 document.getElementById('build').textContent = BUILD;
 
@@ -506,11 +559,22 @@ function shouldAutoSave({ changed, targeted, notes, patch }) {
 
 // ===== 来歴（SPEC §5-①）: 生テキスト＋解釈結果を端末内に記録（外部送信しない） =====
 const HISTORY_KEY = 'vc_history_v1';
+const HISTORY_VISIBLE = 5; // v33: 来歴は直近5件だけ見せる（残りは「もっと見る」＝一覧が長くなり過ぎない）
+let historyShowAll = false;
 function loadHistory() { try { return JSON.parse(localStorage.getItem(HISTORY_KEY)) || []; } catch { return []; } }
 function logHistory(entry) {
   const h = loadHistory();
   h.unshift(entry);
   try { localStorage.setItem(HISTORY_KEY, JSON.stringify(h.slice(0, 30))); } catch {}
+  renderHistory();
+}
+// 自動保存の結果を、その発話の来歴行に刻む（v33「自動記録の内容がみれて便利」）。
+// 来歴は解釈直後（logHistory）に積まれ、自動保存はその直後に走る＝先頭行がその発話。
+function markHistoryAutoSaved(text) {
+  const h = loadHistory();
+  if (!h.length) return;
+  h[0].saved = text;
+  try { localStorage.setItem(HISTORY_KEY, JSON.stringify(h)); } catch {}
   renderHistory();
 }
 function patchSummary(patch, skipped, cleared) {
@@ -537,7 +601,8 @@ function renderHistory() {
     list.appendChild(d);
     return;
   }
-  for (const e of h) {
+  const shown = historyShowAll ? h : h.slice(0, HISTORY_VISIBLE); // 直近だけ（v33）
+  for (const e of shown) {
     const item = document.createElement('div');
     item.className = 'h-item';
     const line1 = document.createElement('div');
@@ -565,6 +630,13 @@ function renderHistory() {
       badge.textContent = e.nw ? (wiped ? '🆕 新規（前の入力を消した）' : '🆕 新規') : '🎯 欄指定';
       item.insertBefore(badge, line2); // 🗣 の下・解釈結果の上
     }
+    // 💾 自動保存された発話は結果を行に刻む（v33）＝この行だけ見れば「何がどこへ入ったか」が分かる
+    if (e.saved) {
+      const sv = document.createElement('div');
+      sv.className = 'h-result h-saved';
+      sv.textContent = `💾 ${e.saved}`;
+      item.appendChild(sv);
+    }
     if (e.notes && e.notes.length) {
       const n = document.createElement('div');
       n.className = 'h-result h-note';
@@ -587,6 +659,15 @@ function renderHistory() {
       item.appendChild(undo);
     }
     list.appendChild(item);
+  }
+  // v33: 6件目以降は畳んでおく（「基本5件・それ以降は別に」）
+  if (h.length > HISTORY_VISIBLE) {
+    const more = document.createElement('button');
+    more.type = 'button';
+    more.className = 'h-more';
+    more.textContent = historyShowAll ? `直近${HISTORY_VISIBLE}件だけにする` : `もっと見る（残り${h.length - HISTORY_VISIBLE}件）`;
+    more.addEventListener('click', () => { historyShowAll = !historyShowAll; renderHistory(); });
+    list.appendChild(more);
   }
 }
 
@@ -1031,9 +1112,11 @@ async function doSave(opts) {
 
   // ② リスト（端末内台帳）。書き込み失敗は台帳が投げる＝黙って捨てない（v16）
   let listOk = false;
+  let listDropped = 0; // 上限で消えた古い記録の数（黙って捨てない＝toast で告げる）
   if (toList) {
     try {
-      VCRecords.add(res.event, dest, now);
+      const added = VCRecords.add(res.event, dest, now);
+      listDropped = (added && added.dropped) || 0;
       listOk = true;
       renderRecords();
     } catch (err) {
@@ -1051,7 +1134,13 @@ async function doSave(opts) {
       if (listOk) dests.push(isRecord ? 'リスト（📝記録）' : 'リスト（📅予定）');
       let msg = (auto ? '✅ 自動保存しました' : '✅ 保存しました') + ` → ${dests.join('・')}`;
       if (res.warnings.length) msg += `（${res.warnings.join('・')}）`;
+      if (listDropped) msg += `（古い記録${listDropped}件を上限${VCRecords.CAP}件で削除）`;
       toast(msg);
+      if (auto) {
+        // v33: 自動保存の内容がすぐ見える＝来歴に💾を刻んでパネルを自動で開く（「内容がみれて便利」）
+        markHistoryAutoSaved(`自動保存 → ${dests.join('・')}`);
+        document.getElementById('historyBox').open = true;
+      }
     }
     store.reset();
     transcriptEl.textContent = '';
