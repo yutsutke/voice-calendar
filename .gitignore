@@ -30,3 +30,8 @@ local-plugins/*/android/build/
 *.p12
 *.p8
 key.properties
+
+# App Store スクショの作業ファイル（アップロード素材・リポには含めない）
+iphone*.jpg
+ipad*.jpg
+*_store.png
