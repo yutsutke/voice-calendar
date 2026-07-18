@@ -22,6 +22,10 @@
 //     か月後の月末越えは月末に丸める（1/31 の1か月後 = 2/28）
 //   - 時刻だけで日付がない場合 = その時刻がまだ来ていなければ今日、過ぎていれば明日
 //   - 修飾なしの 1〜6 時（「3時」）= 午前/午後が曖昧 → 埋めない（素通し）。7〜24時は文字どおり
+//   - 時刻の数は算用数字と漢数字の両方（v34。「午後三時」「十九時」「三十分後」。曖昧ルールも同じ＝
+//     「三時」は「3時」と同じ素通し。語中の「一時的/一時停止」は 1〜6時の曖昧扱い＝埋めない）
+//   - 「N分後」「N時間(半)後」= 今からの相対時刻（v34）。「30分後ろ倒し」の「後ろ」は食わない
+//   - 「今からX時まで」= 開始が今・終了が X時（v34。従来は開始が X時 に化けていた）
 //   - 「XからYまで」で Y ≤ X かつ X が18時以降 = 日またぎとして翌日扱い。それ以外は end を埋めない
 //
 // patch のキーは共有状態層（schema.js）の粒度に合わせる:
@@ -74,9 +78,13 @@
     if (!cands.length) return null;
     return cands.reduce((best, c) => (Math.abs(c - today) < Math.abs(best - today) ? c : best));
   };
+  // 時刻に使う数（v34）: 算用数字と漢数字（一〜九十九・jpNum と対）。「午後三時」「三十分後」を拾う。
+  // 「半」は分離を許す（\s*・認識が「10時 半」と切ることがある）が「半分」は誤読しない（半(?!分)）。
+  const JNUM = '[一二三四五六七八九]?十[一二三四五六七八九]?|[一二三四五六七八九]';
+  const TNUM = `\\d{1,2}|${JNUM}`;
   // 欄指定発話（v17）の値から時刻をひとつ拾う（本文の TIME_RE と同じ意味論:
   // 午前/午後/朝/夜等の修飾・「半」「N分」「H:MM」・修飾なし1〜6時は曖昧）
-  const TIME_VALUE_RE = /(午前|午後|朝|昼|夜|夕方|晩)?(?:(\d{1,2})時(?!間)(半|(\d{1,2})分)?|正午|(\d{1,2}):(\d{2}))/;
+  const TIME_VALUE_RE = new RegExp(`(午前|午後|朝|昼|夜|夕方|晩)?(?:(${TNUM})時(?!間)(?:\\s*(半(?!分)|(${TNUM})分))?|正午|(\\d{1,2}):(\\d{2}))`);
   const timeFromValue = (value) => {
     const m = TIME_VALUE_RE.exec(value);
     if (!m) return null;
@@ -85,11 +93,11 @@
     let h, min = 0;
     if (m[5] !== undefined) { h = +m[5]; min = +m[6]; }
     else {
-      h = +m[2];
+      h = jpNum(m[2]);
       if (m[3] === '半') min = 30;
-      else if (m[4] !== undefined) min = +m[4];
+      else if (m[4] !== undefined) min = jpNum(m[4]);
     }
-    if (h > 24 || min > 59) return null;
+    if (h == null || min == null || h > 24 || min > 59) return null;
     let ambiguous = false;
     if (qual === '午後') h = h < 12 ? h + 12 : h;
     else if (qual === '午前' || qual === '朝') { /* そのまま */ }
@@ -249,6 +257,27 @@
       else d = addMonthsClamped(today, n); // ◯か月
       pushCand(d, a, b);
     }
+    // 4.5) 相対時刻「N分後」「N時間(半)後」「N時間N分後」（v34・実データ由来の宿題）: 開始 = 今 + Δ。
+    //    その時点の「日」を日付候補として積み、時刻は時刻確定の後に補完する（「今」v27 と同じ流儀）
+    //    ＝「明日 30分後」のような矛盾は日付の複数候補として素通しになる（創作しない）。
+    //    🚨 「後ろ」を食わない: 「30分後ろ倒し」（差分修正＝v1 の主戦場）を相対時刻と誤読しない → 後(?!ろ)。
+    //    🚨 「15時30分後」の「30分」は時刻の一部: 直前が「時」なら拾わない。
+    let relTime = null;
+    for (const { m, a, b } of findAll(new RegExp(`(?:(${TNUM})時間(?:(${TNUM})分|(半))?|(${TNUM})分)後(?!ろ)`, 'g'))) {
+      if (a > 0 && text[a - 1] === '時') continue; // 「15時30分後」の誤読ガード
+      let delta;
+      if (m[4] !== undefined) {
+        delta = jpNum(m[4]);
+      } else {
+        const hN = jpNum(m[1]);
+        const extra = m[3] ? 30 : (m[2] !== undefined ? jpNum(m[2]) : 0);
+        delta = (hN == null || extra == null) ? null : hN * 60 + extra;
+      }
+      if (delta == null || delta <= 0) continue;
+      const target = new Date(now.getTime() + delta * 60000);
+      pushCand(startOfDay(target), a, b);
+      relTime = { h: target.getHours(), min: target.getMinutes(), day: fmtDate(startOfDay(target)) };
+    }
     // 5) 相対日（長いものから。一昨日は昨日を、明々後日は明後日/明日を含むので順序が大事）
     //    過去（昨日/一昨日）も埋める＝実績の記録という用途が実在（実発話FB）
     const REL = [
@@ -313,8 +342,8 @@
     }
 
     // ===== 時刻の収集 =====
-    // 時刻表現: (午前|午後|朝|昼|夜|夕方|晩)? H時[半|M分] ／ 正午 ／ H:MM
-    const TIME_RE = /(午前|午後|朝|昼|夜|夕方|晩)?(?:(\d{1,2})時(?!間)(半|(\d{1,2})分)?|正午|(\d{1,2}):(\d{2}))/g;
+    // 時刻表現: (午前|午後|朝|昼|夜|夕方|晩)? H時[半|M分] ／ 正午 ／ H:MM（数は算用数字＋漢数字 v34）
+    const TIME_RE = new RegExp(`(午前|午後|朝|昼|夜|夕方|晩)?(?:(${TNUM})時(?!間)(?:\\s*(半(?!分)|(${TNUM})分))?|正午|(\\d{1,2}):(\\d{2}))`, 'g');
     // → {h, min, ambiguous, a, b}
     function resolveTime(m) {
       if (m[0].includes('正午')) return { h: 12, min: 0, ambiguous: false };
@@ -322,11 +351,11 @@
       let h, min = 0;
       if (m[5] !== undefined) { h = +m[5]; min = +m[6]; } // H:MM
       else {
-        h = +m[2];
+        h = jpNum(m[2]);
         if (m[3] === '半') min = 30;
-        else if (m[4] !== undefined) min = +m[4];
+        else if (m[4] !== undefined) min = jpNum(m[4]);
       }
-      if (h > 24 || min > 59) return null;
+      if (h == null || min == null || h > 24 || min > 59) return null;
       let ambiguous = false;
       if (qual === '午後') h = h < 12 ? h + 12 : h;
       else if (qual === '午前' || qual === '朝') { /* そのまま */ }
@@ -372,16 +401,32 @@
       const clear = timeCands.filter((t) => !t.ambiguous);
       const amb = timeCands.filter((t) => t.ambiguous);
       if (clear.length === 1) {
-        startT = clear[0];
-        consume(startT.a, startT.b);
-        const after = text.slice(startT.b);
-        if (after.startsWith('から')) consume(startT.b, startT.b + 2);
+        const t = clear[0];
+        const after = text.slice(t.b);
+        // 「今からX時まで」（v34・TODO の実測: 従来は開始が X時 に化けていた）:
+        // 「今」を言っていて時刻の直後が「まで」なら、その時刻は**終了**。開始は下の「今」補完が入れる。
+        if (nowSpan && dateStr === fmtDate(today) && after.startsWith('まで')) {
+          endT = t;
+          if (t.h * 60 + t.min <= now.getHours() * 60 + now.getMinutes()) dayCross = true; // 「今から0時まで」= 翌日
+          consume(t.a, t.b + 2);
+          // 「現在から15時まで」の「から」を食べ残さない（「今から」は now 語彙が丸ごと消費済み）
+          if (t.a >= 2 && text.slice(t.a - 2, t.a) === 'から' && isFree(t.a - 2, t.a)) consume(t.a - 2, t.a);
+        } else {
+          startT = t;
+          consume(t.a, t.b);
+          if (after.startsWith('から')) consume(t.b, t.b + 2);
+        }
       } else if (clear.length > 1) {
         notes.push('時刻らしき言葉が複数あるため時刻は入れていません');
       }
       for (const t of amb) notes.push(`時刻「${t.raw}」は午前/午後が曖昧なので入れていません`);
     }
 
+    // 相対時刻の補完（v34）: 「30分後」等は、その日が日付として採用された時だけ時刻を入れる（「今」と同じ流儀）。
+    // 明示の時刻が別にあればそちらが勝つ＝人の指定を上書きしない（v9）。
+    if (relTime && !startT && dateStr === relTime.day) {
+      startT = { h: relTime.h, min: relTime.min, ambiguous: false, raw: '相対時刻' };
+    }
     // 「今」の時刻補完（v27）: 日付は既に今日として確定・消費済み。時刻を言っていなければ現在時刻を入れる。
     // 時刻を別に言っていればそちらが勝つ（「今から15時まで」＝開始15時ではなく…は範囲側で処理される）。
     // 「今」が日付として採用されなかった時（他の日付と衝突＝素通し）は時刻も入れない＝創作しない。
@@ -389,11 +434,14 @@
       startT = { h: now.getHours(), min: now.getMinutes(), ambiguous: false, raw: '今' };
     }
 
-    // 継続時間：「(から)N時間(半)」があれば end = start + N時間
+    // 継続時間：「(から)N時間(半)」があれば end = start + N時間（数は漢数字も可 v34。
+    // 「2時間後」は相対時刻＝継続と誤読しない → 後 を除外）
     if (startT && !endT) {
-      for (const { m, a, b } of findAll(/(\d{1,2})時間(半)?/g)) {
+      for (const { m, a, b } of findAll(new RegExp(`(${TNUM})時間(半)?(?!後)`, 'g'))) {
         if (!isFree(a, b)) continue;
-        const durMin = +m[1] * 60 + (m[2] ? 30 : 0);
+        const nH = jpNum(m[1]);
+        if (nH == null) continue;
+        const durMin = nH * 60 + (m[2] ? 30 : 0);
         const total = startT.h * 60 + startT.min + durMin;
         endT = { h: Math.floor(total / 60) % 24, min: total % 60 };
         if (total >= 24 * 60) dayCross = true;

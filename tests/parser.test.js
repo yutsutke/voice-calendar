@@ -113,8 +113,7 @@ check('今から散歩', { title: '散歩', startDate: '2026-07-16', startTime: 
 check('今すぐ電話', { title: '電話', startDate: '2026-07-16', startTime: '13:43' });
 check('たった今 帰宅', { title: '帰宅', startDate: '2026-07-16', startTime: '13:43' });
 check('ただいま到着', { title: '到着', startDate: '2026-07-16', startTime: '13:43' });
-// ※「今から15時まで」のような範囲表現は v0 未対応（開始が15時になる）＝間違った挙動を
-//   テストで仕様に固定しないため、あえてケースを置かない。TODO のパーサ補強に積んである。
+// ※「今から15時まで」は v34 で範囲として対応した（下の v34 セクション）。
 
 // 🔴 「今」の誤爆ガード（v27）: 日本語は語境界が無く「今」は語の中に自然に現れる。
 // ここが壊れると「今井さんと会議」が「井さんと会議」に化ける＝v22 で複数欄分割を却下したのと
@@ -183,6 +182,39 @@ check('終了式の打ち合わせ 明日', { title: '終了式の打ち合わ�
 check('終了3時', { title: '終了3時', startTime: undefined, endTime: undefined });
 // 欄名が文中にあるだけなら通常解釈（「始まる」発話だけが欄指定）
 check('明日15時 プロジェクト終了の打ち上げ', { title: 'プロジェクト終了の打ち上げ', startDate: '2026-07-17', startTime: '15:00' });
+
+// ===== パーサ補強 v34（TODO の実データ由来の宿題: 漢数字の時刻・「半」・相対時刻・「今から◯時まで」） =====
+// 漢数字の時刻は算用数字と同じ決め打ちルールに従う（1〜6時の曖昧素通しも同じ＝挙動を分けない）
+check('午後三時に歯医者', { title: '歯医者', startDate: '2026-07-16', startTime: '15:00' }); // 15:00 > 13:43 → 今日
+check('明日七時ジョギング', { title: 'ジョギング', startDate: '2026-07-17', startTime: '07:00' });
+check('十九時 打ち合わせ', { title: '打ち合わせ', startDate: '2026-07-16', startTime: '19:00' });
+check('明日十時半 美容院', { title: '美容院', startDate: '2026-07-17', startTime: '10:30' });
+check('午後三時十五分 面談', { title: '面談', startDate: '2026-07-16', startTime: '15:15' });
+check('明日三時 打ち合わせ', { title: '三時 打ち合わせ', startDate: '2026-07-17', startTime: undefined }); // 「明日3時」と同じ曖昧素通し
+// 誤爆ガード: 語中の「一時」（一時的/一時停止）は 1〜6時の曖昧扱い＝埋めない・タイトルを壊さない
+check('一時的に保留', { title: '一時的に保留' });
+check('一時停止して確認', { title: '一時停止して確認' });
+// 「半」が時刻から離れても拾う（認識が切り離すことがある）。「半分」は 30分と誤読しない
+check('明日10時 半 カフェ', { title: 'カフェ', startDate: '2026-07-17', startTime: '10:30' });
+check('明日10時 半分残す', { title: '半分残す', startDate: '2026-07-17', startTime: '10:00' });
+// 相対時刻（now = 13:43）: 開始 = 今 + Δ。日付もその時点の日になる
+check('30分後に会議', { title: '会議', startDate: '2026-07-16', startTime: '14:13' });
+check('三十分後 休憩', { title: '休憩', startDate: '2026-07-16', startTime: '14:13' });
+check('2時間後 出発', { title: '出発', startDate: '2026-07-16', startTime: '15:43' });
+check('1時間半後 薬を飲む', { title: '薬を飲む', startDate: '2026-07-16', startTime: '15:13' });
+check('1時間30分後 チェック', { title: 'チェック', startDate: '2026-07-16', startTime: '15:13' });
+check('12時間後 服薬', { title: '服薬', startDate: '2026-07-17', startTime: '01:43' }); // 日またぎは翌日の日付になる
+check('30分後ろ倒し', { title: '30分後ろ倒し' }); // 🚨 差分修正の言い回し（v1 の主戦場）を相対時刻と誤読しない
+check('明日 30分後 会議', { title: '明日 30分後 会議', startDate: undefined }); // 矛盾は素通し（創作しない）
+check('15時30分後に出る', { title: '後に出る', startDate: '2026-07-16', startTime: '15:30' }); // 「30分」は 15時30分の一部（相対と誤読しない）
+// 「今からX時まで」= 開始が今・終了が X時（従来は開始が X時 に化けていた＝TODO の実測）
+check('今から15時まで作業', { title: '作業', startDate: '2026-07-16', startTime: '13:43', endDate: '2026-07-16', endTime: '15:00' });
+check('現在から15時まで作業', { title: '作業', startDate: '2026-07-16', startTime: '13:43', endDate: '2026-07-16', endTime: '15:00' }); // 「から」の食べ残しがタイトルを汚さない
+check('今から0時まで 仕込み', { title: '仕込み', startDate: '2026-07-16', startTime: '13:43', endDate: '2026-07-17', endTime: '00:00' }); // 終了が今より前 = 翌日
+check('今から1時間 集中', { title: '集中', startDate: '2026-07-16', startTime: '13:43', endDate: '2026-07-16', endTime: '14:43' }); // 既存の継続時間と合流
+// 欄指定も漢数字を受ける（TIME_VALUE_RE は本文と同じ意味論＝v17 の約束）
+check('開始 十時半', { startTime: '10:30' });
+check('終了 午後三時', { endTime: '15:00' });
 
 // ===== 結果 =====
 console.log(`\nparser.test: ${pass} passed, ${fail} failed`);

@@ -399,15 +399,15 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
      理由: この版文字列は index.html にしかないが、ロジックは別ファイル＝別キャッシュ。
      付けないと「フッタは新しいのにパーサは古い」という嘘の状態が成立する（v9 で実際に踏んだ）。
      index.html が更新されれば src の URL も変わる → JS も必ず新しく取り直される。 -->
-<script src="engine/settings.js?v=33"></script>
-<script src="engine/schema.js?v=33"></script>
-<script src="engine/parser.js?v=33"></script>
-<script src="input/transcriber.js?v=33"></script>
-<script src="adapters/calendar.js?v=33"></script>
-<script src="adapters/records.js?v=33"></script>
+<script src="engine/settings.js?v=34"></script>
+<script src="engine/schema.js?v=34"></script>
+<script src="engine/parser.js?v=34"></script>
+<script src="input/transcriber.js?v=34"></script>
+<script src="adapters/calendar.js?v=34"></script>
+<script src="adapters/records.js?v=34"></script>
 <script>
 'use strict';
-const BUILD = 'v33：来歴を上へ・直近5件＋もっと見る・自動保存を💾で来歴に刻んで開く・使い方の事例｜v32：保存先（カレンダー/リスト/両方）＋リスト｜v31：改称・Siri cold 修正 · 2026-07-18';
+const BUILD = 'v34：パーサ補強＝漢数字の時刻（午後三時）・「半」分離・相対時刻（30分後/2時間後）・「今から◯時まで」｜v33：来歴を上へ・事例｜v32：保存先＋リスト · 2026-07-19';
 console.log('BUILD:', BUILD);
 document.getElementById('build').textContent = BUILD;
 
