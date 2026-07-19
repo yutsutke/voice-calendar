@@ -332,7 +332,7 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
         <label><input type="checkbox" id="recShowRecord" checked> 📝 記録</label>
       </div>
       <div class="rec-scroll" id="recScroll"><div id="recordsList"></div></div>
-      <div class="history-actions"><button id="recordsClear" type="button">リストを空にする</button></div>
+      <div class="history-actions"><button id="recordsCsv" type="button">CSV書き出し</button><button id="recordsClear" type="button">リストを空にする</button></div>
     </div>
   </details>
 
@@ -412,15 +412,15 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
      理由: この版文字列は index.html にしかないが、ロジックは別ファイル＝別キャッシュ。
      付けないと「フッタは新しいのにパーサは古い」という嘘の状態が成立する（v9 で実際に踏んだ）。
      index.html が更新されれば src の URL も変わる → JS も必ず新しく取り直される。 -->
-<script src="engine/settings.js?v=35"></script>
-<script src="engine/schema.js?v=35"></script>
-<script src="engine/parser.js?v=35"></script>
-<script src="input/transcriber.js?v=35"></script>
-<script src="adapters/calendar.js?v=35"></script>
-<script src="adapters/records.js?v=35"></script>
+<script src="engine/settings.js?v=36"></script>
+<script src="engine/schema.js?v=36"></script>
+<script src="engine/parser.js?v=36"></script>
+<script src="input/transcriber.js?v=36"></script>
+<script src="adapters/calendar.js?v=36"></script>
+<script src="adapters/records.js?v=36"></script>
 <script>
 'use strict';
-const BUILD = 'v35：使い方の事例に「30分後に会議」「今から3時間開発」「今から15時まで作業」＋📅予定/📝記録の自動振り分け説明｜v34：パーサ補強｜v32-33：保存先＋リスト・来歴 · 2026-07-20';
+const BUILD = 'v36：リストのCSV書き出し（表示中の📅/📝が対象・native は共有シート）｜v35：事例に相対時刻・範囲｜v34：パーサ補強｜v32-33：保存先＋リスト · 2026-07-19';
 console.log('BUILD:', BUILD);
 document.getElementById('build').textContent = BUILD;
 
@@ -827,6 +827,52 @@ document.getElementById('recordsClear').addEventListener('click', () => {
     btn.textContent = 'もう一度押すと全部消えます';
     setTimeout(() => { if (recClearArmedAt && Date.now() - recClearArmedAt >= 3900) { recClearArmedAt = 0; btn.textContent = 'リストを空にする'; } }, 4200);
   }
+});
+// CSV 書き出し（v36・ユーザー明示要求で un-park＝v33「CSV書き出し→ライフログへの道」）。
+// 出るのは**今リストに見えている行**（📅/📝トグルに従う＝WYSIWYG・v20「表示と操作結果を一致させる」）。
+// 配信は環境で分岐: native の WKWebView は <a download> が**黙って失敗する**（ダウンロード機構が無い）
+// ため共有シート→クリップボードの順（silent drop を作らない＝v16）。web は標準のダウンロード。
+document.getElementById('recordsCsv').addEventListener('click', async () => {
+  if (!window.VCRecords) { toast('リスト機能を読み込めていません（詳細は「診断」）'); return; }
+  const rows = VCRecords.list().filter((r) => (r.kind === 'plan' ? recShowPlan.checked : recShowRecord.checked));
+  if (!rows.length) { toast('書き出す行がありません（📅/📝 で表示中の行が対象です）'); return; }
+  const csv = VCRecords.toCsv(rows);
+  const d = new Date();
+  const p2 = (n) => String(n).padStart(2, '0');
+  const name = `voice-calendar-${d.getFullYear()}${p2(d.getMonth() + 1)}${p2(d.getDate())}-${p2(d.getHours())}${p2(d.getMinutes())}.csv`;
+  const nPlan = rows.filter((r) => r.kind === 'plan').length;
+  const label = `${rows.length}件（📅${nPlan}・📝${rows.length - nPlan}）`;
+  const C = window.Capacitor;
+  const isNative = !!(C && C.isNativePlatform && C.isNativePlatform());
+  if (isNative) {
+    try {
+      const file = new File([csv], name, { type: 'text/csv' });
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        await navigator.share({ files: [file], title: name });
+        toast(`CSVを共有しました: ${label}`);
+        return;
+      }
+    } catch (e) {
+      if (e && e.name === 'AbortError') return; // 共有シートを閉じただけ＝エラーではない
+      window.__vcNote('CSV共有エラー', (e && e.message) || String(e)); // 診断に残してクリップボードへ
+    }
+    try {
+      await navigator.clipboard.writeText(csv);
+      toast(`CSVをコピーしました: ${label} → メモやファイルに貼り付けて保存できます`);
+    } catch (e) {
+      toast(`書き出しに失敗しました: ${(e && e.message) || e}`); // 黙って失敗しない
+    }
+    return;
+  }
+  const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
+  toast(`CSVを書き出しました: ${label}`);
 });
 renderRecords();
 

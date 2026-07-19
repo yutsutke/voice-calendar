@@ -178,5 +178,64 @@ t('書き込み失敗は黙らず投げる（「入ったつもり」を作ら�
   eq(R.list(), [], '台帳に「入ったフリ」の行が残らない');
 });
 
+// ===== CSV 書き出し（v36）=====
+// ローカル時刻でセルを組む＝テストも Date コンストラクタで組んで TZ 非依存にする
+const MS = (y, mo, d, h, mi) => new Date(y, mo - 1, d, h || 0, mi || 0).getTime();
+const CRLF = String.fromCharCode(13, 10);
+
+t('toCsv: BOM で始まり CRLF 区切り・ヘッダ行がある', () => {
+  const csv = R.toCsv([]);
+  eq(csv.charCodeAt(0), 0xFEFF, '先頭が BOM（無いと Excel で日本語が化ける）');
+  const lines = csv.slice(1).split(CRLF);
+  eq(lines[0], '種類,タイトル,開始日,開始時刻,終了日,終了時刻,終日,場所,メモ,保存先,保存日時');
+  eq(lines[1], '', '末尾は CRLF で終わる（RFC4180）');
+});
+
+t('toCsv: 1行の全列（予定・時刻あり・リスト）', () => {
+  const csv = R.toCsv([{
+    kind: 'plan', title: '歯医者', startMs: MS(2026, 7, 20, 15, 0), endMs: MS(2026, 7, 20, 16, 30),
+    allDay: false, location: '駅前', note: '保険証', dest: 'list', savedAt: MS(2026, 7, 19, 9, 5),
+  }]);
+  eq(csv.slice(1).split(CRLF)[1],
+    '予定,歯医者,2026-07-20,15:00,2026-07-20,16:30,,駅前,保険証,リスト,2026-07-19 09:05');
+});
+
+t('toCsv: 終日は時刻列が空・終日列に○（言っていない時刻を列でも創作しない）', () => {
+  const csv = R.toCsv([{
+    kind: 'record', title: '休み', startMs: MS(2026, 7, 19), endMs: MS(2026, 7, 19),
+    allDay: true, location: '', note: '', dest: 'both', savedAt: MS(2026, 7, 19, 8, 0),
+  }]);
+  eq(csv.slice(1).split(CRLF)[1],
+    '記録,休み,2026-07-19,,2026-07-19,,○,,,両方,2026-07-19 08:00');
+});
+
+t('toCsv: カンマ・引用符・改行を含むセルは RFC4180 で引用される', () => {
+  const csv = R.toCsv([{
+    kind: 'record', title: 'A,B', startMs: MS(2026, 1, 1, 0, 0), endMs: MS(2026, 1, 1, 0, 0),
+    allDay: false, location: 'say "hi"', note: '1行目\n2行目', dest: 'list', savedAt: MS(2026, 1, 1, 0, 0),
+  }]);
+  const body = csv.slice(1).split(CRLF).slice(1).join(CRLF); // メモ内の改行で行が割れるので残り全部を見る
+  ok(body.includes('"A,B"'), `カンマ入りは引用（実際: ${body}）`);
+  ok(body.includes('"say ""hi"""'), '引用符は二重化して引用');
+  ok(body.includes('"1行目\n2行目"'), '改行入りセルは引用の中に収まる');
+});
+
+t('toCsv: 行の順序は渡された順のまま（並べ替えは呼び出し側＝list() の責務）', () => {
+  const row = (title, h) => ({ kind: 'record', title, startMs: MS(2026, 7, 19, h, 0), endMs: MS(2026, 7, 19, h, 0), allDay: false, location: '', note: '', dest: 'list', savedAt: MS(2026, 7, 19, h, 0) });
+  const csv = R.toCsv([row('B', 10), row('A', 9)]);
+  const lines = csv.slice(1).split(CRLF);
+  ok(lines[1].startsWith('記録,B,'), '1行目=B（渡した順）');
+  ok(lines[2].startsWith('記録,A,'), '2行目=A');
+});
+
+t('toCsv: list() の実データがそのまま書ける（add → list → toCsv の統合）', () => {
+  R.add(ev('会議', MS(2026, 7, 20, 10, 0), { location: '丸の内' }), 'both', D(MS(2026, 7, 19, 9, 0)));
+  const csv = R.toCsv(R.list());
+  const line = csv.slice(1).split(CRLF)[1];
+  ok(line.startsWith('予定,会議,2026-07-20,10:00,'), `list() の行が出る（実際: ${line}）`);
+  ok(line.includes(',丸の内,'), '場所が出る');
+  ok(line.endsWith(',両方,2026-07-19 09:00'), '保存先と保存日時が出る');
+});
+
 console.log(`\nrecords.test: ${pass} passed, ${fail} failed`);
 if (failures.length) { console.log('\n' + failures.join('\n\n')); process.exit(1); }

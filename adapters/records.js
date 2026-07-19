@@ -116,7 +116,43 @@
 
   function clear() { try { global.localStorage.removeItem(KEY); } catch {} }
 
-  const api = { add, list, remove, clear, KEY, CAP };
+  // ===== CSV 書き出し（v36・ユーザー明示要求で un-park。v33「テキスト・CSV書き出し→ライフログへの道」）=====
+  // rows = list()（呼び出し側が表示中のトグルで絞ってから渡す＝**見えているものが出る** WYSIWYG・v20）。
+  // 純関数＝DOM も配信手段も知らない（ダウンロード/共有は宿主 index.html の仕事）。
+  // 日付と時刻を別列にするのはフォーム自身の分割保持（startDate/startTime）と同じ思想＝
+  // 「日付だけ確定・時刻は空」を列でも表現できる（終日は時刻列が空）。
+  function toCsv(rows) {
+    const pad = (n) => String(n).padStart(2, '0');
+    const dateS = (ms) => { const d = new Date(ms); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; };
+    const timeS = (ms) => { const d = new Date(ms); return `${pad(d.getHours())}:${pad(d.getMinutes())}`; };
+    // RFC4180: カンマ・引用符・改行を含むセルだけ引用し、引用符は二重に（Excel/Numbers/Sheets が正しく読む形）
+    const cell = (s) => {
+      const v = String(s == null ? '' : s);
+      return /[",\r\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
+    };
+    const header = ['種類', 'タイトル', '開始日', '開始時刻', '終了日', '終了時刻', '終日', '場所', 'メモ', '保存先', '保存日時'];
+    const lines = [header.map(cell).join(',')];
+    for (const r of rows || []) {
+      lines.push([
+        r.kind === 'plan' ? '予定' : '記録',
+        r.title,
+        dateS(r.startMs),
+        r.allDay ? '' : timeS(r.startMs), // 終日は時刻を空に＝言っていない時刻を列でも創作しない（SPEC §7）
+        dateS(r.endMs),
+        r.allDay ? '' : timeS(r.endMs),
+        r.allDay ? '○' : '',
+        r.location,
+        r.note,
+        r.dest === 'both' ? '両方' : 'リスト',
+        `${dateS(r.savedAt)} ${timeS(r.savedAt)}`,
+      ].map(cell).join(','));
+    }
+    // BOM: Excel が UTF-8 と認識するため（無いと日本語が化ける）。改行は CRLF（RFC4180）。
+    // \uFEFF は必ずエスケープで書く（生の不可視文字はエディタ・diff・Edit を壊す＝v14 の実害）
+    return '\uFEFF' + lines.join('\r\n') + '\r\n';
+  }
+
+  const api = { add, list, remove, clear, toCsv, KEY, CAP };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else global.VCRecords = api;
 })(typeof window !== 'undefined' ? window : globalThis);
