@@ -1,5 +1,26 @@
 # voice-calendar — CHANGELOG（build log・最新が上）
 
+## v40 — まとめて入力 第2弾: BYOK＝自分の API キーでボタン1つ解釈（Anthropic / Gemini） (2026-07-19)
+
+**背景（3スライスの2つ目）**
+- v39 の「コピー往復」を省く道。アプリは無料公開＝**開発者のサーバ（プロキシ）は作らない**（Edge Function 案は廃案）。使いたい人だけが自分のキーを入れる（BYOK）＝運用者の課金リスクゼロ・キーは端末から AI 社へ直行。
+
+**設計判断**
+- **engine/ai.js＝プロバイダアダプタ1枚**: 差分はエンドポイント・認証ヘッダ・リクエスト形・テキスト取り出しの4点だけ。**Anthropic**（`anthropic-dangerous-direct-browser-access: true`＝公式のブラウザ直叩きフラグ・既定 `claude-haiku-4-5`）／**Gemini**（`x-goog-api-key`・`responseMimeType: application/json`＝散文混入を減らす・既定 `gemini-2.5-flash`）。**OpenAI は PROVIDERS に入れない**（CORS 非対応＝「キーを入れたのに動かない」を仕様として作らない。UI にも理由を明記・テストで復活禁止）。モデル名は設定で変更可（既定＝安価を提示）。
+- **プロンプトは注入**: `interpretLongText(text, {system})` に VCBatch.buildPrompt の結果を宿主が渡す＝ ai.js は契約を知らない（batch が schema を注入されるのと同じ流儀・engine 内相互 require ゼロを維持）。
+- **AI の応答も必ず検証ゲートへ**: parseBatch → 取り込みリスト＝**AI からの直接保存は存在しない**（v39 の線路にそのまま乗る）。応答が契約に合わない時は本文を残し（作業を捨てない）、応答先頭200字を診断に残す（原因が「AIの出力」だと分かる）。
+- **切れた応答は上流で名指す**: `stop_reason=max_tokens` / `finishReason=MAX_TOKENS` を検出して「上限で切れました」＝壊れた JSON として下流で別の顔に化けさせない（黙って捨てない v16 の応用）。max_tokens は 8000（20件×日本語で 4000 はぎりぎり）。本文 20000 字超は送信前に正直に断る（コストの防波堤）。
+- **キーの扱いは「正直さ」で設計**: 端末の localStorage のみ・**エラー文にキーを絶対に含めない（テストで固定）**・UI は type=password＋末尾4桁マスク＋「保存済み—変える時だけ入力」（キーを DOM に書き戻さない）・**使用上限付きキーの発行を推奨**と注意書き・[テスト送信]＝キー/モデル/CORS がまとめて検証される最小呼び出し。**キー未設定なら AI ボタンは出ない＝既定の体験は v39 と同一**（v19）。
+- **privacy.html / support.html を同時更新**（「データを収集していません」の正確性を守る）: AI 連携の節（キー登録時のみ・本文は選んだ AI 社へ直接・開発者サーバ無し）＋ v38 の位置情報が端末内のみである記述の補完（漏れていた）。
+
+**結果**
+- **テスト 300/300（ai 17 新規・version +1）**: リクエスト形（両社）・content[0] 決め打ちにしない・切れ検出・HTTP→日本語写像・**キー漏れ無し**・openai 拒否・設定の縮退/throw。
+- preview E2E（fetch スタブ）: キー保存→ボタン出現→AI解釈→カード2枚（ambiguities 表示）✓／401→「キーが正しくない」・本文残る✓／散文応答→検証ゲートで正直に・応答先頭が診断に✓／テスト送信 ✅✓／辞書展開が送信本文に効き 🔤 開示✓／キー削除→ボタン消滅✓／console 0。
+
+**残課題**
+- 実機: 実キーでの Anthropic/Gemini 疎通（CORS は web=Pages で今日から試せる。**native の WKWebView（capacitor://localhost origin）からの CORS は次 Codemagic ビルドで要確認**）。
+- v41: WebMCP。
+
 ## v39 — まとめて入力 第1弾: 契約＋検証ゲート＋取り込みリスト（JSON貼り付け・AI用指示コピー） (2026-07-19)
 
 **背景（ユーザー明示要求で un-park）**

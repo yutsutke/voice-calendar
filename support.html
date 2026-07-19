@@ -25,7 +25,7 @@
 <body>
 
 <h1>サポート — ボイスカレンダー</h1>
-<p class="sub">最終更新: 2026年7月18日</p>
+<p class="sub">最終更新: 2026年7月19日</p>
 
 <p>ボイスカレンダーは、話すだけで端末のカレンダーに予定を追加できるアプリです。OS の既定に設定しているカレンダーに、声で予定を書き込めます。</p>
 
@@ -54,13 +54,16 @@
 <p class="q">入った予定を消したい</p>
 <p>本アプリは予定の「追加のみ」を行い、既存の予定は読み書きしません。追加された予定の編集・削除は、標準の「カレンダー」アプリで行ってください。</p>
 
+<p class="q">長い文章からまとめて入れたい（まとめて入力）</p>
+<p>「まとめて入力」パネルに文章を貼り、「AI用の指示をコピー」→ お使いのチャット AI（Claude / ChatGPT / Gemini など）に貼り付け → 返ってきた JSON を貼り直して取り込みます。取り込んだ予定は一覧で確認してから保存します（勝手に保存されません）。自分の API キー（Anthropic / Google）を「AI 設定」に登録すると、コピーの往復なしにボタン1つで解釈できます。キーは端末内にのみ保存され、文章は選んだ AI 社へ直接送信されます（開発者のサーバはありません）。※ OpenAI のキーは非対応です（ブラウザからの直接接続を許可していないため）。</p>
+
 <h2>お問い合わせ</h2>
 <p>その他のご質問・ご要望・不具合の報告は、以下までご連絡ください。<br>
 メール: <a href="mailto:anohiapp@gmail.com">anohiapp@gmail.com</a></p>
 
 <div class="lang">
 <h1>Support — VoiceCalendar</h1>
-<p class="sub">Last updated: July 18, 2026</p>
+<p class="sub">Last updated: July 19, 2026</p>
 
 <p>VoiceCalendar lets you add events to your device calendar just by speaking. Events are written to whichever calendar you set as the default in iOS.</p>
 
@@ -79,6 +82,8 @@
 <p>Add your Google account in Settings → Calendar → Accounts and set it as the default. The app doesn’t talk to Google directly; iOS syncs it.</p>
 <p class="q">Deleting events</p>
 <p>The app only adds events (write-only) and never reads or modifies existing ones. Edit or delete events in the standard Calendar app.</p>
+<p class="q">Batch input from long text</p>
+<p>Paste long text into the batch-input panel, copy the generated AI prompt into any chat AI, then paste the returned JSON back to import. Imported events are reviewed in a list before saving. Optionally register your own API key (Anthropic / Google) to interpret with one tap — the key stays on your device and your text goes directly to the provider you chose (there is no developer server). OpenAI keys are not supported (no browser CORS).</p>
 
 <h2>Contact</h2>
 <p>Questions, requests, or bug reports: <a href="mailto:anohiapp@gmail.com">anohiapp@gmail.com</a></p>

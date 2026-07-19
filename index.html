@@ -45,7 +45,7 @@ window.__vcRenderDiag = function () {
   // 併記の「識別子復元」は **write-only で calendar(withIdentifier:) が動くかの実測**＝
   // Apple のドキュメントに記述が無く、実機で1回見れば確定する（v22 の「起動Nms」と同じ手）。
   rows.push(['保存先カレンダー', window.__vcCalTarget || '(未取得)']);
-  var layers = ['VCSettings', 'VCStore', 'VCParser', 'VCDict', 'VCContract', 'VCBatch', 'VCTranscriber', 'VCAdapter', 'VCRecords']
+  var layers = ['VCSettings', 'VCStore', 'VCParser', 'VCDict', 'VCContract', 'VCBatch', 'VCAI', 'VCTranscriber', 'VCAdapter', 'VCRecords']
     .map(function (n) { return (window[n] ? '✅' : '❌') + n; }).join(' ');
   rows.push(['層の読込', layers]);
   rows.push(['初期化', window.__vcInitDone ? '✅ 完了' : '❌ 途中で停止']);
@@ -246,6 +246,16 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
   .b-btns button:disabled { color: var(--sub); cursor: default; }
   .b-btns .b-del { color: var(--sub); }
   .batch-empty { color: var(--sub); font-size: 12px; padding: 8px 2px; }
+  /* ---- AI 設定（v40: BYOK） ---- */
+  .ai-config { margin: 2px 0; }
+  .ai-config > summary { list-style: none; cursor: pointer; color: var(--sub); font-size: 12px; padding: 4px 2px; user-select: none; }
+  .ai-config > summary::before { content: '▸ '; }
+  .ai-config[open] > summary::before { content: '▾ '; }
+  .ai-hint { font-size: 11px; color: var(--sub); padding: 4px 2px; line-height: 1.55; }
+  .ai-row { display: flex; align-items: center; gap: 8px; padding: 5px 2px; font-size: 13px; }
+  .ai-row label { flex: 0 0 5.5em; color: var(--sub); }
+  .ai-row select, .ai-row input { flex: 1; min-width: 0; padding: 7px 10px; border: 1px solid var(--line); border-radius: 8px;
+    font-size: 14px; background: var(--card); color: var(--ink); font-family: inherit; }
 
   /* ---- 保存 ---- */
   .actions { display: flex; gap: 10px; margin-top: 16px; }
@@ -381,7 +391,22 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
       <div class="batch-actions">
         <button id="batchCopyPrompt" type="button">📄 AI用の指示をコピー</button>
         <button id="batchImport" type="button">JSONとして取り込み</button>
+        <button id="batchAiRun" type="button" hidden>🤖 AIで解釈して取り込み</button>
       </div>
+      <!-- AI 設定（v40・BYOK）: 自分の API キーで直接解釈＝コピー往復の省略。キーは端末内のみ・
+           開発者のサーバは無い。キー未設定なら AI ボタンは出ない＝既定の体験は v39 と同一（v19） -->
+      <details class="ai-config" id="aiConfigBox">
+        <summary>AI 設定（自分の API キーで直接解釈・任意）<span class="rec-count" id="aiConfigState"></span></summary>
+        <div class="ai-hint">ここに自分の API キーを入れると、上の文章をボタン1つで解釈できます（コピーの往復が不要になります）。<b>キーはこの端末の中にのみ保存され、開発者のサーバは存在しません。</b>本文（辞書の展開結果を含む）は選んだ AI 社へ端末から直接送信されます。本アプリ専用に<b>使用上限付きのキー</b>を発行するのがおすすめです。共有端末では保存しないでください。※ OpenAI は非対応（ブラウザからの直接接続を許可していないため）。</div>
+        <div class="ai-row"><label for="aiProvider">プロバイダ</label><select id="aiProvider"></select></div>
+        <div class="ai-row"><label for="aiModel">モデル</label><input id="aiModel" type="text" autocomplete="off"></div>
+        <div class="ai-row"><label for="aiKey">API キー</label><input id="aiKey" type="password" autocomplete="off"></div>
+        <div class="batch-actions">
+          <button id="aiSave" type="button">保存</button>
+          <button id="aiTest" type="button">テスト送信</button>
+          <button id="aiClear" type="button">キーを消す</button>
+        </div>
+      </details>
       <div class="batch-msg" id="batchMsg"></div>
       <div id="batchList"></div>
       <div class="history-actions"><button id="batchSaveAll" type="button">すべて保存</button><button id="batchClearAll" type="button">すべて削除</button></div>
@@ -480,18 +505,19 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
      理由: この版文字列は index.html にしかないが、ロジックは別ファイル＝別キャッシュ。
      付けないと「フッタは新しいのにパーサは古い」という嘘の状態が成立する（v9 で実際に踏んだ）。
      index.html が更新されれば src の URL も変わる → JS も必ず新しく取り直される。 -->
-<script src="engine/settings.js?v=39"></script>
-<script src="engine/schema.js?v=39"></script>
-<script src="engine/parser.js?v=39"></script>
-<script src="engine/dictionary.js?v=39"></script>
-<script src="engine/contract.js?v=39"></script>
-<script src="engine/batch.js?v=39"></script>
-<script src="input/transcriber.js?v=39"></script>
-<script src="adapters/calendar.js?v=39"></script>
-<script src="adapters/records.js?v=39"></script>
+<script src="engine/settings.js?v=40"></script>
+<script src="engine/schema.js?v=40"></script>
+<script src="engine/parser.js?v=40"></script>
+<script src="engine/dictionary.js?v=40"></script>
+<script src="engine/contract.js?v=40"></script>
+<script src="engine/batch.js?v=40"></script>
+<script src="engine/ai.js?v=40"></script>
+<script src="input/transcriber.js?v=40"></script>
+<script src="adapters/calendar.js?v=40"></script>
+<script src="adapters/records.js?v=40"></script>
 <script>
 'use strict';
-const BUILD = 'v39：まとめて入力（長文/AIのJSON貼り付け→複数予定を一括取り込み→確認して保存）｜v38：位置情報｜v37：辞書｜v36：CSV書き出し · 2026-07-19';
+const BUILD = 'v40：AI設定（BYOK＝自分のAPIキーでボタン1つ解釈・Anthropic/Gemini）｜v39：まとめて入力（JSON貼り付け・取り込みリスト）｜v38：位置情報｜v37：辞書 · 2026-07-19';
 console.log('BUILD:', BUILD);
 document.getElementById('build').textContent = BUILD;
 
@@ -1390,6 +1416,121 @@ document.getElementById('batchImport').addEventListener('click', () => {
   msg.textContent = [`✅ ${r.events.length}件を取り込みました（確認して保存してください）`].concat(r.warnings).join('／');
   renderBatch();
 });
+
+// ===== AI 設定と「🤖 AIで解釈して取り込み」（v40・BYOK） =====
+// キーは端末の localStorage のみ（engine/ai.js）。キー未設定なら AI ボタンは出ない＝
+// 既定の体験は v39 と同一（触らない人の体験を1ミリも変えない v19）。
+// AI の応答も必ず parseBatch（検証ゲート）→ 取り込みリストを通る＝直接保存しない。
+function renderAiConfig() {
+  const box = document.getElementById('aiConfigBox');
+  if (!window.VCAI) { box.hidden = true; document.getElementById('batchAiRun').hidden = true; return; }
+  const cfg = VCAI.loadConfig();
+  const sel = document.getElementById('aiProvider');
+  if (!sel.options.length) {
+    for (const [id, p] of Object.entries(VCAI.PROVIDERS)) {
+      const o = document.createElement('option');
+      o.value = id;
+      o.textContent = p.label;
+      sel.appendChild(o);
+    }
+  }
+  sel.value = cfg.provider;
+  const modelEl = document.getElementById('aiModel');
+  modelEl.value = cfg.model;
+  modelEl.placeholder = `${VCAI.PROVIDERS[cfg.provider].defaultModel}（既定・安価）`;
+  const keyEl = document.getElementById('aiKey');
+  keyEl.value = ''; // キーを DOM に書き戻さない（末尾4桁だけ見せる）
+  keyEl.placeholder = cfg.key ? `保存済み（…${cfg.key.slice(-4)}）— 変える時だけ入力` : 'API キーを貼る';
+  document.getElementById('aiConfigState').textContent = cfg.key ? `${VCAI.PROVIDERS[cfg.provider].label}・設定済み` : '';
+  document.getElementById('batchAiRun').hidden = !cfg.key;
+}
+document.getElementById('aiProvider').addEventListener('change', () => {
+  if (!window.VCAI) return;
+  const p = VCAI.PROVIDERS[document.getElementById('aiProvider').value];
+  if (p) document.getElementById('aiModel').placeholder = `${p.defaultModel}（既定・安価）`;
+});
+document.getElementById('aiSave').addEventListener('click', () => {
+  if (!window.VCAI) { toast('AI 機能を読み込めていません（詳細は「診断」）'); return; }
+  const prev = VCAI.loadConfig();
+  const key = document.getElementById('aiKey').value.trim() || prev.key; // 空欄なら既存キーを維持
+  try {
+    VCAI.saveConfig({ provider: document.getElementById('aiProvider').value, model: document.getElementById('aiModel').value, key });
+  } catch (e) { toast(`保存できませんでした: ${(e && e.message) || e}`); return; } // 「設定したつもり」を作らない
+  renderAiConfig();
+  toast(key ? 'AI 設定を保存しました（キーはこの端末の中だけ）' : 'AI 設定を保存しました（キーは未設定）');
+});
+document.getElementById('aiClear').addEventListener('click', () => {
+  if (!window.VCAI) return;
+  VCAI.clearConfig();
+  renderAiConfig();
+  toast('API キーを端末から消しました');
+});
+// テスト送信＝キー・モデル・経路（CORS）がまとめて検証される最小の呼び出し。保存前の値でも試せる
+document.getElementById('aiTest').addEventListener('click', async () => {
+  if (!window.VCAI) { toast('AI 機能を読み込めていません（詳細は「診断」）'); return; }
+  const prev = VCAI.loadConfig();
+  const cfg = {
+    provider: document.getElementById('aiProvider').value,
+    model: document.getElementById('aiModel').value,
+    key: document.getElementById('aiKey').value.trim() || prev.key,
+  };
+  const btn = document.getElementById('aiTest');
+  btn.disabled = true;
+  btn.textContent = '接続中…';
+  try {
+    await VCAI.testConnection({ config: cfg });
+    toast('✅ 接続できました（キー・モデル・経路 OK）');
+  } catch (e) {
+    toast(`⚠ ${(e && e.message) || e}`);
+    window.__vcNote('AIテスト送信', (e && e.message) || String(e));
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'テスト送信';
+  }
+});
+document.getElementById('batchAiRun').addEventListener('click', async () => {
+  if (batchBusy) return;
+  if (!window.VCAI || !window.VCBatch || !window.VCContract) { toast('AI 機能を読み込めていません（詳細は「診断」）'); return; }
+  const ta = document.getElementById('batchText');
+  const raw = ta.value.trim();
+  if (!raw) { toast('先に上の欄へ文章を貼ってください'); return; }
+  // 辞書展開（v37: 解釈の前）。展開結果が AI 社へ渡ることは AI 設定の注意書きで明示済み＋🔤 で見せる
+  let text = raw, hits = [];
+  try {
+    if (window.VCDict) { const ex = VCDict.expand(raw, VCDict.list()); text = ex.text; hits = ex.hits; }
+  } catch (e) { window.__vcNote('辞書エラー', (e && e.message) || String(e)); }
+  const btn = document.getElementById('batchAiRun');
+  const msg = document.getElementById('batchMsg');
+  const orig = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = '🤖 解釈中…';
+  msg.textContent = '🤖 AI に送信しています…';
+  try {
+    const system = VCBatch.buildPrompt({ now: new Date(), schema: VCContract.SCHEMA });
+    const resText = await VCAI.interpretLongText(text, { system });
+    const r = VCBatch.parseBatch(resText);
+    if (!r.ok) {
+      // AI の応答が契約に合わない＝本文は残す（作業を捨てない）・応答の先頭を診断に残す
+      msg.textContent = `⚠ AI の応答を取り込めませんでした: ${r.errors.join('／')}`;
+      window.__vcNote('AI解釈', `応答の検証に失敗: ${r.errors.join('／')}｜応答先頭: ${String(resText).slice(0, 200)}`);
+      return;
+    }
+    try { VCBatch.stageAdd(r.events); } catch (e) { toast(`取り込みを保存できませんでした: ${(e && e.message) || e}`); return; }
+    ta.value = '';
+    msg.textContent = [
+      `✅ AI が読み取った ${r.events.length}件を取り込みました（確認して保存してください）`,
+      hits.length ? `🔤 ${hits.map((h) => `「${h.k}」→「${h.v}」`).join('・')} を展開して送信しました` : '',
+    ].concat(r.warnings).filter(Boolean).join('／');
+    renderBatch();
+  } catch (e) {
+    msg.textContent = `⚠ ${(e && e.message) || e}`;
+    window.__vcNote('AI解釈', (e && e.message) || String(e));
+  } finally {
+    btn.disabled = false;
+    btn.textContent = orig;
+  }
+});
+renderAiConfig();
 renderBatch();
 
 const transcriber = VCTranscriber.createTranscriber({

@@ -26,7 +26,7 @@
 <body>
 
 <h1>プライバシーポリシー</h1>
-<p class="sub">ボイスカレンダー（VoiceCalendar）／ 最終更新: 2026年7月18日</p>
+<p class="sub">ボイスカレンダー（VoiceCalendar）／ 最終更新: 2026年7月19日</p>
 
 <p>ボイスカレンダー（以下「本アプリ」）は、利用者のプライバシーを最優先に設計しています。<strong>本アプリの開発者は、利用者の個人データを一切収集しません。</strong>本アプリは開発者のサーバーを持たず、アカウント登録・ログインを必要とせず、広告・解析（アナリティクス）・第三者のトラッキング SDK を一切使用しません。</p>
 
@@ -46,7 +46,16 @@
 
 <h2>端末内に保存される情報</h2>
 <ul>
-  <li>入力中の下書き、詳細設定、入力履歴は<strong>端末内にのみ</strong>保存されます。外部へ送信されることはありません。</li>
+  <li>入力中の下書き、詳細設定、入力履歴、辞書の登録内容は<strong>端末内にのみ</strong>保存されます。外部へ送信されることはありません。</li>
+  <li>「保存時に位置情報も記録する」設定（既定はオフ）を有効にした場合、取得した位置情報も<strong>端末内にのみ</strong>保存されます。</li>
+</ul>
+
+<h2>AI 連携（任意・既定はオフ）</h2>
+<ul>
+  <li>「まとめて入力」で長い文章から予定を読み取る機能は、<strong>利用者自身が用意した API キー</strong>（Anthropic または Google）を登録した場合にのみ動作します。キーを登録しない限り、本アプリが外部の AI サービスと通信することはありません。</li>
+  <li>この機能を使うと、<strong>入力した文章（辞書機能の展開結果を含む）が、利用者の選んだ AI 事業者へ端末から直接送信されます。</strong>送信先での処理は各事業者のプライバシーポリシーに従います。<strong>開発者のサーバーは存在せず、開発者が文章や API キーを受け取ることはありません。</strong></li>
+  <li>API キーはこの端末内にのみ保存されます。共有端末では保存しないでください。本アプリ専用に<strong>使用上限付きのキー</strong>を発行することを推奨します。</li>
+  <li>「AI用の指示をコピー」で文面をコピーし、外部のチャット AI に利用者自身が貼り付けた場合も、その内容は貼り付け先のサービスに渡ります。</li>
 </ul>
 
 <h2>第三者への提供</h2>
@@ -64,7 +73,7 @@
 
 <div class="lang">
 <h1>Privacy Policy</h1>
-<p class="sub">VoiceCalendar / Last updated: July 18, 2026</p>
+<p class="sub">VoiceCalendar / Last updated: July 19, 2026</p>
 
 <p>VoiceCalendar (the “App”) is designed with privacy first. <strong>The developer of the App does not collect any personal data.</strong> The App has no developer-operated server, requires no account or sign-in, and uses no advertising, analytics, or third-party tracking SDKs.</p>
 
@@ -84,7 +93,16 @@
 
 <h2>Data Stored On Your Device</h2>
 <ul>
-  <li>Drafts, settings, and input history are stored <strong>only on your device</strong> and are never transmitted.</li>
+  <li>Drafts, settings, input history, and dictionary entries are stored <strong>only on your device</strong> and are never transmitted.</li>
+  <li>If you enable the optional location-capture setting (off by default), location data is also stored only on your device.</li>
+</ul>
+
+<h2>AI Integration (Optional, Off by Default)</h2>
+<ul>
+  <li>The batch-input feature that reads events from long text works <strong>only if you register your own API key</strong> (Anthropic or Google). Without a key, the App never communicates with any AI service.</li>
+  <li>When used, <strong>the text you enter (including dictionary expansions) is sent directly from your device to the AI provider you chose.</strong> Their processing is governed by their privacy policies. <strong>There is no developer server; the developer never receives your text or your key.</strong></li>
+  <li>Your API key is stored only on your device. Avoid saving it on shared devices; we recommend issuing a key with a spending limit for this App.</li>
+  <li>If you copy the generated prompt and paste it into an external chat AI yourself, that content is likewise shared with that service.</li>
 </ul>
 
 <h2>Third Parties & Children</h2>
