@@ -45,7 +45,7 @@ window.__vcRenderDiag = function () {
   // 併記の「識別子復元」は **write-only で calendar(withIdentifier:) が動くかの実測**＝
   // Apple のドキュメントに記述が無く、実機で1回見れば確定する（v22 の「起動Nms」と同じ手）。
   rows.push(['保存先カレンダー', window.__vcCalTarget || '(未取得)']);
-  var layers = ['VCSettings', 'VCStore', 'VCParser', 'VCTranscriber', 'VCAdapter', 'VCRecords']
+  var layers = ['VCSettings', 'VCStore', 'VCParser', 'VCDict', 'VCTranscriber', 'VCAdapter', 'VCRecords']
     .map(function (n) { return (window[n] ? '✅' : '❌') + n; }).join(' ');
   rows.push(['層の読込', layers]);
   rows.push(['初期化', window.__vcInitDone ? '✅ 完了' : '❌ 途中で停止']);
@@ -213,6 +213,17 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
   .set-item .set-cur.warn { color: var(--warn); }
   .history-actions { text-align: right; padding: 8px 0; }
   .history-actions button { border: none; background: transparent; color: var(--sub); font-size: 12px; cursor: pointer; }
+  /* ---- 辞書（v37: 言い回し→実文字列の置き換え） ---- */
+  .dict-hint { font-size: 12px; color: var(--sub); padding: 8px 2px; line-height: 1.6; }
+  .dict-row { display: flex; align-items: center; gap: 8px; padding: 7px 2px; border-bottom: 1px solid var(--line); font-size: 13px; }
+  .dict-kv { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+  .dict-k { color: var(--ink); }
+  .dict-v { color: var(--sub); font-size: 12px; }
+  .dict-add { display: flex; gap: 6px; padding: 10px 0 4px; flex-wrap: wrap; }
+  .dict-add input { flex: 1 1 140px; min-width: 0; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; font-size: 14px; background: var(--card); color: var(--ink); }
+  .dict-add button { padding: 8px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--card); color: var(--accent); font-size: 14px; cursor: pointer; white-space: nowrap; }
+  .dict-empty { color: var(--sub); font-size: 12px; padding: 8px 2px; }
+  .history-list .h-dict { color: var(--accent); font-size: 12px; margin-top: 2px; }
 
   /* ---- 保存 ---- */
   .actions { display: flex; gap: 10px; margin-top: 16px; }
@@ -346,6 +357,22 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
     </div>
   </details>
 
+  <!-- 辞書（v37・ユーザー明示要求）: 「僕のメールアドレス」のような言い回しを実際の文字列に置き換える。
+       展開は解釈の前＝欄指定（「メモ 僕のメールアドレス」）でも効く。何が置き換わったかは来歴に 🔤 で
+       残す（黙って置換しない＝v16）。登録は端末内 localStorage のみ（外部送信しない＝ローカル完結） -->
+  <details class="optional" id="dictBox">
+    <summary>辞書（言い回しの置き換え）<span class="rec-count" id="dictCount"></span></summary>
+    <div class="card2">
+      <div class="dict-hint">話した言葉の中の「言い回し」を、登録した文字に置き換えてから解釈します。例: 「メモ 僕のメールアドレス」→ メモ欄に実際のアドレスが入る。<b>長い言い回しほど安全</b>です（短い言葉は他の言葉の中に現れて誤変換します。例: 「メモ」を登録すると「メモリアルホール」が壊れます）。置き換えた内容は来歴に 🔤 で表示されます。登録内容はこの端末の中だけに保存され、外部には送信されません。</div>
+      <div id="dictList"></div>
+      <div class="dict-add">
+        <input id="dictKey" type="text" placeholder="言い回し（例: 僕のメールアドレス）" autocomplete="off">
+        <input id="dictValue" type="text" placeholder="置き換え先（例: xxx@example.com）" autocomplete="off">
+        <button id="dictAdd" type="button">追加</button>
+      </div>
+    </div>
+  </details>
+
   <!-- 診断（v13）: 実機（iPhone）にコンソールが無いので、環境・層の読込・エラーを画面に出す。
        エラーがあれば自動で開く＝黙って壊れない -->
   <details class="optional" id="diagBox">
@@ -412,15 +439,16 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
      理由: この版文字列は index.html にしかないが、ロジックは別ファイル＝別キャッシュ。
      付けないと「フッタは新しいのにパーサは古い」という嘘の状態が成立する（v9 で実際に踏んだ）。
      index.html が更新されれば src の URL も変わる → JS も必ず新しく取り直される。 -->
-<script src="engine/settings.js?v=36"></script>
-<script src="engine/schema.js?v=36"></script>
-<script src="engine/parser.js?v=36"></script>
-<script src="input/transcriber.js?v=36"></script>
-<script src="adapters/calendar.js?v=36"></script>
-<script src="adapters/records.js?v=36"></script>
+<script src="engine/settings.js?v=37"></script>
+<script src="engine/schema.js?v=37"></script>
+<script src="engine/parser.js?v=37"></script>
+<script src="engine/dictionary.js?v=37"></script>
+<script src="input/transcriber.js?v=37"></script>
+<script src="adapters/calendar.js?v=37"></script>
+<script src="adapters/records.js?v=37"></script>
 <script>
 'use strict';
-const BUILD = 'v36：リストのCSV書き出し（表示中の📅/📝が対象・native は共有シート）｜v35：事例に相対時刻・範囲｜v34：パーサ補強｜v32-33：保存先＋リスト · 2026-07-19';
+const BUILD = 'v37：辞書＝「僕のメールアドレス」等の言い回しを実文字列に展開（来歴に🔤・解釈の前に適用）｜v36：CSV書き出し｜v34-35：パーサ補強＋事例 · 2026-07-19';
 console.log('BUILD:', BUILD);
 document.getElementById('build').textContent = BUILD;
 
@@ -506,10 +534,21 @@ const micBtn = document.getElementById('mic');
 const micState = document.getElementById('micState');
 
 function onUtterance(text, meta) {
+  // v37: 辞書（言い換え）展開＝**解釈より前**に生テキストへ適用（欄指定「メモ 僕のメールアドレス」でも効く）。
+  // 🗣（画面と来歴の生テキスト）は話したままを残す＝認識と解釈の切り分け（v5 来歴の目的）を壊さない。
+  // 何が展開されたかは来歴に 🔤 で刻む（黙って置換しない＝v16）。辞書の失敗は本体を殺さない（v13）。
+  const rawText = text;
+  let dictHits = [];
+  try {
+    if (window.VCDict) {
+      const ex = VCDict.expand(text, VCDict.list());
+      if (ex.hits.length) { text = ex.text; dictHits = ex.hits; }
+    }
+  } catch (e) { window.__vcNote('辞書エラー', (e && e.message) || String(e)); }
   transcriptEl.innerHTML = '';
   const span = document.createElement('span');
   span.className = 'final';
-  span.textContent = `🗣 ${text}`;
+  span.textContent = `🗣 ${rawText}`;
   transcriptEl.appendChild(span);
   // v14: 解釈〜反映で何が起きても **必ず来歴に痕跡を残す**。
   // 実機FBで「🗣 に見えているのに入らない」が出た＝途中で死ぬと無音になり、
@@ -545,7 +584,7 @@ function onUtterance(text, meta) {
   // cleared では判定できない: 1件目の発話は新規でも消すものが無く cleared が空になる＝
   // **副作用ではなく「適用したモード」そのもの**を記録する。設定でオフなら新規扱いにならない。
   const isNew = !targeted && !!settings.get('plainUtteranceIsNew');
-  logHistory({ at: Date.now(), text, conf: meta && meta.confidence, fb: !!(meta && meta.fallback), tg: targeted, nw: isNew, patch, notes, skipped, cleared, err, after: changed ? store.snapshot() : null });
+  logHistory({ at: Date.now(), text: rawText, dict: dictHits, conf: meta && meta.confidence, fb: !!(meta && meta.fallback), tg: targeted, nw: isNew, patch, notes, skipped, cleared, err, after: changed ? store.snapshot() : null });
 
   if (shouldAutoSave({ changed, targeted, notes, patch })) doSave({ auto: true });
 }
@@ -642,6 +681,13 @@ function renderHistory() {
       badge.className = 'h-badge ' + (e.nw ? (wiped ? 'b-new-wiped' : 'b-new') : 'b-targeted');
       badge.textContent = e.nw ? (wiped ? '🆕 新規（前の入力を消した）' : '🆕 新規') : '🎯 欄指定';
       item.insertBefore(badge, line2); // 🗣 の下・解釈結果の上
+    }
+    // 🔤 辞書で展開された発話は「何が何に置き換わったか」を行に刻む（v37・黙って置換しない）
+    if (e.dict && e.dict.length) {
+      const dx = document.createElement('div');
+      dx.className = 'h-result h-dict';
+      dx.textContent = `🔤 ${e.dict.map((d) => `「${d.k}」→「${d.v}」`).join('・')}`;
+      item.insertBefore(dx, line2);
     }
     // 💾 自動保存された発話は結果を行に刻む（v33）＝この行だけ見れば「何がどこへ入ったか」が分かる
     if (e.saved) {
@@ -875,6 +921,70 @@ document.getElementById('recordsCsv').addEventListener('click', async () => {
   toast(`CSVを書き出しました: ${label}`);
 });
 renderRecords();
+
+// ===== 辞書（v37）: 言い回し→実文字列の登録 UI =====
+// 展開の本体は engine/dictionary.js（純関数）・適用は onUtterance の先頭。ここは登録簿の読み書きだけ。
+// 辞書が読み込めなくても本体（フォーム・保存）は殺さない（v13）。
+function renderDict() {
+  const listEl = document.getElementById('dictList');
+  listEl.innerHTML = '';
+  if (!window.VCDict) {
+    const d = document.createElement('div');
+    d.className = 'dict-empty';
+    d.textContent = '⚠ 辞書機能を読み込めませんでした（詳細は「診断」）';
+    listEl.appendChild(d);
+    return;
+  }
+  const entries = VCDict.list();
+  document.getElementById('dictCount').textContent = entries.length ? `${entries.length}件` : '';
+  if (!entries.length) {
+    const d = document.createElement('div');
+    d.className = 'dict-empty';
+    d.textContent = 'まだ登録がありません。下の2つの欄を埋めて「追加」を押してください。';
+    listEl.appendChild(d);
+    return;
+  }
+  for (const e of entries) {
+    const row = document.createElement('div');
+    row.className = 'dict-row';
+    const kv = document.createElement('div');
+    kv.className = 'dict-kv';
+    const k = document.createElement('div');
+    k.className = 'dict-k';
+    k.textContent = `「${e.k}」`;
+    const v = document.createElement('div');
+    v.className = 'dict-v';
+    v.textContent = `→ ${e.v}`;
+    kv.append(k, v);
+    const del = document.createElement('button');
+    del.type = 'button';
+    del.className = 'rec-del';
+    del.setAttribute('aria-label', 'この登録を削除');
+    del.textContent = '✕';
+    del.addEventListener('click', () => {
+      try { VCDict.remove(e.k); } catch (err) { toast(`削除に失敗: ${(err && err.message) || err}`); return; }
+      renderDict();
+      toast(`辞書から「${e.k}」を削除しました`);
+    });
+    row.append(kv, del);
+    listEl.appendChild(row);
+  }
+}
+document.getElementById('dictAdd').addEventListener('click', () => {
+  if (!window.VCDict) { toast('辞書機能を読み込めていません（詳細は「診断」）'); return; }
+  const kEl = document.getElementById('dictKey');
+  const vEl = document.getElementById('dictValue');
+  try {
+    const added = VCDict.add(kEl.value, vEl.value);
+    kEl.value = '';
+    vEl.value = '';
+    renderDict();
+    toast(`辞書に登録しました: 「${added.k}」→「${added.v}」`);
+  } catch (e) {
+    toast(`登録できません: ${(e && e.message) || e}`); // 2文字未満・空・書き込み失敗＝黙って失敗しない
+  }
+});
+renderDict();
 
 const transcriber = VCTranscriber.createTranscriber({
   onInterim(t) { transcriptEl.textContent = `… ${t}`; },
