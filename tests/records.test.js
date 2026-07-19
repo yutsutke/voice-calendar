@@ -187,17 +187,17 @@ t('toCsv: BOM で始まり CRLF 区切り・ヘッダ行がある', () => {
   const csv = R.toCsv([]);
   eq(csv.charCodeAt(0), 0xFEFF, '先頭が BOM（無いと Excel で日本語が化ける）');
   const lines = csv.slice(1).split(CRLF);
-  eq(lines[0], '種類,タイトル,開始日,開始時刻,終了日,終了時刻,終日,場所,メモ,保存先,保存日時');
+  eq(lines[0], '種類,タイトル,開始日,開始時刻,終了日,終了時刻,終日,場所,メモ,保存先,保存日時,緯度,経度');
   eq(lines[1], '', '末尾は CRLF で終わる（RFC4180）');
 });
 
-t('toCsv: 1行の全列（予定・時刻あり・リスト）', () => {
+t('toCsv: 1行の全列（予定・時刻あり・リスト・位置なし＝末尾列は空）', () => {
   const csv = R.toCsv([{
     kind: 'plan', title: '歯医者', startMs: MS(2026, 7, 20, 15, 0), endMs: MS(2026, 7, 20, 16, 30),
     allDay: false, location: '駅前', note: '保険証', dest: 'list', savedAt: MS(2026, 7, 19, 9, 5),
   }]);
   eq(csv.slice(1).split(CRLF)[1],
-    '予定,歯医者,2026-07-20,15:00,2026-07-20,16:30,,駅前,保険証,リスト,2026-07-19 09:05');
+    '予定,歯医者,2026-07-20,15:00,2026-07-20,16:30,,駅前,保険証,リスト,2026-07-19 09:05,,');
 });
 
 t('toCsv: 終日は時刻列が空・終日列に○（言っていない時刻を列でも創作しない）', () => {
@@ -206,7 +206,16 @@ t('toCsv: 終日は時刻列が空・終日列に○（言っていない時刻�
     allDay: true, location: '', note: '', dest: 'both', savedAt: MS(2026, 7, 19, 8, 0),
   }]);
   eq(csv.slice(1).split(CRLF)[1],
-    '記録,休み,2026-07-19,,2026-07-19,,○,,,両方,2026-07-19 08:00');
+    '記録,休み,2026-07-19,,2026-07-19,,○,,,両方,2026-07-19 08:00,,');
+});
+
+t('toCsv: 位置情報のある行は緯度・経度列に出る（v38）', () => {
+  const csv = R.toCsv([{
+    kind: 'record', title: '着いた', startMs: MS(2026, 7, 19, 12, 0), endMs: MS(2026, 7, 19, 12, 0),
+    allDay: false, location: '', note: '', dest: 'list', savedAt: MS(2026, 7, 19, 12, 0),
+    lat: 35.68123, lng: 139.76712,
+  }]);
+  ok(csv.includes(',35.68123,139.76712'), '緯度経度が末尾列に出る');
 });
 
 t('toCsv: カンマ・引用符・改行を含むセルは RFC4180 で引用される', () => {
@@ -234,7 +243,40 @@ t('toCsv: list() の実データがそのまま書ける（add → list → toCs
   const line = csv.slice(1).split(CRLF)[1];
   ok(line.startsWith('予定,会議,2026-07-20,10:00,'), `list() の行が出る（実際: ${line}）`);
   ok(line.includes(',丸の内,'), '場所が出る');
-  ok(line.endsWith(',両方,2026-07-19 09:00'), '保存先と保存日時が出る');
+  ok(line.endsWith(',両方,2026-07-19 09:00,,'), '保存先と保存日時が出る（位置なし＝末尾空）');
+});
+
+// ===== 位置情報（v38）=====
+t('attachGeo: 保存済みの行に緯度経度が付き、リロード相当でも残る', () => {
+  const rec = R.add(ev('着いた', 5000), 'list', D(5000));
+  const updated = R.attachGeo(rec.id, 35.681236789, 139.767125456);
+  eq(updated.lat, 35.68124, '5桁（約1m）に丸め');
+  eq(updated.lng, 139.76713);
+  const l = R.list();
+  eq(l[0].lat, 35.68124, '永続化されて list で読める');
+  eq(l[0].lng, 139.76713);
+});
+
+t('attachGeo: 無い id は null（上限で消えた行など＝呼び出し側が診断に出す）', () => {
+  eq(R.attachGeo('r-nothing', 35, 139), null);
+});
+
+t('attachGeo: 数値でない座標は付けずに null（壊れた値を書き込まない）', () => {
+  const rec = R.add(ev('A', 5000), 'list', D(5000));
+  eq(R.attachGeo(rec.id, 'abc', 139), null);
+  ok(!('lat' in R.list()[0]), '行は無傷（lat が生えない）');
+});
+
+t('位置情報の片方だけ・壊れた保存値は無かったことに（読み側フォールバック）', () => {
+  localStorage.setItem(R.KEY, JSON.stringify([
+    { id: 'a', title: 'A', startMs: 5000, savedAt: 4000, lat: 35.6 },              // lng 欠損
+    { id: 'b', title: 'B', startMs: 6000, savedAt: 4000, lat: 'x', lng: 'y' },     // 壊れた値
+    { id: 'c', title: 'C', startMs: 7000, savedAt: 4000, lat: 35.6, lng: 139.7 },  // 正常
+  ]));
+  const byTitle = Object.fromEntries(R.list().map((r) => [r.title, r]));
+  ok(!('lat' in byTitle['A']), '片方欠損は持たない');
+  ok(!('lat' in byTitle['B']), '壊れた値は持たない');
+  eq(byTitle['C'].lat, 35.6, '正常な行は残る');
 });
 
 console.log(`\nrecords.test: ${pass} passed, ${fail} failed`);

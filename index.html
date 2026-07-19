@@ -223,6 +223,7 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
   .dict-add input { flex: 1 1 140px; min-width: 0; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; font-size: 14px; background: var(--card); color: var(--ink); }
   .dict-add button { padding: 8px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--card); color: var(--accent); font-size: 14px; cursor: pointer; white-space: nowrap; }
   .dict-empty { color: var(--sub); font-size: 12px; padding: 8px 2px; }
+  .rec-map { display: inline-block; font-size: 12px; color: var(--accent); text-decoration: none; margin-top: 3px; }
   .history-list .h-dict { color: var(--accent); font-size: 12px; margin-top: 2px; }
 
   /* ---- 保存 ---- */
@@ -439,16 +440,16 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
      理由: この版文字列は index.html にしかないが、ロジックは別ファイル＝別キャッシュ。
      付けないと「フッタは新しいのにパーサは古い」という嘘の状態が成立する（v9 で実際に踏んだ）。
      index.html が更新されれば src の URL も変わる → JS も必ず新しく取り直される。 -->
-<script src="engine/settings.js?v=37"></script>
-<script src="engine/schema.js?v=37"></script>
-<script src="engine/parser.js?v=37"></script>
-<script src="engine/dictionary.js?v=37"></script>
-<script src="input/transcriber.js?v=37"></script>
-<script src="adapters/calendar.js?v=37"></script>
-<script src="adapters/records.js?v=37"></script>
+<script src="engine/settings.js?v=38"></script>
+<script src="engine/schema.js?v=38"></script>
+<script src="engine/parser.js?v=38"></script>
+<script src="engine/dictionary.js?v=38"></script>
+<script src="input/transcriber.js?v=38"></script>
+<script src="adapters/calendar.js?v=38"></script>
+<script src="adapters/records.js?v=38"></script>
 <script>
 'use strict';
-const BUILD = 'v37：辞書＝「僕のメールアドレス」等の言い回しを実文字列に展開（来歴に🔤・解釈の前に適用）｜v36：CSV書き出し｜v34-35：パーサ補強＋事例 · 2026-07-19';
+const BUILD = 'v38：保存時に位置情報を記録（設定・既定オフ）→リストの行から🗺地図で開く｜v37：辞書｜v36：CSV書き出し｜v34-35：パーサ補強＋事例 · 2026-07-19';
 console.log('BUILD:', BUILD);
 document.getElementById('build').textContent = BUILD;
 
@@ -750,6 +751,37 @@ renderHistory();
 // カレンダーは読めない（書き込み専用 v23-v26）＝「登録したものを見返す」は保存時に端末内へ残した
 // 台帳（adapters/records.js）から描く。予定/記録のトグルで「予定だけ・記録だけ・両方」の3通り。
 // 台帳が読み込めなくても本体（フォーム・保存）は殺さない（v13: 補助機能の失敗が本体を殺さない）。
+// ===== 位置情報（v38・設定オン時のみ）=====
+// 保存時にいた場所を台帳の行に残す。失敗は診断に出す（補助機能＝toast で騒がないが黙って消えない v16）。
+// maximumAge 60s: 1分前の位置で十分（「どこで保存したか」の用途）＝取得が速く電池にも優しい。
+function captureGeoFor(recId) {
+  if (!navigator.geolocation) { window.__vcNote('位置情報', 'この環境では使えません（geolocation 非対応）'); return; }
+  navigator.geolocation.getCurrentPosition(
+    (pos) => {
+      try {
+        const r = VCRecords.attachGeo(recId, pos.coords.latitude, pos.coords.longitude);
+        if (r) { renderRecords(); window.__vcDebugNote(`📍 位置を記録 (${r.lat}, ${r.lng})`); }
+        else window.__vcNote('位置情報', '行が見つからず記録できませんでした');
+      } catch (e) { window.__vcNote('位置情報', (e && e.message) || String(e)); }
+    },
+    (err) => { window.__vcNote('位置情報', `取得できませんでした（code ${err && err.code}: ${err && err.message}）`); },
+    { enableHighAccuracy: false, timeout: 8000, maximumAge: 60000 }
+  );
+}
+// 設定をオンにした瞬間に一度だけ権限を確かめる＝原因と結果が目の前で繋がる
+// （初回の許可ダイアログが「次の保存時」に突然出ると、何のための許可か分からない）
+settings.subscribe((k, v) => {
+  if (k !== 'captureLocation' || v !== true) return;
+  if (!navigator.geolocation) { toast('この環境では位置情報を使えません'); return; }
+  navigator.geolocation.getCurrentPosition(
+    () => toast('📍 位置情報を使えます（リストに保存した行に付きます）'),
+    (err) => toast(err && err.code === 1
+      ? '⚠ 位置情報が許可されていません（ブラウザ/OS の設定で許可してください）'
+      : '⚠ 位置情報を取得できませんでした（保存はそのまま動きます）'),
+    { enableHighAccuracy: false, timeout: 8000, maximumAge: 60000 }
+  );
+});
+
 const REC_VIEW_KEY = 'vc_recview_v1';
 const recShowPlan = document.getElementById('recShowPlan');
 const recShowRecord = document.getElementById('recShowRecord');
@@ -829,6 +861,21 @@ function recItem(r) {
     sub.className = 'rec-sub';
     sub.textContent = subs.join('・');
     main.appendChild(sub);
+  }
+  // 🗺 位置情報のある行は地図で開ける（v38）。Apple 系は Apple マップ・他は Google マップ
+  // （URL を開くだけ＝地図 SDK もキーも持たない＝ローカル完結 SPEC §2 のまま）。
+  // ピンは座標そのもの（q=lat,lng）＝タイトルで検索させない（別の場所に飛ぶ創作をしない）。
+  if (Number.isFinite(r.lat) && Number.isFinite(r.lng)) {
+    const map = document.createElement('a');
+    map.className = 'rec-map';
+    map.textContent = '🗺 地図で見る';
+    map.target = '_blank';
+    map.rel = 'noopener';
+    const apple = /iPad|iPhone|iPod|Macintosh/.test(navigator.userAgent);
+    map.href = apple
+      ? `https://maps.apple.com/?q=${r.lat},${r.lng}`
+      : `https://www.google.com/maps/search/?api=1&query=${r.lat},${r.lng}`;
+    main.appendChild(map);
   }
   const del = document.createElement('button');
   del.type = 'button';
@@ -1282,9 +1329,11 @@ async function doSave(opts) {
   // ② リスト（端末内台帳）。書き込み失敗は台帳が投げる＝黙って捨てない（v16）
   let listOk = false;
   let listDropped = 0; // 上限で消えた古い記録の数（黙って捨てない＝toast で告げる）
+  let listRec = null;  // v38: 位置情報を後から付ける相手（行 id）
   if (toList) {
     try {
       const added = VCRecords.add(res.event, dest, now);
+      listRec = added;
       listDropped = (added && added.dropped) || 0;
       listOk = true;
       renderRecords();
@@ -1294,6 +1343,11 @@ async function doSave(opts) {
       toast(`⚠ カレンダーには入りましたが、リストへの記録に失敗しました: ${m}`); // 部分成功は正直に言う
     }
   }
+
+  // v38: 位置情報（設定・既定オフ）。**保存をブロックしない**＝取れた時だけ後から行に付く
+  // （自動保存 v28 の一本道を GPS の数秒で遅らせない）。対象はリストの行だけ＝カレンダーは
+  // 書き込み後にアプリから触れない（write-only）。
+  if (listOk && listRec && settings.get('captureLocation')) captureGeoFor(listRec.id);
 
   // ③ どこかに入った＝後始末。toast は「どこに入れたか」を必ず名乗る（v23）
   if (calSaved || listOk) {

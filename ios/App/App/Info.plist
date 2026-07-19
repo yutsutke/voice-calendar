@@ -45,6 +45,8 @@
 	</array>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>保存した時にいた場所をアプリ内のリストに残すために使います（詳細設定でオンにした場合のみ）。位置情報は端末の外に送信されません。</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>話した内容を予定のテキストに変換するために音声認識を使います。認識は可能な限り端末内で行います。</string>
 	<key>NSMicrophoneUsageDescription</key>

@@ -43,7 +43,7 @@
     if (!Number.isFinite(startMs)) return null; // startMs 無し＝時系列に並べられない＝台帳の意味を成さない
     const num = (x, fb) => (Number.isFinite(Number(x)) ? Number(x) : fb);
     const savedAt = num(r.savedAt, startMs);
-    return {
+    const out = {
       id: String(r.id || `r${savedAt}-${startMs}`), // id 欠損（外部破損）でも remove できる id を導出
       title: String(r.title || ''),
       startMs,
@@ -56,6 +56,12 @@
       kind: (r.kind === 'plan' || r.kind === 'record') ? r.kind : (startMs > savedAt ? 'plan' : 'record'),
       dest: r.dest === 'both' ? 'both' : 'list', // 台帳に載る＝list か both（calendar はそもそも add しない）
     };
+    // 位置情報（v38・任意）: 両方が有限数の時だけ持つ（片方だけ・壊れた値は無かったことに）
+    if (Number.isFinite(Number(r.lat)) && Number.isFinite(Number(r.lng))) {
+      out.lat = Number(r.lat);
+      out.lng = Number(r.lng);
+    }
+    return out;
   }
 
   function loadAll() { return loadRaw().map(normalize).filter(Boolean); }
@@ -114,6 +120,22 @@
     return all;
   }
 
+  // v38: 保存の後から位置情報を行へ付ける（設定オン時のみ呼ばれる・保存自体はブロックしない設計）。
+  // 座標は5桁（約1m）に丸め＝それ以上の精度は「どこで保存したか」に不要な個人情報。
+  // 行が無い（上限で消えた等）は null を返す＝呼び出し側が診断に出す（黙って消えない v16）。
+  function attachGeo(id, lat, lng) {
+    lat = Number(lat);
+    lng = Number(lng);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+    const all = loadAll();
+    const rec = all.find((r) => r.id === String(id));
+    if (!rec) return null;
+    rec.lat = Math.round(lat * 1e5) / 1e5;
+    rec.lng = Math.round(lng * 1e5) / 1e5;
+    persist(all);
+    return rec;
+  }
+
   function clear() { try { global.localStorage.removeItem(KEY); } catch {} }
 
   // ===== CSV 書き出し（v36・ユーザー明示要求で un-park。v33「テキスト・CSV書き出し→ライフログへの道」）=====
@@ -130,7 +152,7 @@
       const v = String(s == null ? '' : s);
       return /[",\r\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
     };
-    const header = ['種類', 'タイトル', '開始日', '開始時刻', '終了日', '終了時刻', '終日', '場所', 'メモ', '保存先', '保存日時'];
+    const header = ['種類', 'タイトル', '開始日', '開始時刻', '終了日', '終了時刻', '終日', '場所', 'メモ', '保存先', '保存日時', '緯度', '経度'];
     const lines = [header.map(cell).join(',')];
     for (const r of rows || []) {
       lines.push([
@@ -145,6 +167,8 @@
         r.note,
         r.dest === 'both' ? '両方' : 'リスト',
         `${dateS(r.savedAt)} ${timeS(r.savedAt)}`,
+        Number.isFinite(r.lat) ? r.lat : '', // 位置情報（v38）: 無い行は空＝創作しない
+        Number.isFinite(r.lng) ? r.lng : '',
       ].map(cell).join(','));
     }
     // BOM: Excel が UTF-8 と認識するため（無いと日本語が化ける）。改行は CRLF（RFC4180）。
@@ -152,7 +176,7 @@
     return '\uFEFF' + lines.join('\r\n') + '\r\n';
   }
 
-  const api = { add, list, remove, clear, toCsv, KEY, CAP };
+  const api = { add, list, remove, clear, attachGeo, toCsv, KEY, CAP };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else global.VCRecords = api;
 })(typeof window !== 'undefined' ? window : globalThis);
