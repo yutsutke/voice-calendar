@@ -159,10 +159,12 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
   .history-list .b-new { background: #0a84ff22; color: var(--accent); }
   .history-list .b-new-wiped { background: #ff950026; color: var(--warn); }
   .history-list .b-targeted { background: #30a14e22; color: var(--ok); }
+  .history-list .b-ai { background: #af52de22; color: #af52de; } /* v42: 音声のAI解釈 */
   @media (prefers-color-scheme: dark) {
     /* 暗所では既定の --warn / --ok が沈むのでバッジの文字だけ明るくする */
     .history-list .b-new-wiped { color: #ff9f0a; }
     .history-list .b-targeted { color: #30d158; }
+    .history-list .b-ai { color: #bf5af2; }
   }
 
   /* ---- リスト（v32: 保存した記録📝と予定📅の時系列） ---- */
@@ -507,19 +509,19 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
      理由: この版文字列は index.html にしかないが、ロジックは別ファイル＝別キャッシュ。
      付けないと「フッタは新しいのにパーサは古い」という嘘の状態が成立する（v9 で実際に踏んだ）。
      index.html が更新されれば src の URL も変わる → JS も必ず新しく取り直される。 -->
-<script src="engine/settings.js?v=41"></script>
-<script src="engine/schema.js?v=41"></script>
-<script src="engine/parser.js?v=41"></script>
-<script src="engine/dictionary.js?v=41"></script>
-<script src="engine/contract.js?v=41"></script>
-<script src="engine/batch.js?v=41"></script>
-<script src="engine/ai.js?v=41"></script>
-<script src="input/transcriber.js?v=41"></script>
-<script src="adapters/calendar.js?v=41"></script>
-<script src="adapters/records.js?v=41"></script>
+<script src="engine/settings.js?v=42"></script>
+<script src="engine/schema.js?v=42"></script>
+<script src="engine/parser.js?v=42"></script>
+<script src="engine/dictionary.js?v=42"></script>
+<script src="engine/contract.js?v=42"></script>
+<script src="engine/batch.js?v=42"></script>
+<script src="engine/ai.js?v=42"></script>
+<script src="input/transcriber.js?v=42"></script>
+<script src="adapters/calendar.js?v=42"></script>
+<script src="adapters/records.js?v=42"></script>
 <script>
 'use strict';
-const BUILD = 'v41：WebMCP（ブラウザAIへ create_events を登録＝取り込みリスト経由・保存はしない）｜v40：AI設定（BYOK）｜v39：まとめて入力｜v38：位置情報 · 2026-07-19';
+const BUILD = 'v42：音声→AI解釈（詳細設定・既定オフ＝発話をAIで解釈・複数件はまとめて入力へ・AI経路は自動保存しない）｜v41：WebMCP｜v40：BYOK｜v39：まとめて入力 · 2026-07-19';
 console.log('BUILD:', BUILD);
 document.getElementById('build').textContent = BUILD;
 
@@ -625,39 +627,118 @@ function onUtterance(text, meta) {
   // 実機FBで「🗣 に見えているのに入らない」が出た＝途中で死ぬと無音になり、
   // native イベント経由の例外は window.onerror にも届かないことがある。
   // 🗣 表示は解釈の前なので「表示されるのに入らない」と症状が一致する。
-  let patch = {}, notes = [], skipped = [], cleared = [], err = null, targeted = false;
+  const mySeq = ++utteranceSeq; // v42: 全発話で番号を進める＝AI 応答の「古い上書き」を構造的に防ぐ
+  let rule = null;
   try {
-    const r = VCParser.interpret(text, new Date());
-    patch = r.patch;
-    notes = r.notes;
-    targeted = !!r.targeted; // 欄指定発話（「終了22時」等）= その欄だけの差分・掃除しない（v17）
-    notesEl.textContent = notes.join(' ／ ');
-    if (Object.keys(patch).length === 0) {
-      // 何も解釈できない発話（咳・雑音など）ではフォームを触らない＝掃除もしない
-      toast('解釈できる項目がありませんでした（フォームは手で入力できます）');
-    } else {
-      const a = store.applyVoicePatch(patch, text, { targeted });
-      skipped = a.skipped;
-      cleared = a.cleared;
-    }
+    rule = VCParser.interpret(text, new Date()); // 常に先に解釈（同期・無料）＝AI の判定材料＆失敗時の受け皿
   } catch (e) {
-    err = (e && e.message) || String(e);
+    const err = (e && e.message) || String(e);
     window.__vcNote('解釈エラー', `${err}｜発話「${text}」`);
     toast('解釈でエラーが起きました（詳細は「診断」と「来歴」）');
+    logHistory({ at: Date.now(), text: rawText, dict: dictHits, conf: meta && meta.confidence, fb: !!(meta && meta.fallback), tg: false, nw: !!settings.get('plainUtteranceIsNew'), patch: {}, notes: [], skipped: [], cleared: [], err, after: null });
+    return;
+  }
+  // v42: 音声→AI 解釈（設定・既定オフ・要キー）。欄指定（「場所 立川」）はルールが速く確実・無料なので
+  // AI に送らない。ルール解釈(rule)を先に済ませてから行く＝AI が失敗しても発話は無駄にならない。
+  if (!rule.targeted && settings.get('voiceAI') && window.VCAI && VCAI.hasKey() && window.VCBatch && window.VCContract) {
+    interpretByAI({ text, rawText, dictHits, meta, rule, seq: mySeq });
+    return;
+  }
+  applyRuleResult({ rule, text, rawText, dictHits, meta, aiFbNote: null });
+}
+
+// 解釈結果（ルール）の適用＋来歴＋自動保存判定（v42 で onUtterance から分離＝AI 失敗時の受け皿と共用。
+// aiFbNote なしの経路は v41 までの挙動と同一）。
+// aiFbNote: AI 失敗→ルールで代替した印（v42）。notes に混ぜる＝**自動保存の門も自動的に閉まる**
+// （notes 非空なら v28 の門は通らない＝選んだエンジンが失敗した発話を黙って保存しない）。
+function applyRuleResult({ rule, text, rawText, dictHits, meta, aiFbNote }) {
+  const targeted = !!rule.targeted; // 欄指定発話（「終了22時」等）= その欄だけの差分・掃除しない（v17）
+  const patch = rule.patch;
+  const notes = aiFbNote ? [aiFbNote].concat(rule.notes) : rule.notes;
+  let skipped = [], cleared = [];
+  notesEl.textContent = notes.join(' ／ ');
+  if (Object.keys(patch).length === 0) {
+    // 何も解釈できない発話（咳・雑音など）ではフォームを触らない＝掃除もしない
+    toast('解釈できる項目がありませんでした（フォームは手で入力できます）');
+  } else {
+    const a = store.applyVoicePatch(patch, text, { targeted });
+    skipped = a.skipped;
+    cleared = a.cleared;
   }
   // 🔴 v20（実機FB）: 来歴に積むのは **この発話を適用した「後」の状態**。
   // v18 は「前」の状態を積んでいたため、行に「飲み会」と表示されているのに ↩ を押すと
   // 1つ前の「会議」に戻る＝行の表示と結果が食い違った（「反映されない」に見える）。
   // 行に見えている状態に戻るのが自然（ユーザーの言葉＝「この“タイトルに”戻す」）。
   // フォームを実際に変えた発話にだけ残す（変えていない発話の ↩ は直下の行と同じ状態＝冗長）。
-  const changed = !err && (Object.keys(patch).length > 0) && (skipped.length !== Object.keys(patch).length || cleared.length > 0);
+  const changed = (Object.keys(patch).length > 0) && (skipped.length !== Object.keys(patch).length || cleared.length > 0);
   // 🆕 この発話が「新規（言い直し）」として扱われたか（v21・実機FB「新規になったときに分かるように」）。
   // cleared では判定できない: 1件目の発話は新規でも消すものが無く cleared が空になる＝
   // **副作用ではなく「適用したモード」そのもの**を記録する。設定でオフなら新規扱いにならない。
   const isNew = !targeted && !!settings.get('plainUtteranceIsNew');
-  logHistory({ at: Date.now(), text: rawText, dict: dictHits, conf: meta && meta.confidence, fb: !!(meta && meta.fallback), tg: targeted, nw: isNew, patch, notes, skipped, cleared, err, after: changed ? store.snapshot() : null });
+  logHistory({ at: Date.now(), text: rawText, dict: dictHits, conf: meta && meta.confidence, fb: !!(meta && meta.fallback), tg: targeted, nw: isNew, aiFb: !!aiFbNote, patch, notes, skipped, cleared, err: null, after: changed ? store.snapshot() : null });
 
   if (shouldAutoSave({ changed, targeted, notes, patch })) doSave({ auto: true });
+}
+
+// ===== v42: 音声 → AI 解釈（設定 voiceAI・既定オフ・要 API キー） =====
+// v39-41 の線路（契約 buildPrompt / 検証ゲート parseBatch / 取り込みリスト）に音声を4つ目の入口として
+// 接続する。**置き換えではない**: 既定はルールのまま・AI 失敗時もルールに戻る（発話を捨てない v16）。
+let utteranceSeq = 0; // 追い越しガード: AI 応答が戻った時に新しい発話が来ていたら破棄（古い内容で上書きしない）
+async function interpretByAI({ text, rawText, dictHits, meta, rule, seq }) {
+  notesEl.textContent = '🤖 AI解釈中…';
+  let events = null, warnings = [], aiErr = null;
+  try {
+    const system = VCBatch.buildPrompt({ now: new Date(), schema: VCContract.SCHEMA });
+    const resText = await VCAI.interpretLongText(text, { system, timeoutMs: 12000 });
+    const r = VCBatch.parseBatch(resText);
+    if (!r.ok) aiErr = r.errors.join('／');
+    else { events = r.events; warnings = r.warnings; }
+  } catch (e) {
+    aiErr = (e && e.message) || String(e);
+  }
+  if (utteranceSeq !== seq) {
+    window.__vcDebugNote(`🤖 AI応答を破棄（新しい発話に追い越された）: 「${rawText.slice(0, 24)}」`);
+    return;
+  }
+  if (aiErr) {
+    // フォールバック: 先に計算済みのルール解釈を適用＝発話を捨てない。理由は notes（⚠表示）と診断へ
+    window.__vcNote('音声AI解釈', aiErr);
+    applyRuleResult({ rule, text, rawText, dictHits, meta, aiFbNote: `🤖AI解釈に失敗→ルール解釈（${aiErr}）` });
+    return;
+  }
+  if (events.length >= 2) {
+    // 複数の予定＝フォーム（1件）には入れず「まとめて入力」へ（ユーザー決定・v39 の受け皿を再利用）
+    try {
+      VCBatch.stageAdd(events);
+    } catch (e) {
+      window.__vcNote('音声AI解釈', `取り込みリストへ保存できず→ルール解釈に戻します: ${(e && e.message) || e}`);
+      applyRuleResult({ rule, text, rawText, dictHits, meta, aiFbNote: '🤖複数件の取り込みに失敗→ルール解釈' });
+      return;
+    }
+    renderBatch();
+    document.getElementById('batchBox').open = true; // 黙って積まない（v16）＝開いて見せる
+    const note = `🤖 複数の予定（${events.length}件）を読み取りました → 「まとめて入力」で確認して保存`;
+    notesEl.textContent = note;
+    toast(`🎤→🤖 ${events.length}件を「まとめて入力」に取り込みました（確認して保存してください）`);
+    logHistory({ at: Date.now(), text: rawText, dict: dictHits, conf: meta && meta.confidence, fb: !!(meta && meta.fallback), tg: false, nw: false, ai: true, aiMulti: events.length, patch: {}, notes: [note].concat(warnings), skipped: [], cleared: [], err: null, after: null });
+    return;
+  }
+  // 1件 → フォームへ（従来の体験）。言い直し掃除(v6)・欄ロック(v3)は共通経路 applyVoicePatch のまま
+  const ev = events[0];
+  const patch = VCBatch.draftToPatch(ev.draft);
+  const notes = ev.ambiguities.concat(ev.problems).concat(warnings); // AI の申告＝⚠ で見せる（聞き返さない §2-3）
+  if (Object.keys(patch).length === 0) { // parseBatch が空イベントを除外するため通常来ない（防御）
+    applyRuleResult({ rule, text, rawText, dictHits, meta, aiFbNote: '🤖AIが項目を返さず→ルール解釈' });
+    return;
+  }
+  const a = store.applyVoicePatch(patch, text, { targeted: false });
+  notesEl.textContent = notes.join(' ／ ');
+  const changed = a.skipped.length !== Object.keys(patch).length || a.cleared.length > 0;
+  const isNew = !!settings.get('plainUtteranceIsNew');
+  logHistory({ at: Date.now(), text: rawText, dict: dictHits, conf: meta && meta.confidence, fb: !!(meta && meta.fallback), tg: false, nw: isNew, ai: true, patch, notes, skipped: a.skipped, cleared: a.cleared, err: null, after: changed ? store.snapshot() : null });
+  // 🔴 AI 経路は自動保存(v28)を**呼ばない**（ユーザー合意済み・engine/settings.js の why 参照）:
+  // ルールパーサは決定的＝「patch に日時が在る＝実際に言った」が保証されるが、AI は創作し得る。
+  // 保存は不可逆（読めない＝消せない）＝この保証なしに黙って確定しない（SPEC §2-4）。
 }
 
 /// 自動保存の条件（v28・実機FB「記録後、保存を自動にできる設定」）。
@@ -741,12 +822,20 @@ function renderHistory() {
     line1.append(time, text);
     const line2 = document.createElement('div');
     line2.className = 'h-result';
-    line2.textContent = patchSummary(e.patch || {}, e.skipped, e.cleared);
+    // v42: AI が複数件を読み取った発話はフォームでなく「まとめて入力」へ入った＝行き先を書く
+    line2.textContent = e.aiMulti ? `→ ${e.aiMulti}件を「まとめて入力」へ` : patchSummary(e.patch || {}, e.skipped, e.cleared);
     item.append(line1, line2);
     // モードのバッジ（v21）: この発話が「新規（前の入力を消して入れ直す）」だったか
     // 「欄指定（その欄だけ足す）」だったかを一目で。実機FB「新規になったときに分かるように」。
     // 消した実績のある新規は警告色＝“何を失ったか”が目で追える。
-    if (e.nw || e.tg) {
+    // v42: AI で解釈した発話は 🤖（自動保存されない経路だと分かる印でもある）
+    if (e.ai) {
+      const badge = document.createElement('div');
+      badge.className = 'h-badge b-ai';
+      badge.textContent = e.aiMulti ? `🤖 AI解釈（${e.aiMulti}件→まとめて入力）`
+        : (e.cleared && e.cleared.length ? '🤖 AI解釈（前の入力を消した）' : '🤖 AI解釈');
+      item.insertBefore(badge, line2);
+    } else if (e.nw || e.tg) {
       const wiped = !!(e.nw && e.cleared && e.cleared.length);
       const badge = document.createElement('div');
       badge.className = 'h-badge ' + (e.nw ? (wiped ? 'b-new-wiped' : 'b-new') : 'b-targeted');

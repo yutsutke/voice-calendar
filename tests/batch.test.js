@@ -312,6 +312,22 @@ t('stageRemove / stageClear', () => {
   eq(B.stageList(), []);
 });
 
+// ===== draftToPatch（v42: 音声AI経路 → applyVoicePatch の patch） =====
+t('draftToPatch: 非空欄だけキーに載る（言っていない欄に触れない）', () => {
+  const p = B.draftToPatch({ title: '会議', startDate: '2026-07-20', startTime: '', location: '' });
+  eq(p, { title: '会議', startDate: '2026-07-20' }, '空文字の欄はキーごと省く');
+});
+
+t('draftToPatch: allDay は === true の時だけ載る（toSnapshot と鏡）', () => {
+  eq('allDay' in B.draftToPatch({ title: 'x', allDay: false }), false, 'false は「言っていない」');
+  eq(B.draftToPatch({ title: 'x', allDay: true }).allDay, true);
+});
+
+t('draftToPatch: 空 draft → {}（applyVoicePatch に渡しても何も起きない形）', () => {
+  eq(B.draftToPatch({}), {});
+  eq(B.draftToPatch(null), {});
+});
+
 // ===== registerWebMcp（v41）: 登録は throw しない・execute は保存しない =====
 t('WebMCP: modelContext が無ければ unsupported（絶対 throw しない）', () => {
   eq(B.registerWebMcp(undefined, { schema: C.SCHEMA }), 'unsupported');

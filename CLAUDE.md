@@ -28,6 +28,7 @@ engine/settings.js       # 詳細設定（v19）: 値の入れ物のみ・DOM �
 engine/contract.js       # AI 連携の契約（v39）: バッチ封筒の JSON Schema。日本語 description がそのままプロンプト＝二重管理ゼロ。FIELDS と鏡合わせ（テスト強制）
 engine/batch.js          # まとめて入力（v39）: parseBatch 検証ゲート（AI の出力を信用しない・不正は落として明記）＋取り込みリスト台帳＋buildPrompt。音声経路と独立
 engine/ai.js             # BYOK（v40）: プロバイダアダプタ（Anthropic/Gemini・OpenAI は CORS 非対応で入れない）。キーは端末内のみ・エラー文にキーを出さない・fetch 注入でテスト
+                         #   v42: 音声もこの経路で解釈できる（設定 voiceAI・既定オフ・AI 経路は自動保存しない・失敗はルールへ自動フォールバック）
 input/transcriber.js     # 転写層: WebSpeech(web/iOS Safari) / 将来 SFSpeechRecognizer プラグイン。simulate() でテキスト注入
 adapters/calendar.js     # 永続層: materialize(保存時既定値はここに集約) + ics(web) / eventkit(iOS・保存先は OS 既定1本)
 adapters/records.js      # ローカル記録台帳（v32）: 保存先「リスト/両方」の控えを端末内に保持（write-only でカレンダーは読めない→リスト表示の土台）

@@ -190,6 +190,19 @@
     return { draft: d, fieldState, origin };
   }
 
+  // ---------- 音声AI経路（v42）: 1件の draft → applyVoicePatch の patch ----------
+  // patch は「言及した欄だけキーを持つ」意味論＝非空欄（allDay は ===true）だけを載せる
+  // （toSnapshot と同じ判定＝schema.js の isEmptyVal と鏡。空欄をキーごと省く＝言っていない欄に触れない）。
+  function draftToPatch(draft) {
+    const d = Object.assign(emptyDraft(), draft || {});
+    const patch = {};
+    for (const f of FIELDS) {
+      const filled = f === 'allDay' ? d.allDay === true : d[f] !== '' && d[f] != null;
+      if (filled) patch[f] = d[f];
+    }
+    return patch;
+  }
+
   // ---------- 取り込みリスト（staging）＝保存前の一時台帳 ----------
   function loadStage() {
     try {
@@ -294,7 +307,7 @@
     }
   }
 
-  const api = { parseBatch, buildPrompt, toSnapshot, stageAdd, stageList, stageRemove, stageClear, registerWebMcp, KEY, MAX_EVENTS };
+  const api = { parseBatch, buildPrompt, toSnapshot, draftToPatch, stageAdd, stageList, stageRemove, stageClear, registerWebMcp, KEY, MAX_EVENTS };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else global.VCBatch = api;
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -42,6 +42,7 @@ t('既定値がこれまでの実挙動と一致する（触らない人の体�
   eq(s.get('autoSaveAfterUtterance'), false, '🔴 自動保存はオフ＝保存は自分で押す（v27 までの動き）。保存は不可逆なので既定で勝手に入れない');
   eq(s.get('recordDest'), 'calendar', '保存先はカレンダーのみ＝v31 までの動き（v32 のリストは opt-in）');
   eq(s.get('captureLocation'), false, '🔴 位置情報はオフ＝黙って取らない（v38・プライバシーの opt-in）');
+  eq(s.get('voiceAI'), false, '🔴 音声のAI解釈はオフ＝音声の核経路はオフライン・決定的のまま（v42・外部送信とコストの opt-in）');
   eq(s.get('targetCalendarId'), undefined, '🚫 保存先の選択は v26 で撤去（write-only では効かない＝復活させない）');
 });
 

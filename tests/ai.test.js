@@ -215,6 +215,29 @@ t('modelFor: 未指定は既定モデル・指定があればそれ', () => {
   eq(AI.modelFor({ provider: 'anthropic', model: 'claude-sonnet-5' }), 'claude-sonnet-5');
 });
 
+// ===== タイムアウト（v42: 音声経路は待たせられない） =====
+t('timeoutMs: 応答が来なければ「時間切れ」と名指す（ネットワーク失敗と別の顔）', async () => {
+  const never = () => new Promise(() => {}); // 永遠に解決しない fetch
+  const m = await rejects(
+    () => AI.interpretLongText('t', { system: 's', config: { provider: 'anthropic', key: SECRET }, fetchFn: never, timeoutMs: 30 }),
+    '時間切れ'
+  );
+  ok(!m.includes('ネットワーク'), 'ネットワーク失敗と混同しない');
+});
+
+t('timeoutMs 指定時は AbortSignal を fetch に渡す（real fetch は実際に中断される）・未指定なら渡さない', async () => {
+  let withTimeout = null, without = null;
+  const capture = (store2) => async (url, init) => { store2.signal = init.signal; return { ok: true, status: 200, json: async () => ({ content: [{ type: 'text', text: 'x' }] }) }; };
+  const s1 = {};
+  await AI.interpretLongText('t', { system: 's', config: { provider: 'anthropic', key: SECRET }, fetchFn: capture(s1), timeoutMs: 5000 });
+  withTimeout = s1.signal;
+  const s2 = {};
+  await AI.interpretLongText('t', { system: 's', config: { provider: 'anthropic', key: SECRET }, fetchFn: capture(s2) });
+  without = s2.signal;
+  ok(withTimeout !== undefined && withTimeout !== null, 'timeout あり → signal が渡る');
+  ok(without === undefined, 'timeout なし → signal を渡さない（従来どおり）');
+});
+
 // ===== testConnection =====
 t('testConnection: 最小の呼び出しで疎通（キー・モデル・経路の検証）', async () => {
   let got = null;

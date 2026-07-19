@@ -115,23 +115,42 @@
     return `AI の呼び出しに失敗しました（HTTP ${status}）`;
   }
 
-  async function callProvider(system, text, cfg, fetchFn) {
+  async function callProvider(system, text, cfg, fetchFn, timeoutMs) {
     const p = PROVIDERS[cfg && cfg.provider];
     if (!p) throw new Error('対応していないプロバイダです');
     if (!cfg.key) throw new Error('API キーが設定されていません（AI 設定で登録してください）');
     const f = fetchFn || global.fetch;
     if (typeof f !== 'function') throw new Error('この環境ではネットワークを使えません');
     const model = modelFor(cfg);
+    // v42: タイムアウト（音声経路は待たせられない）。「時間切れ」はネットワーク失敗と**別の顔で名指す**
+    // ＝原因の切り分け（遅いだけ？繋がらない？）を利用者ができる。real fetch は signal で実際に中断。
+    const useTimeout = typeof timeoutMs === 'number' && timeoutMs > 0;
+    const ctrl = useTimeout && typeof AbortController !== 'undefined' ? new AbortController() : null;
+    let timer = null;
+    let timedOut = false;
     let res;
     try {
-      res = await f(p.endpoint(model), {
+      const fp = f(p.endpoint(model), {
         method: 'POST',
         headers: p.headers(cfg.key),
         body: JSON.stringify(p.body(system, text, model, MAX_TOKENS)),
+        signal: ctrl ? ctrl.signal : undefined,
       });
+      if (useTimeout) {
+        fp.catch(() => {}); // 時間切れ後に元 fetch が落ちても unhandled rejection にしない
+        res = await Promise.race([
+          fp,
+          new Promise((_, rej) => { timer = setTimeout(() => { timedOut = true; if (ctrl) ctrl.abort(); rej(new Error('timeout')); }, timeoutMs); }),
+        ]);
+      } else {
+        res = await fp;
+      }
     } catch {
       // fetch の reject にキーや URL の断片を混ぜない（エラー文にキーを絶対に出さない）
+      if (timedOut) throw new Error(`時間切れです（${Math.round(timeoutMs / 1000)}秒以内に AI の応答がありませんでした）`);
       throw new Error('ネットワークに接続できませんでした（オフラインか、接続がブロックされています）');
+    } finally {
+      if (timer) clearTimeout(timer);
     }
     if (!res.ok) throw new Error(honestHttpError(res.status));
     let json;
@@ -150,13 +169,13 @@
     const system = opts && opts.system;
     if (!system) throw new Error('内部エラー: 指示文（system）がありません');
     const cfg = (opts && opts.config) || loadConfig();
-    return callProvider(system, t, cfg, opts && opts.fetchFn);
+    return callProvider(system, t, cfg, opts && opts.fetchFn, opts && opts.timeoutMs);
   }
 
   // 疎通確認（キー・モデル・CORS がまとめて検証される最小の呼び出し）
   async function testConnection(opts) {
     const cfg = (opts && opts.config) || loadConfig();
-    return callProvider('接続テストです。「OK」とだけ返してください。', 'OK', cfg, opts && opts.fetchFn);
+    return callProvider('接続テストです。「OK」とだけ返してください。', 'OK', cfg, opts && opts.fetchFn, opts && opts.timeoutMs);
   }
 
   const api = { PROVIDERS, KEY, MAX_TOKENS, MAX_INPUT_CHARS, loadConfig, saveConfig, clearConfig, hasKey, modelFor, interpretLongText, testConnection };
