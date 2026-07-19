@@ -15,7 +15,7 @@
 //      「選べるのに効かない」嘘になる。この判断は実機2往復（v23→v25）で得たもので、
 //      忘れて作り直すのが一番の損失＝テストで縛る。理由は CalendarEventsPlugin.swift 冒頭。
 'use strict';
-const { materialize, eventKitAdapter, pickAdapter, icsAdapter } = require('../adapters/calendar.js');
+const { materialize, eventKitAdapter, pickAdapter, icsAdapter, buildIcs } = require('../adapters/calendar.js');
 
 let pass = 0, fail = 0;
 const failures = [];
@@ -180,6 +180,52 @@ t('【v13 の症状】プラグイン未登録なら理由の分かる throw（�
     await rejects(() => eventKitAdapter.save(EV), 'CalendarEvents プラグインが native に登録されていません');
     await rejects(() => eventKitAdapter.getTarget(), 'CalendarEvents プラグインが native に登録されていません');
   });
+});
+
+// ===== buildIcs（v39 で複数 VEVENT 対応・単一の回帰を先に固定） =====
+const EV2 = {
+  title: '旅行',
+  start: new Date(2026, 6, 20),
+  end: new Date(2026, 6, 20),
+  allDay: true,
+  location: '',
+  note: '',
+};
+
+t('buildIcs 単一: 従来の構造のまま（VCALENDAR 1・VEVENT 1・UID は従来形）', () => {
+  const lines = buildIcs(EV, 'seed1').split('\r\n');
+  eq(lines[0], 'BEGIN:VCALENDAR');
+  eq(lines[1], 'VERSION:2.0');
+  eq(lines[2], 'PRODID:-//voice-calendar//v0//JA');
+  eq(lines[3], 'BEGIN:VEVENT');
+  eq(lines[4], 'UID:seed1@voice-calendar', '単一時の UID は v38 までと同じ形（-0 を付けない）');
+  ok(lines[5].startsWith('DTSTAMP:'));
+  eq(lines[6], 'DTSTART:20260718T150000');
+  eq(lines[7], 'DTEND:20260718T160000');
+  eq(lines[8], 'SUMMARY:歯医者');
+  eq(lines[9], 'LOCATION:立川');
+  eq(lines[10], 'DESCRIPTION:保険証');
+  eq(lines[11], 'END:VEVENT');
+  eq(lines[12], 'END:VCALENDAR');
+  eq(lines.length, 13);
+});
+
+t('buildIcs 配列: 1つの VCALENDAR に VEVENT が N 個・UID は全てユニーク', () => {
+  const ics = buildIcs([EV, EV2], 'seed2');
+  eq((ics.match(/BEGIN:VCALENDAR/g) || []).length, 1, 'VCALENDAR は1つ（束ねる＝v39）');
+  eq((ics.match(/BEGIN:VEVENT/g) || []).length, 2);
+  eq((ics.match(/END:VEVENT/g) || []).length, 2);
+  ok(ics.includes('UID:seed2@voice-calendar'), '1件目は従来形');
+  ok(ics.includes('UID:seed2-1@voice-calendar'), '2件目以降は -i でユニーク（RFC 5545）');
+  ok(ics.includes('DTSTART:20260718T150000'), '時刻あり');
+  ok(ics.includes('DTSTART;VALUE=DATE:20260720'), '終日（混在できる）');
+  ok(ics.includes('DTEND;VALUE=DATE:20260721'), '終日の DTEND は排他（翌日）');
+  ok(ics.trim().endsWith('END:VCALENDAR'));
+});
+
+t('icsAdapter.saveMany がある・eventKitAdapter には無い（native は1件ずつが正）', () => {
+  ok(typeof icsAdapter.saveMany === 'function', 'web は束ね口を持つ（20連ダウンロードにしない）');
+  ok(typeof eventKitAdapter.saveMany !== 'function', 'Swift 契約を増やさない＝native は save をループ');
 });
 
 // ===== materialize の既定値（保存時の創作はここに集約） =====

@@ -45,7 +45,7 @@ window.__vcRenderDiag = function () {
   // 併記の「識別子復元」は **write-only で calendar(withIdentifier:) が動くかの実測**＝
   // Apple のドキュメントに記述が無く、実機で1回見れば確定する（v22 の「起動Nms」と同じ手）。
   rows.push(['保存先カレンダー', window.__vcCalTarget || '(未取得)']);
-  var layers = ['VCSettings', 'VCStore', 'VCParser', 'VCDict', 'VCTranscriber', 'VCAdapter', 'VCRecords']
+  var layers = ['VCSettings', 'VCStore', 'VCParser', 'VCDict', 'VCContract', 'VCBatch', 'VCTranscriber', 'VCAdapter', 'VCRecords']
     .map(function (n) { return (window[n] ? '✅' : '❌') + n; }).join(' ');
   rows.push(['層の読込', layers]);
   rows.push(['初期化', window.__vcInitDone ? '✅ 完了' : '❌ 途中で停止']);
@@ -225,6 +225,27 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
   .dict-empty { color: var(--sub); font-size: 12px; padding: 8px 2px; }
   .rec-map { display: inline-block; font-size: 12px; color: var(--accent); text-decoration: none; margin-top: 3px; }
   .history-list .h-dict { color: var(--accent); font-size: 12px; margin-top: 2px; }
+  /* ---- まとめて入力（v39: 長文/AI/JSON → 取り込みリスト → 保存） ---- */
+  .batch-hint { font-size: 12px; color: var(--sub); padding: 8px 2px; line-height: 1.6; }
+  #batchText { width: 100%; min-height: 96px; padding: 9px 12px; border: 1px solid var(--line); border-radius: 10px;
+    font-size: 14px; background: var(--card); color: var(--ink); font-family: inherit; resize: vertical; }
+  .batch-actions { display: flex; gap: 6px; padding: 8px 0 4px; flex-wrap: wrap; }
+  .batch-actions button { flex: 1 1 auto; padding: 8px 12px; border: 1px solid var(--line); border-radius: 10px;
+    background: var(--card); color: var(--accent); font-size: 13px; cursor: pointer; white-space: nowrap; }
+  .batch-actions button:disabled { color: var(--sub); cursor: default; }
+  .batch-msg { font-size: 12px; color: var(--sub); padding: 4px 2px; line-height: 1.5; overflow-wrap: anywhere; }
+  .b-item { padding: 8px 2px; border-bottom: 1px solid var(--line); font-size: 14px; }
+  .b-item:last-child { border-bottom: none; }
+  .b-when { color: var(--sub); font-size: 12px; }
+  .b-title { overflow-wrap: anywhere; }
+  .b-sub { color: var(--sub); font-size: 11px; margin-top: 1px; overflow-wrap: anywhere; }
+  .b-warn { color: var(--warn); font-size: 12px; margin-top: 2px; overflow-wrap: anywhere; }
+  .b-btns { display: flex; gap: 6px; margin-top: 6px; }
+  .b-btns button { padding: 6px 10px; border: 1px solid var(--line); border-radius: 8px; background: transparent;
+    color: var(--accent); font-size: 12px; cursor: pointer; font-family: inherit; }
+  .b-btns button:disabled { color: var(--sub); cursor: default; }
+  .b-btns .b-del { color: var(--sub); }
+  .batch-empty { color: var(--sub); font-size: 12px; padding: 8px 2px; }
 
   /* ---- 保存 ---- */
   .actions { display: flex; gap: 10px; margin-top: 16px; }
@@ -348,6 +369,25 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
     </div>
   </details>
 
+  <!-- まとめて入力（v39・un-park「LLM 解釈」「複数予定一括」）: 長文/外部 AI の JSON から複数の
+       予定を一括で取り込む。入口が何でも（貼り付け / 将来の BYOK AI / WebMCP）必ず「取り込みリスト」に
+       一度入り、人が確認してから保存する（直接保存しない）。音声の短文経路（ルールベース・自動保存 v28）は
+       ここと独立＝一切変えない -->
+  <details class="optional" id="batchBox">
+    <summary>まとめて入力（長文・AI・JSON）<span class="rec-count" id="batchCount"></span></summary>
+    <div class="card2">
+      <div class="batch-hint">長い文章から複数の予定・記録をまとめて取り込めます。手順: ① 下の欄に文章を貼る → ②「AI用の指示をコピー」を押して、お使いのチャットAI（Claude / ChatGPT / Gemini など）に貼り付ける → ③ 返ってきた JSON をこの欄に貼り直して「JSONとして取り込み」。取り込んだ予定は下に一度並び、<b>確認してから保存</b>します（勝手に保存されません）。保存の控えは「リスト」に残ります（来歴は音声の記録＝ここからの取り込みは載りません）。⚠ コピーした文面は貼り付け先の AI に渡ります（辞書の言い回しは展開後の実文字列が入ります）。</div>
+      <textarea id="batchText" rows="5" placeholder="長い文章（メール・議事録など）か、AI が返した JSON をここに貼る"></textarea>
+      <div class="batch-actions">
+        <button id="batchCopyPrompt" type="button">📄 AI用の指示をコピー</button>
+        <button id="batchImport" type="button">JSONとして取り込み</button>
+      </div>
+      <div class="batch-msg" id="batchMsg"></div>
+      <div id="batchList"></div>
+      <div class="history-actions"><button id="batchSaveAll" type="button">すべて保存</button><button id="batchClearAll" type="button">すべて削除</button></div>
+    </div>
+  </details>
+
   <!-- 詳細設定（v19）: 実機FBで「人によって望む挙動が違う」と分かった決定だけを露出する。
        既定は全部これまでの実挙動＝触らない人の体験は変わらない -->
   <details class="optional" id="settingsBox">
@@ -440,16 +480,18 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
      理由: この版文字列は index.html にしかないが、ロジックは別ファイル＝別キャッシュ。
      付けないと「フッタは新しいのにパーサは古い」という嘘の状態が成立する（v9 で実際に踏んだ）。
      index.html が更新されれば src の URL も変わる → JS も必ず新しく取り直される。 -->
-<script src="engine/settings.js?v=38"></script>
-<script src="engine/schema.js?v=38"></script>
-<script src="engine/parser.js?v=38"></script>
-<script src="engine/dictionary.js?v=38"></script>
-<script src="input/transcriber.js?v=38"></script>
-<script src="adapters/calendar.js?v=38"></script>
-<script src="adapters/records.js?v=38"></script>
+<script src="engine/settings.js?v=39"></script>
+<script src="engine/schema.js?v=39"></script>
+<script src="engine/parser.js?v=39"></script>
+<script src="engine/dictionary.js?v=39"></script>
+<script src="engine/contract.js?v=39"></script>
+<script src="engine/batch.js?v=39"></script>
+<script src="input/transcriber.js?v=39"></script>
+<script src="adapters/calendar.js?v=39"></script>
+<script src="adapters/records.js?v=39"></script>
 <script>
 'use strict';
-const BUILD = 'v38：保存時に位置情報を記録（設定・既定オフ）→リストの行から🗺地図で開く｜v37：辞書｜v36：CSV書き出し｜v34-35：パーサ補強＋事例 · 2026-07-19';
+const BUILD = 'v39：まとめて入力（長文/AIのJSON貼り付け→複数予定を一括取り込み→確認して保存）｜v38：位置情報｜v37：辞書｜v36：CSV書き出し · 2026-07-19';
 console.log('BUILD:', BUILD);
 document.getElementById('build').textContent = BUILD;
 
@@ -1033,6 +1075,323 @@ document.getElementById('dictAdd').addEventListener('click', () => {
 });
 renderDict();
 
+// ===== まとめて入力（v39・un-park）: 長文/AI/JSON → 検証ゲート → 取り込みリスト → 保存 =====
+// 中身は engine/batch.js（検証・staging）と engine/contract.js（契約）。ここは配線だけ。
+// **音声経路（onUtterance・自動保存 v28・来歴）には触れない**＝バッチの保存は常に明示ボタン。
+// 編集は常に唯一のフォームで（背骨①）＝カードの「フォームで直す」が store.restore で載せる。
+let batchBusy = false; // 「すべて保存」中の再入・カード操作を止める
+
+function batchWhenLabel(d) {
+  if (!d.startDate && !d.startTime) return '日時なし → 保存した時点の日時になります';
+  const parts = [];
+  if (d.startDate) parts.push(d.startDate);
+  if (d.allDay === true) parts.push('終日');
+  else if (d.startTime) parts.push(d.startTime);
+  if (d.endDate || d.endTime) parts.push(`→ ${[d.endDate, d.endTime].filter(Boolean).join(' ')}`);
+  return parts.join(' ');
+}
+
+function renderBatch() {
+  const listEl = document.getElementById('batchList');
+  listEl.innerHTML = '';
+  if (!window.VCBatch) { // 読込失敗でも本体（フォーム・保存）は生かす（v13）
+    const d = document.createElement('div');
+    d.className = 'batch-empty';
+    d.textContent = '⚠ まとめて入力の機能を読み込めませんでした（詳細は「診断」）';
+    listEl.appendChild(d);
+    return;
+  }
+  const entries = VCBatch.stageList();
+  document.getElementById('batchCount').textContent = entries.length ? `${entries.length}件` : '';
+  document.getElementById('batchSaveAll').disabled = !entries.length || batchBusy;
+  document.getElementById('batchClearAll').disabled = !entries.length || batchBusy;
+  if (!entries.length) {
+    const d = document.createElement('div');
+    d.className = 'batch-empty';
+    d.textContent = 'まだ取り込みがありません。';
+    listEl.appendChild(d);
+    return;
+  }
+  for (const e of entries) listEl.appendChild(batchItem(e));
+}
+
+function batchItem(e) {
+  const item = document.createElement('div');
+  item.className = 'b-item';
+  const when = document.createElement('div');
+  when.className = 'b-when';
+  when.textContent = batchWhenLabel(e.draft);
+  const title = document.createElement('div');
+  title.className = 'b-title';
+  title.textContent = e.draft.title || '（タイトルなし → 保存時に「予定」になります）';
+  item.append(when, title);
+  const subs = [];
+  if (e.draft.location) subs.push(`📍${e.draft.location}`);
+  if (e.draft.note) subs.push(e.draft.note);
+  if (subs.length) {
+    const sub = document.createElement('div');
+    sub.className = 'b-sub';
+    sub.textContent = subs.join('・');
+    item.appendChild(sub);
+  }
+  // AI が申告した曖昧（ambiguities）と検証で落とした値（problems）＝黙って取り込まない（v16）
+  for (const a of e.ambiguities) {
+    const w = document.createElement('div');
+    w.className = 'b-warn';
+    w.textContent = `⚠ ${a}`;
+    item.appendChild(w);
+  }
+  for (const p of e.problems) {
+    const w = document.createElement('div');
+    w.className = 'b-warn';
+    w.textContent = `⚠ ${p}`;
+    item.appendChild(w);
+  }
+  const btns = document.createElement('div');
+  btns.className = 'b-btns';
+  const save = document.createElement('button');
+  save.type = 'button';
+  save.textContent = '保存';
+  save.disabled = batchBusy;
+  save.addEventListener('click', () => batchSaveOne(e));
+  const edit = document.createElement('button');
+  edit.type = 'button';
+  edit.textContent = '✏️ フォームで直す';
+  edit.disabled = batchBusy;
+  edit.addEventListener('click', () => batchToForm(e));
+  const del = document.createElement('button');
+  del.type = 'button';
+  del.className = 'b-del';
+  del.textContent = '削除';
+  del.disabled = batchBusy;
+  del.addEventListener('click', () => {
+    try { VCBatch.stageRemove(e.id); } catch (err) { toast(`削除に失敗: ${(err && err.message) || err}`); return; }
+    renderBatch();
+  });
+  btns.append(save, edit, del);
+  item.appendChild(btns);
+  return item;
+}
+
+// 1件保存＝フォームの保存とまったく同じ経路（saveDraftCore）。成功した分だけカードが消える。
+async function batchSaveOne(entry) {
+  if (batchBusy) return;
+  batchBusy = true;
+  renderBatch();
+  try {
+    const now = new Date();
+    const r = await saveDraftCore(entry.draft, now);
+    if (!r.ok) {
+      if (r.calError) handleCalendarError(r.calError, '保存に失敗');
+      else toast(`⚠ ${r.problems.join(' / ')}`);
+      return; // カードは残す（何も書かれていない）
+    }
+    if (r.toList && !r.listOk) {
+      const m = (r.listErr && r.listErr.message) || r.listErr;
+      if (!r.calSaved) { toast(`⚠ リストへの記録に失敗: ${m}`); return; } // どこにも入っていない＝カードを残す
+      toast(`⚠ カレンダーには入りましたが、リストへの記録に失敗しました: ${m}`);
+    } else {
+      let msg = `✅ 保存しました → ${saveDestLabels(r).join('・')}`;
+      if (r.warnings.length) msg += `（${r.warnings.join('・')}）`;
+      if (r.listDropped) msg += `（古い記録${r.listDropped}件を上限${VCRecords.CAP}件で削除）`;
+      toast(msg);
+    }
+    try { VCBatch.stageRemove(entry.id); } catch (err) { window.__vcNote('取り込みリスト', `保存済みカードの削除に失敗: ${(err && err.message) || err}`); }
+    if (r.listOk) renderRecords();
+    if (r.toCal) refreshCalendarTarget();
+  } finally {
+    batchBusy = false;
+    renderBatch();
+  }
+}
+
+// フォームへ載せて直す（背骨①: 編集面は唯一のフォームだけ）。
+// blur → restore の順（v3/v18: ロック中の欄を描画がスキップして store と画面がズレる事故の回避）。
+// origin='voice' で載せる＝次の素の発話は「言い直し」として掃除が効く（v6 と同じ扱い）。
+function batchToForm(entry) {
+  if (batchBusy) return;
+  if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+  if (!store.restore(VCBatch.toSnapshot(entry.draft))) { toast('フォームに載せられませんでした'); return; }
+  try { VCBatch.stageRemove(entry.id); } catch (err) { window.__vcNote('取り込みリスト', `カードの削除に失敗: ${(err && err.message) || err}`); }
+  renderBatch();
+  transcriptEl.textContent = '';
+  notesEl.textContent = '';
+  const d = entry.draft;
+  // 任意欄に中身があるなら畳みを開く（畳みの中に黙って書かない＝v16 の精神）
+  if (d.endDate || d.endTime || d.allDay === true || d.location || d.note) {
+    document.getElementById('optional').open = true;
+  }
+  document.getElementById('form').scrollIntoView({ behavior: 'smooth', block: 'center' });
+  toast('フォームに載せました（声でも手でも直して保存できます）');
+}
+
+// すべて保存＝**逐次 for + await**（native の初回は EventKit 権限ダイアログを待つ＝Promise.all 禁止）。
+// web で複数件かつカレンダーへ入れる時だけ .ics を1ファイルに束ねる（20連ダウンロードにしない）。
+// カレンダー側の失敗（権限など）は以降も全滅する＝中断して残りをカードに残し、正直に言う。
+document.getElementById('batchSaveAll').addEventListener('click', async () => {
+  if (batchBusy || !window.VCBatch) return;
+  const entries = VCBatch.stageList();
+  if (!entries.length) return;
+  batchBusy = true;
+  const btn = document.getElementById('batchSaveAll');
+  const orig = btn.textContent;
+  renderBatch(); // ボタン類を無効化（進捗はこの後ラベルで見せる）
+  const now = new Date(); // 全件で1つの now ＝「日時なし→今」が件ごとにズレない
+  const dest = settings.get('recordDest'); // ループ中の設定変更に揺らがない
+  const adapter = VCAdapter.pickAdapter();
+  const bundleIcs = dest !== 'list' && entries.length > 1 && typeof adapter.saveMany === 'function';
+  let okCount = 0, failCount = 0, listDroppedTotal = 0, aborted = false;
+  try {
+    if (bundleIcs) {
+      // web で複数件: ① 全件を検証 → ② .ics を1ファイルに束ねて1回 → ③ リスト側を各件
+      const valid = [];
+      for (const e of entries) {
+        const res = VCAdapter.materialize(e.draft, now, { defaultDurationMin: settings.get('defaultDurationMin') });
+        if (res.ok) valid.push({ entry: e, event: res.event });
+        else failCount++; // カードに残る（理由は保存を1件で押せば出る）
+      }
+      if (valid.length) {
+        // 「両方」では記録📝にカレンダー側の印を付ける（doSave と同じ規則）
+        const calEvents = valid.map(({ event }) => (dest === 'both' && event.start.getTime() <= now.getTime())
+          ? Object.assign({}, event, { title: `📝 ${event.title}` })
+          : event);
+        try {
+          await adapter.saveMany(calEvents);
+          permBanner(false);
+        } catch (err) {
+          handleCalendarError(err, 'まとめて保存に失敗');
+          window.__vcNote('まとめて入力', `カレンダー側の失敗で中断: ${(err && err.message) || err}`); // 理由を診断に残す（toast は流れる）
+          aborted = true; // 何も消していない＝全カードが残る
+        }
+        if (!aborted) {
+          for (let i = 0; i < valid.length; i++) {
+            btn.textContent = `${i + 1}/${valid.length}…`;
+            const { entry } = valid[i];
+            const r = await saveDraftCore(entry.draft, now, { skipCalendar: true });
+            if (r.ok && !(r.toList && !r.listOk)) {
+              okCount++;
+              listDroppedTotal += r.listDropped || 0;
+              try { VCBatch.stageRemove(entry.id); } catch {}
+            } else if (r.ok) {
+              // カレンダー（.ics）には入った＝カードは消す・リスト失敗は診断に正直に残す
+              okCount++;
+              try { VCBatch.stageRemove(entry.id); } catch {}
+              window.__vcNote('取り込みリスト', `リストへの記録に失敗: ${(r.listErr && r.listErr.message) || r.listErr}`);
+            } else failCount++;
+          }
+        }
+      }
+    } else {
+      // native / 1件だけ / 保存先がリストのみ: 1件ずつ順に
+      for (let i = 0; i < entries.length; i++) {
+        btn.textContent = `${i + 1}/${entries.length}…`;
+        const e = entries[i];
+        const r = await saveDraftCore(e.draft, now);
+        if (!r.ok) {
+          if (r.calError) {
+            handleCalendarError(r.calError, `${i + 1}件目の保存に失敗`);
+            window.__vcNote('まとめて入力', `${i + 1}件目でカレンダー側の失敗＝中断: ${(r.calError && r.calError.message) || r.calError}`);
+            aborted = true;
+            failCount += entries.length - i; // 残り全部＝カードに残る
+            break;
+          }
+          failCount++;
+          continue;
+        }
+        if (r.toList && !r.listOk) {
+          const m = (r.listErr && r.listErr.message) || r.listErr;
+          if (!r.calSaved) { failCount++; window.__vcNote('取り込みリスト', `リストへの記録に失敗: ${m}`); continue; }
+          window.__vcNote('取り込みリスト', `カレンダーには入りましたがリストへの記録に失敗: ${m}`);
+        }
+        okCount++;
+        listDroppedTotal += r.listDropped || 0;
+        try { VCBatch.stageRemove(e.id); } catch {}
+      }
+    }
+  } finally {
+    batchBusy = false;
+    btn.textContent = orig;
+    renderBatch();
+    renderRecords();
+    if (dest !== 'list' && okCount && !aborted) refreshCalendarTarget();
+  }
+  // 1件も入らず中断した時は集計 toast を出さない＝handleCalendarError の理由（toast/バナー）を上書きして消さない
+  if (!(aborted && !okCount)) {
+    let msg = okCount ? `✅ ${okCount}件を保存しました` : '保存できた予定がありません';
+    if (failCount) msg += `／⚠ ${failCount}件は保存できませんでした（カードに残っています）`;
+    if (aborted) msg += '（カレンダー側の失敗で中断）';
+    if (listDroppedTotal) msg += `（古い記録${listDroppedTotal}件を上限${VCRecords.CAP}件で削除）`;
+    toast(msg);
+  }
+});
+
+// すべて削除は2度押し（リストの全消しと同じ流儀＝確認ダイアログは出さない・背骨②）
+let batchClearArmedAt = 0;
+document.getElementById('batchClearAll').addEventListener('click', () => {
+  if (batchBusy || !window.VCBatch) return;
+  const btn = document.getElementById('batchClearAll');
+  if (Date.now() - batchClearArmedAt < 4000) {
+    VCBatch.stageClear();
+    batchClearArmedAt = 0;
+    btn.textContent = 'すべて削除';
+    renderBatch();
+    toast('取り込みをすべて削除しました');
+  } else {
+    batchClearArmedAt = Date.now();
+    btn.textContent = 'もう一度押すと全部消えます';
+    setTimeout(() => { if (batchClearArmedAt && Date.now() - batchClearArmedAt >= 3900) { batchClearArmedAt = 0; btn.textContent = 'すべて削除'; } }, 4200);
+  }
+});
+
+// 📄 AI用の指示をコピー: buildPrompt（契約の現物入り）＋辞書展開済みの本文。
+// キー無しで今日から使える道＝コピーして手元のチャットAIに貼り、返ってきた JSON を取り込む。
+// 辞書は「端末から出ない」約束の場所（dictionary.js）＝展開結果を外に貼る事実を必ず言う（v39 で前倒し）。
+document.getElementById('batchCopyPrompt').addEventListener('click', async () => {
+  if (!window.VCBatch || !window.VCContract) { toast('まとめて入力の機能を読み込めていません（詳細は「診断」）'); return; }
+  const raw = document.getElementById('batchText').value.trim();
+  if (!raw) { toast('先に上の欄へ文章を貼ってください'); return; }
+  let text = raw, hits = [];
+  try {
+    if (window.VCDict) {
+      const ex = VCDict.expand(raw, VCDict.list());
+      text = ex.text;
+      hits = ex.hits;
+    }
+  } catch (e) { window.__vcNote('辞書エラー', (e && e.message) || String(e)); }
+  const prompt = VCBatch.buildPrompt({ now: new Date(), schema: VCContract.SCHEMA }) + '\n\n--- 本文 ---\n' + text;
+  try {
+    await navigator.clipboard.writeText(prompt);
+  } catch (e) {
+    toast(`コピーできませんでした: ${(e && e.message) || e}`);
+    return;
+  }
+  document.getElementById('batchMsg').textContent =
+    (hits.length ? `🔤 ${hits.map((h) => `「${h.k}」→「${h.v}」`).join('・')} を展開して含めました。` : '')
+    + '📄 指示をコピーしました。チャットAIに貼り付け、返ってきた JSON を上の欄に貼って「JSONとして取り込み」を押してください。（コピーした文面は貼り付け先の AI に渡ります）';
+});
+
+// JSONとして取り込み: 検証ゲート（parseBatch）→ 取り込みリスト。失敗時は textarea を消さない（作業を捨てない）
+document.getElementById('batchImport').addEventListener('click', () => {
+  if (!window.VCBatch) { toast('まとめて入力の機能を読み込めていません（詳細は「診断」）'); return; }
+  const ta = document.getElementById('batchText');
+  const raw = ta.value.trim();
+  if (!raw) { toast('取り込む JSON を上の欄に貼ってください'); return; }
+  const msg = document.getElementById('batchMsg');
+  const r = VCBatch.parseBatch(raw);
+  if (!r.ok) {
+    msg.textContent = `⚠ ${r.errors.join('／')}`;
+    return;
+  }
+  try { VCBatch.stageAdd(r.events); } catch (e) {
+    toast(`取り込みを保存できませんでした: ${(e && e.message) || e}`); // 「取り込んだつもり」を作らない
+    return;
+  }
+  ta.value = '';
+  msg.textContent = [`✅ ${r.events.length}件を取り込みました（確認して保存してください）`].concat(r.warnings).join('／');
+  renderBatch();
+});
+renderBatch();
+
 const transcriber = VCTranscriber.createTranscriber({
   onInterim(t) { transcriptEl.textContent = `… ${t}`; },
   onFinal(t, meta) { onUtterance(t, meta); },
@@ -1290,23 +1649,24 @@ function updateSaveLabel() {
 settings.subscribe((k) => { if (k === 'recordDest' || k === null) updateSaveLabel(); }); // null = resetAll
 updateSaveLabel();
 
-// ===== 保存: DraftEvent → 保存先（v32: カレンダー / リスト / 両方＝設定 recordDest） =====
-// opts.auto: 発話からの自動保存（v28）。**黙って保存しない**＝toast で「自動保存した」と告げる
-// （v16「黙って捨てない」の保存版。保存は不可逆＝入ったことが分からないのが一番困る）。
-async function doSave(opts) {
-  const auto = !!(opts && opts.auto);
-  const now = new Date();
-  const res = VCAdapter.materialize(store.get(), now, { defaultDurationMin: settings.get('defaultDurationMin') });
-  if (!res.ok) { toast(`⚠ ${res.problems.join(' / ')}`); return; }
+// ===== 保存コア（v39 で doSave から切り出し） =====
+// draft を受けて materialize → カレンダー → リスト（台帳）→ 位置情報 まで行う共有部。
+// フォーム（doSave）からも「まとめて入力」（バッチ）からも**同じ経路**で保存する＝挙動は v38 と同一。
+// **toast を出さない・store と画面（transcript/notes）に触らない**（それは呼び手の仕事）。
+// opts.skipCalendar: web のバッチが .ics を1ファイルに束ねる時、カレンダー側だけ呼び手が担う。
+async function saveDraftCore(draft, now, opts) {
+  const skipCalendar = !!(opts && opts.skipCalendar);
+  const res = VCAdapter.materialize(draft, now, { defaultDurationMin: settings.get('defaultDurationMin') });
+  if (!res.ok) return { ok: false, problems: res.problems };
 
   const dest = settings.get('recordDest'); // 'calendar'（既定＝従来挙動） | 'list' | 'both'
-  const toCal = dest !== 'list';
+  const toCal = !skipCalendar && dest !== 'list';
   const toList = dest !== 'calendar';
   // 予定/記録は「開始が未来か」（adapters/records.js の kind と同じ式・同じ now で判定＝必ず一致）
   const isRecord = res.event.start.getTime() <= now.getTime();
 
-  // ① カレンダー側から（権限拒否など“現実に失敗する方”が先＝失敗したら何も書かずフォームを残す。
-  //    リスト先行だと、カレンダー失敗→フォーム残る→再試行、で同じ記録がリストに二重に入る）
+  // ① カレンダー側から（権限拒否など“現実に失敗する方”が先＝失敗したら何も書かず戻る。
+  //    リスト先行だと、カレンダー失敗→再試行、で同じ記録がリストに二重に入る）
   let calSaved = null;
   let calAdapterName = '';
   if (toCal) {
@@ -1321,14 +1681,14 @@ async function doSave(opts) {
       calSaved = (await adapter.save(calEvent)) || {};
       permBanner(false);
     } catch (err) {
-      handleCalendarError(err, auto ? '自動保存に失敗' : '保存に失敗');
-      return; // フォームは残す（従来どおり）
+      return { ok: false, calError: err, event: res.event, warnings: res.warnings };
     }
   }
 
-  // ② リスト（端末内台帳）。書き込み失敗は台帳が投げる＝黙って捨てない（v16）
+  // ② リスト（端末内台帳）。書き込み失敗は台帳が投げる＝握って呼び手に渡す（黙って捨てない v16）
   let listOk = false;
-  let listDropped = 0; // 上限で消えた古い記録の数（黙って捨てない＝toast で告げる）
+  let listErr = null;
+  let listDropped = 0; // 上限で消えた古い記録の数（黙って捨てない＝呼び手が toast で告げる）
   let listRec = null;  // v38: 位置情報を後から付ける相手（行 id）
   if (toList) {
     try {
@@ -1336,12 +1696,7 @@ async function doSave(opts) {
       listRec = added;
       listDropped = (added && added.dropped) || 0;
       listOk = true;
-      renderRecords();
-    } catch (err) {
-      const m = (err && err.message) || err;
-      if (!calSaved) { toast(`⚠ リストへの記録に失敗: ${m}`); return; } // どこにも入っていない＝フォームを残す
-      toast(`⚠ カレンダーには入りましたが、リストへの記録に失敗しました: ${m}`); // 部分成功は正直に言う
-    }
+    } catch (err) { listErr = err; }
   }
 
   // v38: 位置情報（設定・既定オフ）。**保存をブロックしない**＝取れた時だけ後から行に付く
@@ -1349,15 +1704,43 @@ async function doSave(opts) {
   // 書き込み後にアプリから触れない（write-only）。
   if (listOk && listRec && settings.get('captureLocation')) captureGeoFor(listRec.id);
 
-  // ③ どこかに入った＝後始末。toast は「どこに入れたか」を必ず名乗る（v23）
-  if (calSaved || listOk) {
-    if (!(toList && !listOk)) { // 部分失敗の警告 toast を成功 toast で上書きしない
-      const dests = [];
-      if (calSaved) dests.push(calSaved.calendarTitle || (calAdapterName === 'ics' ? '.ics ダウンロード' : 'カレンダー'));
-      if (listOk) dests.push(isRecord ? 'リスト（📝記録）' : 'リスト（📅予定）');
+  return { ok: true, event: res.event, warnings: res.warnings, isRecord, toCal, toList, calSaved, calAdapterName, listOk, listErr, listRec, listDropped };
+}
+
+// 保存 toast の「どこに入れたか」（v23: 必ず名乗る）
+function saveDestLabels(r) {
+  const dests = [];
+  if (r.calSaved) dests.push(r.calSaved.calendarTitle || (r.calAdapterName === 'ics' ? '.ics ダウンロード' : 'カレンダー'));
+  if (r.listOk) dests.push(r.isRecord ? 'リスト（📝記録）' : 'リスト（📅予定）');
+  return dests;
+}
+
+// ===== 保存: DraftEvent → 保存先（v32: カレンダー / リスト / 両方＝設定 recordDest） =====
+// opts.auto: 発話からの自動保存（v28）。**黙って保存しない**＝toast で「自動保存した」と告げる
+// （v16「黙って捨てない」の保存版。保存は不可逆＝入ったことが分からないのが一番困る）。
+async function doSave(opts) {
+  const auto = !!(opts && opts.auto);
+  const now = new Date();
+  const r = await saveDraftCore(store.get(), now);
+  if (!r.ok) {
+    if (r.calError) handleCalendarError(r.calError, auto ? '自動保存に失敗' : '保存に失敗');
+    else toast(`⚠ ${r.problems.join(' / ')}`);
+    return; // フォームは残す（従来どおり）
+  }
+  if (r.listOk) renderRecords();
+  if (r.toList && !r.listOk) {
+    const m = (r.listErr && r.listErr.message) || r.listErr;
+    if (!r.calSaved) { toast(`⚠ リストへの記録に失敗: ${m}`); return; } // どこにも入っていない＝フォームを残す
+    toast(`⚠ カレンダーには入りましたが、リストへの記録に失敗しました: ${m}`); // 部分成功は正直に言う
+  }
+
+  // どこかに入った＝後始末。toast は「どこに入れたか」を必ず名乗る（v23）
+  if (r.calSaved || r.listOk) {
+    if (!(r.toList && !r.listOk)) { // 部分失敗の警告 toast を成功 toast で上書きしない
+      const dests = saveDestLabels(r);
       let msg = (auto ? '✅ 自動保存しました' : '✅ 保存しました') + ` → ${dests.join('・')}`;
-      if (res.warnings.length) msg += `（${res.warnings.join('・')}）`;
-      if (listDropped) msg += `（古い記録${listDropped}件を上限${VCRecords.CAP}件で削除）`;
+      if (r.warnings.length) msg += `（${r.warnings.join('・')}）`;
+      if (r.listDropped) msg += `（古い記録${r.listDropped}件を上限${VCRecords.CAP}件で削除）`;
       toast(msg);
       if (auto) {
         // v33: 自動保存の内容がすぐ見える＝来歴に💾を刻んでパネルを自動で開く（「内容がみれて便利」）
@@ -1369,7 +1752,7 @@ async function doSave(opts) {
     transcriptEl.textContent = '';
     notesEl.textContent = '';
     document.getElementById('optional').open = false;
-    if (toCal) refreshCalendarTarget(); // 初回保存で権限が付いた直後＝ここで初めて保存先が判明する
+    if (r.toCal) refreshCalendarTarget(); // 初回保存で権限が付いた直後＝ここで初めて保存先が判明する
   }
 }
 document.getElementById('save').addEventListener('click', () => doSave());

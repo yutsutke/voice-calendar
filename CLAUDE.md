@@ -25,6 +25,8 @@ index.html               # UI = フォーム描画 + 2入口の配線だけ（�
 engine/parser.js         # 解釈層: interpret(text, now) 純関数。確定的日本語日時パーサ（LLMなし）
 engine/schema.js         # 共有状態層: DraftEvent ストア + fieldState + 欄ロック（衝突ポリシー §8）
 engine/settings.js       # 詳細設定（v19）: 値の入れ物のみ・DOM も宿主も知らない。既定=従来挙動
+engine/contract.js       # AI 連携の契約（v39）: バッチ封筒の JSON Schema。日本語 description がそのままプロンプト＝二重管理ゼロ。FIELDS と鏡合わせ（テスト強制）
+engine/batch.js          # まとめて入力（v39）: parseBatch 検証ゲート（AI の出力を信用しない・不正は落として明記）＋取り込みリスト台帳＋buildPrompt。音声経路と独立
 input/transcriber.js     # 転写層: WebSpeech(web/iOS Safari) / 将来 SFSpeechRecognizer プラグイン。simulate() でテキスト注入
 adapters/calendar.js     # 永続層: materialize(保存時既定値はここに集約) + ics(web) / eventkit(iOS・保存先は OS 既定1本)
 adapters/records.js      # ローカル記録台帳（v32）: 保存先「リスト/両方」の控えを端末内に保持（write-only でカレンダーは読めない→リスト表示の土台）
@@ -41,6 +43,7 @@ tests/settings.test.js   # 詳細設定（既定=従来挙動を固定・壊れ�
 tests/transcriber.test.js# 転写層の「壊れ方」（v13: registerPlugin 無し native で throw しない・Plugins.X 優先）
 tests/calendar.test.js   # 保存の native 契約（v23: 引数名がズレると黙って既定カレンダーに入る＝実機まで気づけない）
 tests/records.test.js    # 記録台帳（v32: 書込失敗は黙らない・kind=予定/記録は保存時に確定・破損は読める行だけで動く）
+tests/batch.test.js      # まとめて入力（v39: 契約と FIELDS の鏡合わせ・AI 出力の検証＝落とすなら明記・staging・不可視文字は parser と鏡）
 tests/version.test.js    # BUILD と script の ?v= の一致を強制（v10 の罠の再発防止）。`npm test` で全部走る
 .claude/launch.json      # dev サーバ (port 5275。5273=spike / 5274=madeleine / 8123=terrain-game と衝突回避)
 ```

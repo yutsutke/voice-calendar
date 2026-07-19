@@ -112,19 +112,27 @@
   const icsDate = (d) => `${d.getFullYear()}${pad2(d.getMonth() + 1)}${pad2(d.getDate())}`;
   const icsUtc = (d) => `${d.getUTCFullYear()}${pad2(d.getUTCMonth() + 1)}${pad2(d.getUTCDate())}T${pad2(d.getUTCHours())}${pad2(d.getUTCMinutes())}${pad2(d.getUTCSeconds())}Z`;
 
-  function buildIcs(ev, uidSeed) {
-    const uid = `${uidSeed}@voice-calendar`;
-    const lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//voice-calendar//v0//JA', 'BEGIN:VEVENT', `UID:${uid}`, `DTSTAMP:${icsUtc(new Date())}`];
-    if (ev.allDay) {
-      const endEx = new Date(ev.end.getFullYear(), ev.end.getMonth(), ev.end.getDate() + 1); // DTEND は排他的
-      lines.push(`DTSTART;VALUE=DATE:${icsDate(ev.start)}`, `DTEND;VALUE=DATE:${icsDate(endEx)}`);
-    } else {
-      lines.push(`DTSTART:${icsLocal(ev.start)}`, `DTEND:${icsLocal(ev.end)}`);
-    }
-    lines.push(`SUMMARY:${icsEscape(ev.title)}`);
-    if (ev.location) lines.push(`LOCATION:${icsEscape(ev.location)}`);
-    if (ev.note) lines.push(`DESCRIPTION:${icsEscape(ev.note)}`);
-    lines.push('END:VEVENT', 'END:VCALENDAR');
+  // 単一イベント or 配列（v39: まとめて入力）。配列なら **1つの VCALENDAR に VEVENT を N 個**束ねる
+  // ＝「すべて保存」が web で20連ダウンロードにならない。単一時の出力は従来と同一。
+  // UID は VEVENT ごとにユニークが必須（RFC 5545）＝2件目以降に -i を付ける（1件目は従来形のまま）。
+  function buildIcs(evOrArray, uidSeed) {
+    const evs = Array.isArray(evOrArray) ? evOrArray : [evOrArray];
+    const lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//voice-calendar//v0//JA'];
+    evs.forEach((ev, i) => {
+      const uid = i === 0 ? `${uidSeed}@voice-calendar` : `${uidSeed}-${i}@voice-calendar`;
+      lines.push('BEGIN:VEVENT', `UID:${uid}`, `DTSTAMP:${icsUtc(new Date())}`);
+      if (ev.allDay) {
+        const endEx = new Date(ev.end.getFullYear(), ev.end.getMonth(), ev.end.getDate() + 1); // DTEND は排他的
+        lines.push(`DTSTART;VALUE=DATE:${icsDate(ev.start)}`, `DTEND;VALUE=DATE:${icsDate(endEx)}`);
+      } else {
+        lines.push(`DTSTART:${icsLocal(ev.start)}`, `DTEND:${icsLocal(ev.end)}`);
+      }
+      lines.push(`SUMMARY:${icsEscape(ev.title)}`);
+      if (ev.location) lines.push(`LOCATION:${icsEscape(ev.location)}`);
+      if (ev.note) lines.push(`DESCRIPTION:${icsEscape(ev.note)}`);
+      lines.push('END:VEVENT');
+    });
+    lines.push('END:VCALENDAR');
     return lines.join('\r\n');
   }
 
@@ -143,6 +151,24 @@
       a.remove();
       setTimeout(() => URL.revokeObjectURL(url), 5000);
       return { ok: true, method: 'ics' };
+    },
+
+    // v39（まとめて入力）: 複数イベントを **1つの .ics（1ダウンロード）** に束ねる。
+    // save() をループすると1保存=1ダウンロード＝20件で20連発になるための専用口。
+    // eventKitAdapter には作らない（native は1件ずつ save が正＝Swift 契約を増やさない）。
+    // 宿主は `typeof adapter.saveMany === 'function'` で見分ける（getTarget と同じ流儀）。
+    async saveMany(evs) {
+      const ics = buildIcs(evs, Date.now());
+      const blob = new Blob([ics], { type: 'text/calendar' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `voice-calendar-batch-${icsDate(new Date())}.ics`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+      return { ok: true, method: 'ics', count: evs.length };
     },
   };
 
