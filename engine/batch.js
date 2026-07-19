@@ -260,7 +260,41 @@
     ].join('\n');
   }
 
-  const api = { parseBatch, buildPrompt, toSnapshot, stageAdd, stageList, stageRemove, stageClear, KEY, MAX_EVENTS };
+  // ---------- WebMCP（v41）: ブラウザエージェントへの窓口 ----------
+  // navigator.modelContext（提案段階の API）に create_events を登録する。
+  //   - feature detection: 無ければ 'unsupported' を返すだけ＝**絶対に throw しない**
+  //     （補助機能の失敗が本体を殺さない v13。未対応ブラウザではコストゼロ）。
+  //   - execute は parseBatch（検証ゲート）→ onEvents（取り込みリストへ積む）**だけ＝保存しない**。
+  //     外のエージェントが何を渡しても、人が確認してから保存する原則（背骨②）は破れない。
+  //   - schema / onEvents は注入（contract を知らない・DOM を知らない＝テスト可能）。
+  function registerWebMcp(navigatorLike, opts) {
+    const schema = opts && opts.schema;
+    const onEvents = opts && opts.onEvents;
+    try {
+      const mc = navigatorLike && navigatorLike.modelContext;
+      if (!mc || typeof mc.registerTool !== 'function') return 'unsupported';
+      mc.registerTool({
+        name: 'create_events',
+        description: 'カレンダー入力アプリ「ボイスカレンダー」へ予定・記録を渡す。渡した予定は直接保存されず、アプリ内の取り込みリストに入り、人が確認してから保存される。',
+        inputSchema: schema,
+        execute: (input) => {
+          const r = parseBatch(input);
+          if (!r.ok) {
+            return { content: [{ type: 'text', text: `取り込めませんでした: ${r.errors.join('／')}` }], isError: true };
+          }
+          const added = onEvents ? onEvents(r.events) : stageAdd(r.events);
+          const n = Array.isArray(added) ? added.length : r.events.length;
+          const extra = r.warnings.length ? `（${r.warnings.join('／')}）` : '';
+          return { content: [{ type: 'text', text: `${n}件を取り込みリストに入れました。保存はアプリ内で人が確認してから行われます${extra}` }] };
+        },
+      });
+      return 'registered';
+    } catch (e) {
+      return `error: ${(e && e.message) || e}`; // 登録の失敗も本体を殺さない（診断に出すのは宿主）
+    }
+  }
+
+  const api = { parseBatch, buildPrompt, toSnapshot, stageAdd, stageList, stageRemove, stageClear, registerWebMcp, KEY, MAX_EVENTS };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else global.VCBatch = api;
 })(typeof window !== 'undefined' ? window : globalThis);

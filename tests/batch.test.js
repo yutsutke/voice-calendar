@@ -312,5 +312,66 @@ t('stageRemove / stageClear', () => {
   eq(B.stageList(), []);
 });
 
+// ===== registerWebMcp（v41）: 登録は throw しない・execute は保存しない =====
+t('WebMCP: modelContext が無ければ unsupported（絶対 throw しない）', () => {
+  eq(B.registerWebMcp(undefined, { schema: C.SCHEMA }), 'unsupported');
+  eq(B.registerWebMcp({}, { schema: C.SCHEMA }), 'unsupported');
+  eq(B.registerWebMcp({ modelContext: {} }, { schema: C.SCHEMA }), 'unsupported', 'registerTool が無い形');
+});
+
+t('WebMCP: registerTool に name/description/inputSchema=契約の現物 が渡る', () => {
+  let tool = null;
+  const nav = { modelContext: { registerTool: (t2) => { tool = t2; } } };
+  eq(B.registerWebMcp(nav, { schema: C.SCHEMA }), 'registered');
+  eq(tool.name, 'create_events');
+  ok(tool.description.includes('直接保存されず'), '確認リスト経由を説明に明記（エージェントにも約束を教える）');
+  ok(tool.inputSchema === C.SCHEMA, '契約の現物（コピーでなく同一オブジェクト＝二重管理ゼロ）');
+  ok(typeof tool.execute === 'function');
+});
+
+t('WebMCP execute: 検証ゲート → onEvents に積むだけ＝保存しない', () => {
+  let tool = null;
+  const got = [];
+  B.registerWebMcp({ modelContext: { registerTool: (t2) => { tool = t2; } } }, {
+    schema: C.SCHEMA,
+    onEvents: (events) => { got.push(...events); return events; },
+  });
+  const res = tool.execute({ events: [{ title: '外から来た予定', startDate: '2026-07-25' }] });
+  eq(got.length, 1);
+  eq(got[0].draft.title, '外から来た予定');
+  ok(res.content[0].text.includes('1件を取り込みリストに入れました'), `${res.content[0].text}`);
+  ok(res.content[0].text.includes('人が確認してから'), '保存しない約束を返事にも書く');
+  ok(!res.isError);
+  eq(mem.has(B.KEY), false, 'onEvents 注入時は staging へ直接書かない（宿主が制御）');
+});
+
+t('WebMCP execute: 不正な入力は isError で返す（throw しない）・onEvents は呼ばれない', () => {
+  let tool = null;
+  let called = 0;
+  B.registerWebMcp({ modelContext: { registerTool: (t2) => { tool = t2; } } }, {
+    schema: C.SCHEMA,
+    onEvents: () => { called++; },
+  });
+  const res = tool.execute({ foo: 1 });
+  eq(res.isError, true);
+  ok(res.content[0].text.includes('取り込めませんでした'));
+  eq(called, 0);
+});
+
+t('WebMCP: registerTool 自体が throw しても registerWebMcp は error 文字列を返すだけ', () => {
+  const r = B.registerWebMcp({ modelContext: { registerTool: () => { throw new Error('壊れた実装'); } } }, { schema: C.SCHEMA });
+  ok(String(r).startsWith('error: '), `${r}`);
+  ok(String(r).includes('壊れた実装'));
+});
+
+t('WebMCP: onEvents 未指定なら既定で staging に積む', () => {
+  let tool = null;
+  B.registerWebMcp({ modelContext: { registerTool: (t2) => { tool = t2; } } }, { schema: C.SCHEMA });
+  const res = tool.execute({ events: [{ title: 'そのまま staging へ' }] });
+  ok(!res.isError);
+  eq(B.stageList().length, 1);
+  eq(B.stageList()[0].draft.title, 'そのまま staging へ');
+});
+
 console.log(`\nbatch.test: ${pass} passed, ${fail} failed`);
 if (failures.length) { console.log('\n' + failures.join('\n\n')); process.exit(1); }

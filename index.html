@@ -45,6 +45,8 @@ window.__vcRenderDiag = function () {
   // 併記の「識別子復元」は **write-only で calendar(withIdentifier:) が動くかの実測**＝
   // Apple のドキュメントに記述が無く、実機で1回見れば確定する（v22 の「起動Nms」と同じ手）。
   rows.push(['保存先カレンダー', window.__vcCalTarget || '(未取得)']);
+  // WebMCP（v41）: ブラウザエージェント窓口の登録状態（未対応ブラウザでは「未対応」＝正常）
+  rows.push(['WebMCP', window.__vcWebMcp || '(未登録)']);
   var layers = ['VCSettings', 'VCStore', 'VCParser', 'VCDict', 'VCContract', 'VCBatch', 'VCAI', 'VCTranscriber', 'VCAdapter', 'VCRecords']
     .map(function (n) { return (window[n] ? '✅' : '❌') + n; }).join(' ');
   rows.push(['層の読込', layers]);
@@ -505,19 +507,19 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
      理由: この版文字列は index.html にしかないが、ロジックは別ファイル＝別キャッシュ。
      付けないと「フッタは新しいのにパーサは古い」という嘘の状態が成立する（v9 で実際に踏んだ）。
      index.html が更新されれば src の URL も変わる → JS も必ず新しく取り直される。 -->
-<script src="engine/settings.js?v=40"></script>
-<script src="engine/schema.js?v=40"></script>
-<script src="engine/parser.js?v=40"></script>
-<script src="engine/dictionary.js?v=40"></script>
-<script src="engine/contract.js?v=40"></script>
-<script src="engine/batch.js?v=40"></script>
-<script src="engine/ai.js?v=40"></script>
-<script src="input/transcriber.js?v=40"></script>
-<script src="adapters/calendar.js?v=40"></script>
-<script src="adapters/records.js?v=40"></script>
+<script src="engine/settings.js?v=41"></script>
+<script src="engine/schema.js?v=41"></script>
+<script src="engine/parser.js?v=41"></script>
+<script src="engine/dictionary.js?v=41"></script>
+<script src="engine/contract.js?v=41"></script>
+<script src="engine/batch.js?v=41"></script>
+<script src="engine/ai.js?v=41"></script>
+<script src="input/transcriber.js?v=41"></script>
+<script src="adapters/calendar.js?v=41"></script>
+<script src="adapters/records.js?v=41"></script>
 <script>
 'use strict';
-const BUILD = 'v40：AI設定（BYOK＝自分のAPIキーでボタン1つ解釈・Anthropic/Gemini）｜v39：まとめて入力（JSON貼り付け・取り込みリスト）｜v38：位置情報｜v37：辞書 · 2026-07-19';
+const BUILD = 'v41：WebMCP（ブラウザAIへ create_events を登録＝取り込みリスト経由・保存はしない）｜v40：AI設定（BYOK）｜v39：まとめて入力｜v38：位置情報 · 2026-07-19';
 console.log('BUILD:', BUILD);
 document.getElementById('build').textContent = BUILD;
 
@@ -1532,6 +1534,34 @@ document.getElementById('batchAiRun').addEventListener('click', async () => {
 });
 renderAiConfig();
 renderBatch();
+
+// ===== WebMCP（v41）: ブラウザエージェントへの窓口（feature detection・登録だけ） =====
+// 対応ブラウザ（navigator.modelContext）には契約そのもの（VCContract.SCHEMA）を inputSchema として
+// create_events を登録する。execute は取り込みリストに積むだけ＝**保存しない**（人が確認してから＝背骨②）。
+// 未対応ブラウザでは何も起きない（コストゼロ）。再呼び出し可＝E2E がスタブ注入後に叩ける。
+window.__vcRegisterWebMcp = function () {
+  if (!window.VCBatch || !window.VCContract) {
+    window.__vcWebMcp = '未読込（詳細は層の読込）';
+    window.__vcRenderDiag();
+    return;
+  }
+  const r = VCBatch.registerWebMcp(navigator, {
+    schema: VCContract.SCHEMA,
+    onEvents: (events) => {
+      const added = VCBatch.stageAdd(events); // 書き込み失敗は throw ＝ execute が isError で返す
+      renderBatch();
+      // 外から届いたものを黙って積まない（v16）＝パネルを開いて toast で名乗る
+      document.getElementById('batchBox').open = true;
+      toast(`🔌 ブラウザの AI から ${added.length}件を取り込みました（確認して保存してください）`);
+      return added;
+    },
+  });
+  window.__vcWebMcp = r === 'registered' ? '✅ create_events 登録済み'
+    : r === 'unsupported' ? '未対応（このブラウザに navigator.modelContext が無い＝正常）'
+    : `⚠ ${r}`;
+  window.__vcRenderDiag();
+};
+window.__vcRegisterWebMcp();
 
 const transcriber = VCTranscriber.createTranscriber({
   onInterim(t) { transcriptEl.textContent = `… ${t}`; },

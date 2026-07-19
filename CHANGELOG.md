@@ -1,5 +1,24 @@
 # voice-calendar — CHANGELOG（build log・最新が上）
 
+## v41 — まとめて入力 第3弾: WebMCP＝ブラウザ AI へ create_events を登録（取り込みリスト経由・保存しない） (2026-07-19)
+
+**背景（3スライスの3つ目・要求③「AI が読み書きできるスキーマを最初から」の残り）**
+- 窓口の三層が完成: ①貼り付け/コピー（v39・今すぐ動く） ②アプリ内 BYOK（v40・長文用） ③WebMCP（v41・将来のブラウザエージェント用）。**三つとも同じ契約（VCContract.SCHEMA）・同じ検証ゲート（parseBatch）・同じ取り込みリストを通る。**
+
+**設計判断**
+- **feature detection・絶対に throw しない**: `navigator.modelContext` は提案段階の API＝無ければ 'unsupported' を返すだけ（補助機能の失敗が本体を殺さない v13）。未対応ブラウザではコストゼロ。登録の成否は診断に「WebMCP」行（未対応＝正常、と明記）。
+- **execute は取り込みリストに積むだけ＝保存しない**: 外のエージェントが何を渡しても、人が確認してから保存する原則（背骨②）は破れない。tool の description と execute の返事の両方に「直接保存されない」を書く＝**エージェントにも約束を教える**。
+- **inputSchema は契約の現物**（コピーでなく同一オブジェクト＝二重管理ゼロ。テストで === を固定）。
+- **外から届いたものを黙って積まない**（v16）: パネルを自動で開き「🔌 ブラウザの AI から N件」と toast で名乗る。
+- registerWebMcp は batch.js に置く（schema/onEvents 注入＝DOM を知らない）＝Node でテスト可能。index.html は配線と `window.__vcRegisterWebMcp()`（再呼び出し可＝E2E がスタブ注入後に叩ける）だけ。
+
+**結果**
+- **テスト 306/306（batch 32→38＝WebMCP 6本追加）**: 不在→unsupported・登録内容・execute は onEvents だけ（staging 直書きしない）・不正入力は isError・registerTool の throw も握る・onEvents 未指定の既定。
+- preview E2E: 素のブラウザ→診断「未対応＝正常」✓／スタブ注入→✅登録済み・inputSchema===契約✓／execute→カード2枚・パネル自動オープン・🔌toast・**records 無変化（保存されない）**✓／不正入力→isError✓／console 0。
+
+**残課題**
+- 実機/実ブラウザ: WebMCP 対応ブラウザ（Chrome の origin trial 等）が手元に来たら実エージェントで疎通。API 形状が変わったら registerWebMcp の1関数だけ直せばよい。
+
 ## v40 — まとめて入力 第2弾: BYOK＝自分の API キーでボタン1つ解釈（Anthropic / Gemini） (2026-07-19)
 
 **背景（3スライスの2つ目）**
