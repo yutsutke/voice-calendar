@@ -374,6 +374,10 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
         <div class="ex-flow">Hey Siri → ボイカレ開いて → 「明日10時 会議」→「場所 丸の内」→「タイトル 経営会議」→「終了時間 11時」→「メモ 資料を事前受け取り」→ 保存ボタン</div>
         <div class="ex-note">1発話につき1項目ずつ直して組み立てる使い方。<br>※この使い方では自動保存の ☑ を<b>外す</b>必要があります（☑ があると最初の発話で先に保存されます）。</div>
       </div>
+      <div class="ex-item">
+        <div class="ex-flow">Hey Siri → ボイカレ開いて → 「30分後に会議」</div>
+        <div class="ex-note">「30分後に会議が始まる」予定。開始＝今から30分後・終了＝その1時間後（詳細設定「終了を言わなかった時の長さ」で変更可）・タイトル「会議」。開始が未来なので📅予定。※自動保存に ☑ が必要。</div>
+      </div>
       <div class="ex-head">📝 記録として使う</div>
       <div class="ex-item">
         <div class="ex-flow">Hey Siri → ボイカレ開いて → 「現在 新宿駅に着いた」</div>
@@ -387,6 +391,15 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
         <div class="ex-flow">Hey Siri → ボイカレ開いて → 「現在 業務終了」→「場所 丸の内」→「メモ 直帰します」→ 保存ボタン</div>
         <div class="ex-note">記録も欄指定で組み立てられます。※この使い方では自動保存の ☑ を<b>外す</b>必要があります。</div>
       </div>
+      <div class="ex-item">
+        <div class="ex-flow">Hey Siri → ボイカレ開いて → 「今から3時間開発」</div>
+        <div class="ex-note">開始＝今・終了＝3時間後・タイトル「開発」。開始が今なので📝記録（これから何をするかの時間の記録）。※自動保存に ☑ が必要。</div>
+      </div>
+      <div class="ex-item">
+        <div class="ex-flow">Hey Siri → ボイカレ開いて → 「今から15時まで作業」</div>
+        <div class="ex-note">開始＝今・終了＝15時・タイトル「作業」・📝記録。※自動保存に ☑ が必要。</div>
+      </div>
+      <div class="ex-foot">📅予定 と 📝記録 は<b>開始の時刻で自動</b>に分かれます＝開始が未来なら予定、今か過去なら記録（「30分後に会議」は開始が30分後＝未来なので予定、「今から3時間開発」は開始が今なので記録）。</div>
       <div class="ex-foot">保存先を「リスト」「両方」にしている場合は、カレンダーの代わりに／加えてアプリ内のリストに入ります（詳細設定）。Siri で開けるのはアプリ版のみ（この web 版はマイクをタップ）。</div>
     </div>
   </details>
@@ -399,15 +412,15 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
      理由: この版文字列は index.html にしかないが、ロジックは別ファイル＝別キャッシュ。
      付けないと「フッタは新しいのにパーサは古い」という嘘の状態が成立する（v9 で実際に踏んだ）。
      index.html が更新されれば src の URL も変わる → JS も必ず新しく取り直される。 -->
-<script src="engine/settings.js?v=34"></script>
-<script src="engine/schema.js?v=34"></script>
-<script src="engine/parser.js?v=34"></script>
-<script src="input/transcriber.js?v=34"></script>
-<script src="adapters/calendar.js?v=34"></script>
-<script src="adapters/records.js?v=34"></script>
+<script src="engine/settings.js?v=35"></script>
+<script src="engine/schema.js?v=35"></script>
+<script src="engine/parser.js?v=35"></script>
+<script src="input/transcriber.js?v=35"></script>
+<script src="adapters/calendar.js?v=35"></script>
+<script src="adapters/records.js?v=35"></script>
 <script>
 'use strict';
-const BUILD = 'v34：パーサ補強＝漢数字の時刻（午後三時）・「半」分離・相対時刻（30分後/2時間後）・「今から◯時まで」｜v33：来歴を上へ・事例｜v32：保存先＋リスト · 2026-07-19';
+const BUILD = 'v35：使い方の事例に「30分後に会議」「今から3時間開発」「今から15時まで作業」＋📅予定/📝記録の自動振り分け説明｜v34：パーサ補強｜v32-33：保存先＋リスト・来歴 · 2026-07-20';
 console.log('BUILD:', BUILD);
 document.getElementById('build').textContent = BUILD;
 
