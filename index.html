@@ -217,11 +217,22 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
   .set-item .set-cur.warn { color: var(--warn); }
   .history-actions { text-align: right; padding: 8px 0; }
   .history-actions button { border: none; background: transparent; color: var(--sub); font-size: 12px; cursor: pointer; }
-  /* ---- 辞書に登録して保存（v44）: 学べる差分がある時だけ出る行 ---- */
-  .learn-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 0 0 12px; }
+  /* ---- 辞書に登録して保存（v44）: 学べる差分がある時だけ出る行 ----
+     v46（実機FB第28回「急いでいるとき見落としそう」）: 色を付けて目に入るようにする。
+     **音声が書いた欄のフラッシュ（.row.flash）と同じ視覚言語**を使う＝「今これが起きた」の合図が
+     アプリ内で一貫する。左の縦線＋淡い青の面で行そのものを見つけさせ、ボタンは保存と同じ
+     塗り（accent）で「押せる主行動」だと分かる大きさにする。 */
+  .learn-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    margin-top: 16px; padding: 12px; border-radius: 12px;
+    background: var(--flash); border-left: 4px solid var(--accent); animation: flashbg2 1.2s ease-out; }
   .learn-row[hidden] { display: none; }
-  .learn-hint { flex: 1 1 200px; font-size: 12px; color: var(--sub); line-height: 1.5; overflow-wrap: anywhere; }
-  .learn-row button { border: 1px solid var(--line); background: transparent; color: var(--ink); font-size: 13px; padding: 8px 12px; border-radius: 8px; cursor: pointer; }
+  /* 全面を accent で塗ると強すぎる＝既存の .row.flash と同じ「淡く差して引く」強さに揃える */
+  @keyframes flashbg2 { 0% { background: rgb(10 132 255 / .45); } 100% { background: var(--flash); } }
+  .learn-hint { flex: 1 1 180px; font-size: 12px; color: var(--ink); line-height: 1.5; overflow-wrap: anywhere; }
+  .learn-row button { border: none; background: var(--accent); color: var(--accent-ink);
+    font-size: 14px; font-weight: 600; padding: 11px 14px; border-radius: 10px; cursor: pointer; white-space: nowrap; }
+  .learn-row button:active { opacity: .85; }
+  @media (prefers-reduced-motion: reduce) { .learn-row { animation: none; } }
   /* ---- 辞書（v37: 言い回し→実文字列の置き換え） ---- */
   .dict-hint { font-size: 12px; color: var(--sub); padding: 8px 2px; line-height: 1.6; }
   .dict-row { display: flex; align-items: center; gap: 8px; padding: 7px 2px; border-bottom: 1px solid var(--line); font-size: 13px; }
@@ -528,19 +539,19 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
      理由: この版文字列は index.html にしかないが、ロジックは別ファイル＝別キャッシュ。
      付けないと「フッタは新しいのにパーサは古い」という嘘の状態が成立する（v9 で実際に踏んだ）。
      index.html が更新されれば src の URL も変わる → JS も必ず新しく取り直される。 -->
-<script src="engine/settings.js?v=45"></script>
-<script src="engine/schema.js?v=45"></script>
-<script src="engine/parser.js?v=45"></script>
-<script src="engine/dictionary.js?v=45"></script>
-<script src="engine/contract.js?v=45"></script>
-<script src="engine/batch.js?v=45"></script>
-<script src="engine/ai.js?v=45"></script>
-<script src="input/transcriber.js?v=45"></script>
-<script src="adapters/calendar.js?v=45"></script>
-<script src="adapters/records.js?v=45"></script>
+<script src="engine/settings.js?v=46"></script>
+<script src="engine/schema.js?v=46"></script>
+<script src="engine/parser.js?v=46"></script>
+<script src="engine/dictionary.js?v=46"></script>
+<script src="engine/contract.js?v=46"></script>
+<script src="engine/batch.js?v=46"></script>
+<script src="engine/ai.js?v=46"></script>
+<script src="input/transcriber.js?v=46"></script>
+<script src="adapters/calendar.js?v=46"></script>
+<script src="adapters/records.js?v=46"></script>
 <script>
 'use strict';
-const BUILD = 'v45：辞書登録ボタンを保存の上へ＋基準は音声が書いた欄だけ更新（出ない対策）・AI設定はトグル無し太字｜v44：辞書に登録して保存 · 2026-07-20';
+const BUILD = 'v46：辞書登録ボタンに色（見落とし対策・音声フラッシュと同じ視覚言語）｜v45：位置と基準の修正｜v44：辞書に登録して保存 · 2026-07-20';
 console.log('BUILD:', BUILD);
 document.getElementById('build').textContent = BUILD;
 
