@@ -217,6 +217,11 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
   .set-item .set-cur.warn { color: var(--warn); }
   .history-actions { text-align: right; padding: 8px 0; }
   .history-actions button { border: none; background: transparent; color: var(--sub); font-size: 12px; cursor: pointer; }
+  /* ---- 辞書に登録して保存（v44）: 学べる差分がある時だけ出る行 ---- */
+  .learn-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 0 0 12px; }
+  .learn-row[hidden] { display: none; }
+  .learn-hint { flex: 1 1 200px; font-size: 12px; color: var(--sub); line-height: 1.5; overflow-wrap: anywhere; }
+  .learn-row button { border: 1px solid var(--line); background: transparent; color: var(--ink); font-size: 13px; padding: 8px 12px; border-radius: 8px; cursor: pointer; }
   /* ---- 辞書（v37: 言い回し→実文字列の置き換え） ---- */
   .dict-hint { font-size: 12px; color: var(--sub); padding: 8px 2px; line-height: 1.6; }
   .dict-row { display: flex; align-items: center; gap: 8px; padding: 7px 2px; border-bottom: 1px solid var(--line); font-size: 13px; }
@@ -349,6 +354,15 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
     <button id="clear" type="button">クリア</button>
   </div>
 
+  <!-- v44（実機FB第26回・ユーザー設計）: 音声が書いた欄を手で直した時だけ、2つ目の保存ボタンを出す。
+       **押すこと自体が「この訂正は次から自動で当ててよい」という意思表明**＝機械が
+       「認識ミスか気変わりか」を推測しなくて済む（推測は原理的に不可能だった）。
+       何が登録されるかは必ず文字で見せる（黙って登録しない＝v16）。学べる差分が無い時は行ごと出ない。 -->
+  <div class="learn-row" id="learnRow" hidden>
+    <div class="learn-hint" id="learnHint"></div>
+    <button id="saveLearn" type="button">🔤 辞書に登録して保存</button>
+  </div>
+
   <!-- 権限の復帰導線（v23）: 拒否は初回ダイアログの一度きりで決まり、以後アプリからは聞けない。
        ここが無いと「保存に失敗」の toast が出て消えるだけ＝行き止まりになる -->
   <div class="perm" id="permBanner">
@@ -397,20 +411,9 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
         <button id="batchImport" type="button">JSONとして取り込み</button>
         <button id="batchAiRun" type="button" hidden>🤖 AIで解釈して取り込み</button>
       </div>
-      <!-- AI 設定（v40・BYOK）: 自分の API キーで直接解釈＝コピー往復の省略。キーは端末内のみ・
-           開発者のサーバは無い。キー未設定なら AI ボタンは出ない＝既定の体験は v39 と同一（v19） -->
-      <details class="ai-config" id="aiConfigBox">
-        <summary>AI 設定（自分の API キーで直接解釈・任意）<span class="rec-count" id="aiConfigState"></span></summary>
-        <div class="ai-hint">ここに自分の API キーを入れると、上の文章をボタン1つで解釈できます（コピーの往復が不要になります）。<b>キーはこの端末の中にのみ保存され、開発者のサーバは存在しません。</b>本文（辞書の展開結果を含む）は選んだ AI 社へ端末から直接送信されます。本アプリ専用に<b>使用上限付きのキー</b>を発行するのがおすすめです。共有端末では保存しないでください。※ OpenAI は非対応（ブラウザからの直接接続を許可していないため）。</div>
-        <div class="ai-row"><label for="aiProvider">プロバイダ</label><select id="aiProvider"></select></div>
-        <div class="ai-row"><label for="aiModel">モデル</label><input id="aiModel" type="text" autocomplete="off"></div>
-        <div class="ai-row"><label for="aiKey">API キー</label><input id="aiKey" type="password" autocomplete="off"></div>
-        <div class="batch-actions">
-          <button id="aiSave" type="button">保存</button>
-          <button id="aiTest" type="button">テスト送信</button>
-          <button id="aiClear" type="button">キーを消す</button>
-        </div>
-      </details>
+      <!-- v43（実機FB第25回）: AI 設定は「詳細設定」へ移した（「まとめて入力ではなく詳細設定の中に
+           入っていたほうがわかりやすい」）。ここには**どこに在るかの誘導だけ**置く＝探して回らずに済む。 -->
+      <div class="batch-hint" id="aiWhereHint">🤖 AI に直接解釈させる（コピーの往復を省く）には、自分の API キーが要ります。設定は画面下の「<b>詳細設定</b>」→「<b>AI 設定</b>」にあります。</div>
       <div class="batch-msg" id="batchMsg"></div>
       <div id="batchList"></div>
       <div class="history-actions"><button id="batchSaveAll" type="button">すべて保存</button><button id="batchClearAll" type="button">すべて削除</button></div>
@@ -424,6 +427,21 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
     <div class="card2">
       <div id="settingsList"></div>
       <div class="history-actions"><button id="settingsReset" type="button">既定に戻す</button></div>
+      <!-- AI 設定（v40 BYOK）: v43 で「まとめて入力」からここへ移動（実機FB第25回）。
+           設定の一覧（settingsList）とは別物なので「既定に戻す」の外に置く＝リセットの対象に見せない。
+           キー未設定なら「まとめて入力」の AI ボタンは出ない＝既定の体験は不変（v19）。 -->
+      <details class="ai-config" id="aiConfigBox">
+        <summary>AI 設定（自分の API キーで直接解釈・任意）<span class="rec-count" id="aiConfigState"></span></summary>
+        <div class="ai-hint">自分の API キーを入れると、「まとめて入力」の長文をボタン1つで解釈できます（コピーの往復が不要になります）。詳細設定の「音声を AI で解釈する」もこのキーを使います。<b>キーはこの端末の中にのみ保存され、開発者のサーバは存在しません。</b>本文（辞書の展開結果を含む）は選んだ AI 社へ端末から直接送信されます。本アプリ専用に<b>使用上限付きのキー</b>を発行するのがおすすめです。共有端末では保存しないでください。※ OpenAI は非対応（ブラウザからの直接接続を許可していないため）。</div>
+        <div class="ai-row"><label for="aiProvider">プロバイダ</label><select id="aiProvider"></select></div>
+        <div class="ai-row"><label for="aiModel">モデル</label><input id="aiModel" type="text" autocomplete="off"></div>
+        <div class="ai-row"><label for="aiKey">API キー</label><input id="aiKey" type="password" autocomplete="off"></div>
+        <div class="batch-actions">
+          <button id="aiSave" type="button">保存</button>
+          <button id="aiTest" type="button">テスト送信</button>
+          <button id="aiClear" type="button">キーを消す</button>
+        </div>
+      </details>
     </div>
   </details>
 
@@ -509,19 +527,19 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
      理由: この版文字列は index.html にしかないが、ロジックは別ファイル＝別キャッシュ。
      付けないと「フッタは新しいのにパーサは古い」という嘘の状態が成立する（v9 で実際に踏んだ）。
      index.html が更新されれば src の URL も変わる → JS も必ず新しく取り直される。 -->
-<script src="engine/settings.js?v=43"></script>
-<script src="engine/schema.js?v=43"></script>
-<script src="engine/parser.js?v=43"></script>
-<script src="engine/dictionary.js?v=43"></script>
-<script src="engine/contract.js?v=43"></script>
-<script src="engine/batch.js?v=43"></script>
-<script src="engine/ai.js?v=43"></script>
-<script src="input/transcriber.js?v=43"></script>
-<script src="adapters/calendar.js?v=43"></script>
-<script src="adapters/records.js?v=43"></script>
+<script src="engine/settings.js?v=44"></script>
+<script src="engine/schema.js?v=44"></script>
+<script src="engine/parser.js?v=44"></script>
+<script src="engine/dictionary.js?v=44"></script>
+<script src="engine/contract.js?v=44"></script>
+<script src="engine/batch.js?v=44"></script>
+<script src="engine/ai.js?v=44"></script>
+<script src="input/transcriber.js?v=44"></script>
+<script src="adapters/calendar.js?v=44"></script>
+<script src="adapters/records.js?v=44"></script>
 <script>
 'use strict';
-const BUILD = 'v43：AIの曖昧をメモ欄に残す＋エラーの理由を出す（400/404の本文・モデル名・プロバイダ切替でモデル欄を既定へ）｜v42：音声→AI解釈｜v41：WebMCP｜v40：BYOK · 2026-07-20';
+const BUILD = 'v44：辞書に登録して保存（手直しを次から自動で当てる・日時語は登録しない）＋AI設定を詳細設定へ＋🔤を発話直後に表示＋辞書の語を認識器へ｜v43：AIの曖昧をメモ欄に · 2026-07-20';
 console.log('BUILD:', BUILD);
 document.getElementById('build').textContent = BUILD;
 
@@ -647,6 +665,17 @@ function onUtterance(text, meta) {
   applyRuleResult({ rule, text, rawText, dictHits, meta, aiFbNote: null });
 }
 
+// v44: 🔤（辞書で置き換わった言葉）を**発話直後の行にも出す**（実機FB第26回）。
+// v37 から来歴には出ていたが、パネルを開かないと見えない＝**在るのに気づけない**。
+// 「表示のオン/オフ設定」は作らない: オフ＝アプリが黙って言葉を書き換える、になり、
+// 辞書が SPEC §7（創作しない）と両立できている根拠（本人が登録＋置換を必ず見せる）の片方を外すため。
+function showNotes(notes, dictHits) {
+  const parts = [];
+  if (dictHits && dictHits.length) parts.push(`🔤 ${dictHits.map((d) => `「${d.k}」→「${d.v}」`).join('・')}`);
+  if (notes && notes.length) parts.push(notes.join(' ／ '));
+  notesEl.textContent = parts.join(' ／ ');
+}
+
 // 解釈結果（ルール）の適用＋来歴＋自動保存判定（v42 で onUtterance から分離＝AI 失敗時の受け皿と共用。
 // aiFbNote なしの経路は v41 までの挙動と同一）。
 // aiFbNote: AI 失敗→ルールで代替した印（v42）。notes に混ぜる＝**自動保存の門も自動的に閉まる**
@@ -656,7 +685,7 @@ function applyRuleResult({ rule, text, rawText, dictHits, meta, aiFbNote }) {
   const patch = rule.patch;
   const notes = aiFbNote ? [aiFbNote].concat(rule.notes) : rule.notes;
   let skipped = [], cleared = [];
-  notesEl.textContent = notes.join(' ／ ');
+  showNotes(notes, dictHits);
   if (Object.keys(patch).length === 0) {
     // 何も解釈できない発話（咳・雑音など）ではフォームを触らない＝掃除もしない
     toast('解釈できる項目がありませんでした（フォームは手で入力できます）');
@@ -735,7 +764,7 @@ async function interpretByAI({ text, rawText, dictHits, meta, rule, seq }) {
     return;
   }
   const a = store.applyVoicePatch(patch, text, { targeted: false });
-  notesEl.textContent = notes.join(' ／ ');
+  showNotes(notes, dictHits);
   const changed = a.skipped.length !== Object.keys(patch).length || a.cleared.length > 0;
   const isNew = !!settings.get('plainUtteranceIsNew');
   logHistory({ at: Date.now(), text: rawText, dict: dictHits, conf: meta && meta.confidence, fb: !!(meta && meta.fallback), tg: false, nw: isNew, ai: true, patch, notes, skipped: a.skipped, cleared: a.cleared, err: null, after: changed ? store.snapshot() : null });
@@ -1680,9 +1709,22 @@ const transcriber = VCTranscriber.createTranscriber({
 window.__vcEngine = transcriber.engine;
 window.__vcNativeFailure = transcriber.nativeFailure || null;
 
+// v44: 録音のたびに渡すオプション。設定・辞書は**押した時点の値**を読む（変更が次の発話から効く）。
+// hints = 辞書の**値**（正しい表記）＝ native の contextualStrings に足して
+// 「そもそも今井と認識される」ようにする（後から辞書が直すのと段階的に噛み合う）。
+// 上限を切るのは Apple のガイド（語彙を絞るほど効く）と、認識器の初期化を重くしないため。
+const HINT_CAP = 60;
+function micOpts() {
+  let hints = [];
+  try {
+    // 新しく登録したものほど効いてほしい＝末尾（=新しい）から採る
+    hints = VCDict.list().map((e) => e.v).filter((v) => v && v.length <= 24).slice(-HINT_CAP);
+  } catch (e) { window.__vcNote('語彙ヒント', (e && e.message) || String(e)); } // 失敗しても録音は止めない（v13）
+  return { silenceMs: settings.get('silenceMs'), hints };
+}
+
 if (transcriber.available) {
-  // 無音の長さは押すたびに設定から読む（設定変更が次の発話から効く）
-  micBtn.addEventListener('click', () => transcriber.toggle({ silenceMs: settings.get('silenceMs') }));
+  micBtn.addEventListener('click', () => transcriber.toggle(micOpts()));
 } else {
   micBtn.disabled = true;
   micState.textContent = transcriber.nativeFailure
@@ -1704,7 +1746,7 @@ function autoRecord(trigger) {
   if (VCStore.FIELDS.some((f) => d[f] !== '' && d[f] !== false)) return 'draft'; // 書きかけを守る
   if (transcriber.engine !== 'sfspeech') return `engine:${transcriber.engine}`;  // native の音声が生きている時だけ
   window.__vcDebugNote(`🎙 自動録音（${trigger}）`);
-  transcriber.start({ silenceMs: settings.get('silenceMs') });
+  transcriber.start(micOpts());
   return 'started';
 }
 window.__vcAutoRecord = autoRecord; // E2E がガードを検証する入口
@@ -2025,6 +2067,71 @@ async function doSave(opts) {
   }
 }
 document.getElementById('save').addEventListener('click', () => doSave());
+
+// ===== v44: 「辞書に登録して保存」（実機FB第26回・ユーザー設計） =====
+// 音声が書いたテキスト欄を人が直した時だけ、2つ目の保存ボタンを出す。
+// **押すこと自体が「この訂正は次から自動で当ててよい」という意思表明**＝
+// 機械が「認識ミスの訂正」と「気変わり」を推測しなくて済む（推測は原理的に不可能）。
+const LEARN_FIELDS = ['title', 'location', 'note']; // 日付/時刻の値は 2026-07-28 であって発話の言葉ではない
+let voiceBaseline = null; // 直近の発話が書いた値。ここからの差分だけが学習の材料
+
+// 🚨 日時になる語をキーにしない述語（parser から作って **注入**＝engine 内で相互依存しない流儀）。
+// 辞書は解釈より前に走るので「今日→明日」を登録すると以後ずっと予定が静かにずれる。
+function keyLooksLikeDateTime(k) {
+  const p = (VCParser.interpret(k, new Date()) || {}).patch || {};
+  return !!(p.startDate || p.startTime || p.endDate || p.endTime);
+}
+
+function learnCandidate() {
+  if (!voiceBaseline || !window.VCDict) return null;
+  const cur = store.get();
+  for (const f of LEARN_FIELDS) {
+    if (store.getFieldOrigin(f) !== 'human') continue; // 人が触っていない欄は学ぶものが無い
+    const pair = VCDict.diffPair(voiceBaseline[f], cur[f], { rejectKey: keyLooksLikeDateTime });
+    if (pair) return { field: f, k: pair.k, v: pair.v };
+  }
+  return null;
+}
+
+function refreshLearnRow() {
+  const row = document.getElementById('learnRow');
+  let c = null;
+  // 補助機能の失敗が本体（保存）を殺さない（v13）＝候補計算がこけても行を出さないだけ
+  try { c = learnCandidate(); } catch (e) { window.__vcNote('辞書の学習候補', (e && e.message) || String(e)); }
+  row.hidden = !c;
+  if (!c) { delete row.dataset.k; delete row.dataset.v; return; }
+  // 何が登録されるかを必ず文字で見せる（黙って登録しない＝v16）
+  document.getElementById('learnHint').textContent = `${fieldLabel(c.field)}の直しを次から自動で当てます: 「${c.k}」→「${c.v}」`;
+  row.dataset.k = c.k;
+  row.dataset.v = c.v;
+}
+
+store.subscribe((change) => {
+  if (change.type === 'voice') {
+    const cur = store.get();
+    voiceBaseline = {};
+    for (const f of LEARN_FIELDS) voiceBaseline[f] = cur[f];
+  } else if (change.type === 'reset' || change.type === 'restore') {
+    voiceBaseline = null; // 保存後・クリア・↩ 復元＝その発話は終わり
+  }
+  refreshLearnRow();
+});
+
+document.getElementById('saveLearn').addEventListener('click', () => {
+  const row = document.getElementById('learnRow');
+  const k = row.dataset.k, v = row.dataset.v;
+  if (k && v) {
+    try {
+      VCDict.add(k, v);
+      renderDict();
+      toast(`🔤 辞書に登録しました: 「${k}」→「${v}」`);
+    } catch (e) {
+      // 登録に失敗しても保存は続ける＝作業を捨てない（v16）。失敗は黙らない
+      toast(`⚠ 辞書に登録できませんでした: ${(e && e.message) || e}`);
+    }
+  }
+  doSave();
+});
 
 document.getElementById('clear').addEventListener('click', () => {
   store.reset();

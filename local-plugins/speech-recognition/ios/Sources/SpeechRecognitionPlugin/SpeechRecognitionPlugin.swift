@@ -47,6 +47,10 @@ public class SpeechRecognitionPlugin: CAPPlugin, CAPBridgedPlugin {
     /// 通常発話として解釈され「場所」が入らない。contextualStrings でこれらの語に寄せる。
     private let fieldHints = ["場所", "メモ", "終了", "開始", "タイトル", "件名"]
 
+    /// v44: 辞書の値（人名・社名などの正しい表記）。start() ごとに JS から渡される。
+    /// 欄名（fieldHints）と足して contextualStrings に入れる＝欄名の優先度を落とさない。
+    private var extraHints: [String] = []
+
     private func debug(_ msg: String) {
         notifyListeners("debug", data: ["msg": msg])
     }
@@ -73,6 +77,12 @@ public class SpeechRecognitionPlugin: CAPPlugin, CAPBridgedPlugin {
         if let ms = call.getDouble("silenceMs"), ms >= 500, ms <= 10000 {
             silenceSec = ms / 1000
         }
+        // v44: 辞書の**値**（正しい表記）を認識器に教える＝そもそも「今井」と認識されるようにする。
+        // 辞書が後から直す（v37/v44）のと段階的に噛み合う: 一度直して登録した固有名詞が、
+        // 次からは認識の時点で当たるようになる。JS 側が上限件数まで絞って渡す。
+        extraHints = (call.getArray("hints", String.self) ?? [])
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
         SFSpeechRecognizer.requestAuthorization { [weak self] auth in
             guard let self = self else { return }
             guard auth == .authorized else {
@@ -119,7 +129,9 @@ public class SpeechRecognitionPlugin: CAPPlugin, CAPBridgedPlugin {
 
             let req = SFSpeechAudioBufferRecognitionRequest()
             req.shouldReportPartialResults = true
-            req.contextualStrings = fieldHints // 欄名に寄せる（v22・上の fieldHints 参照）
+            // 欄名に寄せる（v22）＋辞書の値に寄せる（v44）。欄名が先＝欄指定発話の成否を守る
+            req.contextualStrings = fieldHints + extraHints
+            debug("🎙 語彙ヒント 欄名=\(fieldHints.count) 辞書=\(extraHints.count)")
             let onDevice = recognizer.supportsOnDeviceRecognition
             if onDevice {
                 req.requiresOnDeviceRecognition = true // ローカル完結（対応端末・対応言語なら）

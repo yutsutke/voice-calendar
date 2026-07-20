@@ -165,5 +165,63 @@ t('書き込み失敗は黙らず投げる（「登録したつもり」を作�
   eq(Dict.list(), [], '「登録したフリ」の行が残らない');
 });
 
+// ===== diffPair（v44）: 手直しの前後差分から (キー,値) を作る =====
+// 「登録するか」は人がボタンで決める＝ここは**材料を作るだけ**。学べない時は null（ボタンを出さない）。
+t('🚨 diffPair: 1文字差でも文脈を巻き込んでキーを伸ばす（人名の誤認識を学べるようにする）', () => {
+  // 最小差分は「居→井」の1文字＝居酒屋・住居にも当たる。左の文脈を足して固有名詞として特定する
+  eq(Dict.diffPair('今居さんと会議', '今井さんと会議'), { k: '今居', v: '今井' });
+  eq(Dict.diffPair('田中さんと打合せ', '田仲さんと打合せ'), { k: '田中', v: '田仲' });
+  eq(Dict.MIN_KEY_LEN, 2, 'expand/add と同じ閾値を使う');
+});
+
+t('diffPair: 語がまるごと違う時は最小範囲のまま（伸ばす必要が無い）', () => {
+  eq(Dict.diffPair('ヨコハマ支店で会議', '横浜支店で会議'), { k: 'ヨコハマ', v: '横浜' });
+  eq(Dict.diffPair('会議は青山支店', '会議は青山支社'), { k: '支店', v: '支社' });
+});
+
+t('🚨 diffPair: 日時になる語はキーにしない（辞書は解釈より前＝予定が静かにずれる）', () => {
+  // 宿主が parser を注入する述語。ここでは「今日/明日/N時」を日時とみなすスタブ
+  const rejectKey = (k) => /今日|明日|昨日|\d+時|来週|今週/.test(k);
+  eq(Dict.diffPair('今日の会議', '明日の会議', { rejectKey }), null, '今日→明日 を登録したら以後ずっと日付がずれる');
+  eq(Dict.diffPair('3時の打合せ', '4時の打合せ', { rejectKey }), null, '時刻も同じ');
+  // 日時でない言い換えは通す（本人がボタンを押した意思表明）
+  eq(Dict.diffPair('会議は青山支店', '会議は青山支社', { rejectKey }), { k: '支店', v: '支社' });
+});
+
+t('diffPair: 述語が壊れていても学習側を殺さない（迷ったら学ばない）', () => {
+  const boom = () => { throw new Error('壊れた述語'); };
+  eq(Dict.diffPair('今居さんと会議', '今井さんと会議', { rejectKey: boom }), null, '例外は「危険」側に倒す');
+  eq(Dict.diffPair('今居さんと会議', '今井さんと会議', {}), { k: '今居', v: '今井' }, '未注入なら従来どおり');
+});
+
+t('diffPair: 学べないものは null（ボタンを出さない）', () => {
+  eq(Dict.diffPair('会議', '会議'), null, '変わっていない');
+  eq(Dict.diffPair('', '会議'), null, '音声が書いていない欄＝学ぶ元が無い');
+  eq(Dict.diffPair('会議', ''), null, '全部消した＝置き換えではない');
+  eq(Dict.diffPair(null, undefined), null);
+  eq(Dict.diffPair('会議室で打合せ', '会議室で'), null, '削除だけ（値が空）は学ばない');
+});
+
+t('diffPair: 全部書き換えたらキーは丸ごと長くなる（長いキーほど誤爆しにくい＝安全側）', () => {
+  const p = Dict.diffPair('えーっとなんだっけ', '歯医者の予約');
+  eq(p, { k: 'えーっとなんだっけ', v: '歯医者の予約' });
+  ok(p.k.length >= Dict.MIN_KEY_LEN);
+});
+
+t('diffPair: 学習した結果が expand でそのまま効く（往復が閉じている）', () => {
+  const p = Dict.diffPair('今居さんと会議', '今井さんと会議');
+  Dict.add(p.k, p.v);
+  const r = Dict.expand('明日15時に今居さんと会議', Dict.list());
+  eq(r.text, '明日15時に今井さんと会議');
+  eq(r.hits, [{ k: '今居', v: '今井' }], '🔤 で見える＝黙って置換しない');
+});
+
+t('diffPair: コードポイント単位で見る（絵文字を割らない）', () => {
+  const p = Dict.diffPair('打合せ🙂です', '打合せ🎉です');
+  eq(p, { k: 'せ🙂', v: 'せ🎉' }, '1コードポイント差 → 文脈を1つ巻き込んで2コードポイントに');
+  eq(Array.from(p.k).length, 2, 'サロゲートペアを割っていない（割れば length 2 の壊れた鍵になる）');
+  ok(p.k.includes('🙂'), '絵文字が壊れていない');
+});
+
 console.log(`\ndictionary.test: ${pass} passed, ${fail} failed`);
 if (failures.length) { console.log('\n' + failures.join('\n\n')); process.exit(1); }

@@ -103,5 +103,37 @@ t('native が全滅していても simulate は発話を流せる', () => {
   });
 });
 
+// ===== v44: start の opts が native へ**そのまま**渡ること（JS ⇄ Swift の契約） =====
+// 🚨 なぜテストするか（calendar.test.js と同じ理由・v23 の教訓）:
+// Swift は call.getArray("hints", ...) / call.getDouble("silenceMs") でキー名を決め打ちで読む。
+// **キー名がズレても誰も落ちない**——native は「渡されなかった」として既定で動き、
+// 語彙ヒントが効かないまま「なんとなく認識が悪い」になる＝実機でも原因に辿り着けない。
+// Windows に Xcode が無く Swift をコンパイルできない以上、契約はここでしか守れない。
+t('v44: start(opts) は native プラグインへそのまま渡る（hints / silenceMs のキー名を固定）', () => {
+  let got = null;
+  withCapacitor({
+    isNativePlatform: () => true,
+    Plugins: { SpeechRecognition: { addListener: () => {}, start: (o) => { got = o; return Promise.resolve(); }, stop: () => Promise.resolve() } },
+  }, () => {
+    const tr = createTranscriber(H);
+    eq(tr.engine, 'sfspeech', 'native 経路が取れている');
+    tr.start({ silenceMs: 1800, hints: ['今井', '横浜支店'] });
+    ok(got, 'native の start が呼ばれた');
+    eq(got.silenceMs, 1800, 'Swift の call.getDouble("silenceMs") と同じキー');
+    eq(got.hints, ['今井', '横浜支店'], 'Swift の call.getArray("hints", String.self) と同じキー');
+  });
+});
+
+t('v44: opts 無しでも native の start は呼べる（ヒント無し＝欄名だけで従来どおり）', () => {
+  let got = 'not-called';
+  withCapacitor({
+    isNativePlatform: () => true,
+    Plugins: { SpeechRecognition: { addListener: () => {}, start: (o) => { got = o; return Promise.resolve(); }, stop: () => Promise.resolve() } },
+  }, () => {
+    createTranscriber(H).start();
+    eq(got, {}, '未指定は空オブジェクト＝Swift 側は既定に落ちる');
+  });
+});
+
 console.log(`\ntranscriber.test: ${pass} passed, ${fail} failed`);
 if (failures.length) { console.log('\n' + failures.join('\n\n')); process.exit(1); }
