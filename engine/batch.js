@@ -203,6 +203,25 @@
     return patch;
   }
 
+  // 🔴 v43（実機FB第25回・ユーザー要求）: AI が申告した曖昧を**メモ欄に残す**。
+  // 動機: ルール経路は解けなかった断片がタイトルに残る（素通しの痕跡 v7）が、AI 経路は
+  // 「来週の火曜の夕方あたり本社で打ち合わせ」→ タイトル「本社で打ち合わせ」＝**言った言葉が消える**。
+  // 画面の ⚠ 行は保存すると消える＝カレンダーには AI が確定させた結果しか残らない（保存は不可逆）。
+  //
+  // 🚨 不変条件: **機械の注記が人の文章を潰さない**。
+  //   E2E で実際に潰した（手で書いたメモが ⚠ で消えた）＝ v6 の「手入力は保護」は
+  //   **触れなかった欄の掃除からの保護**であって、patch が明示的に書く欄には効かない。
+  //   → 人が書いたメモが在れば書かない（⚠ は画面の行と来歴には残る＝黙って捨ててはいない v16）。
+  //   AI 自身が note を返した時はその後ろに積む（どちらも「この発話の産物」＝競合しない）。
+  function ambiguityNote(patch, ambiguities, humanNote) {
+    const list = (ambiguities || []).filter((a) => typeof a === 'string' && a.trim());
+    if (!list.length) return patch;
+    const mark = list.map((a) => `⚠${a.trim()}`).join('\n');
+    if (patch && patch.note) return { ...patch, note: `${patch.note}\n${mark}` };
+    if (humanNote) return { ...patch };  // 人の文章が在る＝触らない
+    return { ...patch, note: mark };
+  }
+
   // ---------- 取り込みリスト（staging）＝保存前の一時台帳 ----------
   function loadStage() {
     try {
@@ -307,7 +326,7 @@
     }
   }
 
-  const api = { parseBatch, buildPrompt, toSnapshot, draftToPatch, stageAdd, stageList, stageRemove, stageClear, registerWebMcp, KEY, MAX_EVENTS };
+  const api = { parseBatch, buildPrompt, toSnapshot, draftToPatch, ambiguityNote, stageAdd, stageList, stageRemove, stageClear, registerWebMcp, KEY, MAX_EVENTS };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else global.VCBatch = api;
 })(typeof window !== 'undefined' ? window : globalThis);

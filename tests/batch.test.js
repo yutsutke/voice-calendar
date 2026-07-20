@@ -328,6 +328,39 @@ t('draftToPatch: 空 draft → {}（applyVoicePatch に渡しても何も起き�
   eq(B.draftToPatch(null), {});
 });
 
+// ===== ambiguityNote（v43）: AI の曖昧をメモ欄に残す。**機械の注記が人の文章を潰さない** =====
+t('ambiguityNote: 空のメモには ⚠ で積む（保存後も「夕方あたり と言った」が残る）', () => {
+  const p = B.ambiguityNote({ title: '打ち合わせ' }, ['「夕方あたり」は時刻が不明', '終了時刻が無い'], '');
+  eq(p.note, '⚠「夕方あたり」は時刻が不明\n⚠終了時刻が無い');
+  eq(p.title, '打ち合わせ', '他の欄は素通し');
+});
+
+t('🚨 ambiguityNote: 手で書いたメモは潰さない（E2E で実際に潰した回帰）', () => {
+  const p = B.ambiguityNote({ title: '打ち合わせ' }, ['夕方あたりが曖昧'], '手で書いたメモ');
+  eq('note' in p, false, 'note をキーに載せない＝applyVoicePatch が触れない＝掃除もされない');
+  eq(p.title, '打ち合わせ');
+});
+
+t('ambiguityNote: AI 自身の note には後ろに積む（どちらもこの発話の産物）', () => {
+  const p = B.ambiguityNote({ note: '保険証を持参' }, ['時刻が曖昧'], '');
+  eq(p.note, '保険証を持参\n⚠時刻が曖昧');
+  // 人のメモが在っても、AI が note を返したなら従来どおり上書き（v42 の挙動を変えない）
+  eq(B.ambiguityNote({ note: 'AIメモ' }, ['x'], '人のメモ').note, 'AIメモ\n⚠x');
+});
+
+t('ambiguityNote: 曖昧が無ければ patch を変えない（既定の体験を1ミリも変えない）', () => {
+  const base = { title: 'a' };
+  eq(B.ambiguityNote(base, [], ''), base);
+  eq(B.ambiguityNote(base, null, ''), base);
+  eq(B.ambiguityNote(base, ['  ', 42], ''), base, '空白だけ・文字列以外は曖昧として数えない');
+});
+
+t('ambiguityNote: 引数の patch を書き換えない（純関数＝呼び手の値が変わらない）', () => {
+  const base = { title: 'a' };
+  B.ambiguityNote(base, ['x'], '');
+  eq('note' in base, false, '元の patch は無傷');
+});
+
 // ===== registerWebMcp（v41）: 登録は throw しない・execute は保存しない =====
 t('WebMCP: modelContext が無ければ unsupported（絶対 throw しない）', () => {
   eq(B.registerWebMcp(undefined, { schema: C.SCHEMA }), 'unsupported');

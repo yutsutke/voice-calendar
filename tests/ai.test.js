@@ -133,6 +133,56 @@ t('401 → キー・429 → 上限・500 → 先方・reject → ネットワー
   await rejects(() => AI.interpretLongText('t', { system: 's', config: cfg, fetchFn: async () => { throw new Error('TypeError: CORS'); } }), 'ネットワークに接続できません');
 });
 
+// v43: **プロバイダが本文に書いた理由を捨てない**（黙って捨てない v16）。
+// 実機で踏んだ2つ＝400（残高不足）と 404（モデル名が無い）は status だけでは次の一手が打てない。
+const bodyFetch = (status, body) => async () => ({ ok: false, status, text: async () => body, json: async () => ({}) });
+
+t('v43: 400/404 は本文の error.message を添えて返す（残高不足・モデル名が無いが利用者に届く）', async () => {
+  const cfg = { provider: 'anthropic', key: SECRET };
+  await rejects(
+    () => AI.interpretLongText('t', { system: 's', config: cfg, fetchFn: bodyFetch(400, JSON.stringify({ type: 'error', error: { type: 'invalid_request_error', message: 'Your credit balance is too low to access the Anthropic API' } })) }),
+    'credit balance is too low',
+  );
+  // 404 は「モデル欄を空にすれば既定へ戻る」まで言う＝打ち間違い/引退から自力で復帰できる
+  await rejects(
+    () => AI.interpretLongText('t', { system: 's', config: { ...cfg, model: 'claude-haiku-9' }, fetchFn: bodyFetch(404, JSON.stringify({ error: { message: 'model: claude-haiku-9' } })) }),
+    'モデル名が見つかりません',
+  );
+  await rejects(
+    () => AI.interpretLongText('t', { system: 's', config: { ...cfg, model: 'claude-haiku-9' }, fetchFn: bodyFetch(404, JSON.stringify({ error: { message: 'model: claude-haiku-9' } })) }),
+    'モデル欄を空にすると',
+  );
+});
+
+t('v43: 本文が JSON でない / 空 / 巨大 でも壊れない（status は必ず伝わる）', async () => {
+  const cfg = { provider: 'anthropic', key: SECRET };
+  // プロキシの HTML エラーページ＝生のまま短く出す（捨てるよりまし）
+  await rejects(() => AI.interpretLongText('t', { system: 's', config: cfg, fetchFn: bodyFetch(502, '<html>Bad Gateway</html>') }), 'Bad Gateway');
+  await rejects(() => AI.interpretLongText('t', { system: 's', config: cfg, fetchFn: bodyFetch(400, '') }), 'HTTP 400');
+  // text() を持たない応答（古いスタブ・本文が読めない環境）でも status は出る
+  await rejects(() => AI.interpretLongText('t', { system: 's', config: cfg, fetchFn: httpFetch(400) }), 'HTTP 400');
+  // 200字で打ち切る＝診断が本文で埋まらない
+  const huge = 'あ'.repeat(5000);
+  try {
+    await AI.interpretLongText('t', { system: 's', config: cfg, fetchFn: bodyFetch(400, JSON.stringify({ error: { message: huge } })) });
+    throw new Error('例外が出なかった');
+  } catch (e) {
+    ok(e.message.length < 400, `本文で埋まった: ${e.message.length}字`);
+    ok(e.message.includes('…'), '打ち切りの印');
+  }
+});
+
+t('v43: 時間切れは「どのモデルが」間に合わなかったかを名指す（次の一手が打てる）', async () => {
+  const never = () => new Promise(() => {});
+  try {
+    await AI.interpretLongText('t', { system: 's', config: { provider: 'anthropic', key: SECRET, model: 'claude-opus-4-8' }, fetchFn: never, timeoutMs: 30 });
+    throw new Error('例外が出なかった');
+  } catch (e) {
+    ok(e.message.includes('claude-opus-4-8'), `使ったモデルを名指す: ${e.message}`);
+    ok(e.message.includes('claude-haiku-4-5'), `速いモデルを示す: ${e.message}`);
+  }
+});
+
 // ===== 不変条件4: エラー文にキーが漏れない =====
 t('🔒 どの失敗経路のエラー文にもキーが出ない', async () => {
   const cfg = { provider: 'anthropic', key: SECRET };
@@ -141,6 +191,9 @@ t('🔒 どの失敗経路のエラー文にもキーが出ない', async () => 
     () => AI.interpretLongText('t', { system: 's', config: cfg, fetchFn: async () => { throw new Error('failed: ' + SECRET); } }), // fetch がキー入りで死んでも
     () => AI.interpretLongText('t', { system: 's', config: cfg, fetchFn: okFetch({ content: [] }) }),
     () => AI.interpretLongText('', { system: 's', config: cfg }),
+    // v43: **応答本文を出すようになった＝本文がキーを反射しても伏せる**（新しい漏れ口を塞ぐ）
+    () => AI.interpretLongText('t', { system: 's', config: cfg, fetchFn: bodyFetch(400, JSON.stringify({ error: { message: `invalid key: ${SECRET}` } })) }),
+    () => AI.interpretLongText('t', { system: 's', config: cfg, fetchFn: bodyFetch(400, `raw body with ${SECRET} in it`) }),
   ];
   for (const p of paths) {
     try { await p(); } catch (e) {

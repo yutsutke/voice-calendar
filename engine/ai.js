@@ -108,11 +108,33 @@
   function modelFor(cfg) { return (cfg && cfg.model && cfg.model.trim()) || PROVIDERS[(cfg && cfg.provider) || 'anthropic'].defaultModel; }
 
   // ---------- 呼び出し ----------
-  function honestHttpError(status) {
-    if (status === 401 || status === 403) return `API キーが正しくないか、権限がありません（${status}）。キーを確認してください`;
-    if (status === 429) return '利用上限に達しています（429）。しばらく待つか、プロバイダ側の利用状況を確認してください';
-    if (status >= 500) return `AI 側のサーバエラーです（${status}）。しばらくして再試行してください`;
-    return `AI の呼び出しに失敗しました（HTTP ${status}）`;
+  // 🔴 v43（実機FB第25回）: **プロバイダが本文に書いている理由を捨てない**（黙って捨てない v16）。
+  // status だけでは利用者が次の一手を打てない実例が2つ出た:
+  //   400 = 残高不足（Claude の月額サブスクと API クレジットは別会計）／404 = モデル名が無い（打ち間違い・引退）。
+  // どちらも応答本文の error.message に理由が書いてあるのに、v40 は読まずに捨てていた
+  // ＝「HTTP 400」としか出ず、原因が本文に在るのに利用者に届かない。
+  // **キーは絶対に混ぜない**（v40 の約束）: 応答本文がキーを反射しても伏せる（tests/ai.test.js が固定）。
+  function redact(msg, key) {
+    if (!key || !msg) return msg;
+    return String(msg).split(key).join('***');
+  }
+  function providerDetail(bodyText, key) {
+    if (!bodyText) return '';
+    let msg = '';
+    try {
+      const j = JSON.parse(bodyText);
+      if (j && j.error && typeof j.error.message === 'string') msg = j.error.message; // Anthropic/Gemini 共通の置き場
+    } catch { /* JSON でない（プロキシの HTML 等）＝生のまま短く出す＝黙って捨てるよりまし */ }
+    msg = redact((msg || String(bodyText)).replace(/\s+/g, ' ').trim(), key);
+    return msg.length > 200 ? `${msg.slice(0, 200)}…` : msg;
+  }
+  function honestHttpError(status, detail) {
+    const tail = detail ? `: ${detail}` : '';
+    if (status === 401 || status === 403) return `API キーが正しくないか、権限がありません（${status}）。キーを確認してください${tail}`;
+    if (status === 404) return `モデル名が見つかりません（404）。モデル欄を空にすると既定のモデルに戻ります${tail}`;
+    if (status === 429) return `利用上限に達しています（429）。しばらく待つか、プロバイダ側の利用状況を確認してください${tail}`;
+    if (status >= 500) return `AI 側のサーバエラーです（${status}）。しばらくして再試行してください${tail}`;
+    return `AI の呼び出しに失敗しました（HTTP ${status}）${tail}`;
   }
 
   async function callProvider(system, text, cfg, fetchFn, timeoutMs) {
@@ -147,12 +169,18 @@
       }
     } catch {
       // fetch の reject にキーや URL の断片を混ぜない（エラー文にキーを絶対に出さない）
-      if (timedOut) throw new Error(`時間切れです（${Math.round(timeoutMs / 1000)}秒以内に AI の応答がありませんでした）`);
+      // v43: **どのモデルが間に合わなかったか**を名指す＝次の一手（速いモデルへ）が打てる。
+      // 音声経路の 12 秒は「ノールックの待ち時間」として決めた数字（v42）＝遅いモデルは構造的に入らない。
+      if (timedOut) throw new Error(`時間切れです（${Math.round(timeoutMs / 1000)}秒以内に ${model} の応答がありませんでした）。速いモデル（${p.defaultModel} など）に変えると通ることがあります`);
       throw new Error('ネットワークに接続できませんでした（オフラインか、接続がブロックされています）');
     } finally {
       if (timer) clearTimeout(timer);
     }
-    if (!res.ok) throw new Error(honestHttpError(res.status));
+    if (!res.ok) {
+      let body = '';
+      try { if (typeof res.text === 'function') body = await res.text(); } catch { /* 本文が読めなくても status は伝える */ }
+      throw new Error(honestHttpError(res.status, providerDetail(body, cfg.key)));
+    }
     let json;
     try { json = await res.json(); } catch { throw new Error('AI の応答を読めませんでした（JSON でない応答）'); }
     return p.extract(json);

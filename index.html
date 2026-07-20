@@ -1,4 +1,4 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="ja">
 <head>
 <meta charset="utf-8">
@@ -509,19 +509,19 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
      理由: この版文字列は index.html にしかないが、ロジックは別ファイル＝別キャッシュ。
      付けないと「フッタは新しいのにパーサは古い」という嘘の状態が成立する（v9 で実際に踏んだ）。
      index.html が更新されれば src の URL も変わる → JS も必ず新しく取り直される。 -->
-<script src="engine/settings.js?v=42"></script>
-<script src="engine/schema.js?v=42"></script>
-<script src="engine/parser.js?v=42"></script>
-<script src="engine/dictionary.js?v=42"></script>
-<script src="engine/contract.js?v=42"></script>
-<script src="engine/batch.js?v=42"></script>
-<script src="engine/ai.js?v=42"></script>
-<script src="input/transcriber.js?v=42"></script>
-<script src="adapters/calendar.js?v=42"></script>
-<script src="adapters/records.js?v=42"></script>
+<script src="engine/settings.js?v=43"></script>
+<script src="engine/schema.js?v=43"></script>
+<script src="engine/parser.js?v=43"></script>
+<script src="engine/dictionary.js?v=43"></script>
+<script src="engine/contract.js?v=43"></script>
+<script src="engine/batch.js?v=43"></script>
+<script src="engine/ai.js?v=43"></script>
+<script src="input/transcriber.js?v=43"></script>
+<script src="adapters/calendar.js?v=43"></script>
+<script src="adapters/records.js?v=43"></script>
 <script>
 'use strict';
-const BUILD = 'v42：音声→AI解釈（詳細設定・既定オフ＝発話をAIで解釈・複数件はまとめて入力へ・AI経路は自動保存しない）｜v41：WebMCP｜v40：BYOK｜v39：まとめて入力 · 2026-07-19';
+const BUILD = 'v43：AIの曖昧をメモ欄に残す＋エラーの理由を出す（400/404の本文・モデル名・プロバイダ切替でモデル欄を既定へ）｜v42：音声→AI解釈｜v41：WebMCP｜v40：BYOK · 2026-07-20';
 console.log('BUILD:', BUILD);
 document.getElementById('build').textContent = BUILD;
 
@@ -725,7 +725,10 @@ async function interpretByAI({ text, rawText, dictHits, meta, rule, seq }) {
   }
   // 1件 → フォームへ（従来の体験）。言い直し掃除(v6)・欄ロック(v3)は共通経路 applyVoicePatch のまま
   const ev = events[0];
-  const patch = VCBatch.draftToPatch(ev.draft);
+  // v43: AI の曖昧をメモ欄にも残す（判断は engine の純関数＝ここは配線だけ）。
+  // 人が書いたメモを潰さないため、**今のメモが誰の文章か**を渡す（origin は store が持つ正）。
+  const humanNote = store.getFieldOrigin('note') === 'human' ? store.get().note : '';
+  const patch = VCBatch.ambiguityNote(VCBatch.draftToPatch(ev.draft), ev.ambiguities, humanNote);
   const notes = ev.ambiguities.concat(ev.problems).concat(warnings); // AI の申告＝⚠ で見せる（聞き返さない §2-3）
   if (Object.keys(patch).length === 0) { // parseBatch が空イベントを除外するため通常来ない（防御）
     applyRuleResult({ rule, text, rawText, dictHits, meta, aiFbNote: '🤖AIが項目を返さず→ルール解釈' });
@@ -1538,7 +1541,13 @@ function renderAiConfig() {
 document.getElementById('aiProvider').addEventListener('change', () => {
   if (!window.VCAI) return;
   const p = VCAI.PROVIDERS[document.getElementById('aiProvider').value];
-  if (p) document.getElementById('aiModel').placeholder = `${p.defaultModel}（既定・安価）`;
+  if (!p) return;
+  document.getElementById('aiModel').placeholder = `${p.defaultModel}（既定・安価）`;
+  // 🔴 v43（実機FB第25回）: プロバイダを変えたら**モデル欄の値も既定へ戻す**。
+  // v42 までは placeholder だけ変わって値が残り、Anthropic 用に入れた `claude-sonnet-5` を
+  // そのまま Gemini へ送って失敗した＝**別プロバイダのモデル名を送る事故**。
+  // 利用者からは原因が見えない（モデル欄は自分で入れた正しい名前に見えている）。
+  document.getElementById('aiModel').value = '';
 });
 document.getElementById('aiSave').addEventListener('click', () => {
   if (!window.VCAI) { toast('AI 機能を読み込めていません（詳細は「診断」）'); return; }
