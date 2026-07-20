@@ -256,10 +256,9 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
   .b-btns .b-del { color: var(--sub); }
   .batch-empty { color: var(--sub); font-size: 12px; padding: 8px 2px; }
   /* ---- AI 設定（v40: BYOK） ---- */
-  .ai-config { margin: 2px 0; }
-  .ai-config > summary { list-style: none; cursor: pointer; color: var(--sub); font-size: 12px; padding: 4px 2px; user-select: none; }
-  .ai-config > summary::before { content: '▸ '; }
-  .ai-config[open] > summary::before { content: '▾ '; }
+  .ai-config { margin: 2px 0; padding-top: 12px; border-top: 1px solid var(--line); }
+  /* v45: 折りたたみを外して常時表示・見出しは他の詳細設定と同じ大きさ/色＋太字（実機FB第27回） */
+  .ai-config > .ai-title { font-size: 14px; font-weight: 700; color: var(--ink); padding: 0 2px 6px; }
   .ai-hint { font-size: 11px; color: var(--sub); padding: 4px 2px; line-height: 1.55; }
   .ai-row { display: flex; align-items: center; gap: 8px; padding: 5px 2px; font-size: 13px; }
   .ai-row label { flex: 0 0 5.5em; color: var(--sub); }
@@ -349,18 +348,20 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
     </div>
   </details>
 
-  <div class="actions">
-    <button id="save" type="button">カレンダーに保存</button>
-    <button id="clear" type="button">クリア</button>
-  </div>
-
   <!-- v44（実機FB第26回・ユーザー設計）: 音声が書いた欄を手で直した時だけ、2つ目の保存ボタンを出す。
        **押すこと自体が「この訂正は次から自動で当ててよい」という意思表明**＝機械が
        「認識ミスか気変わりか」を推測しなくて済む（推測は原理的に不可能だった）。
-       何が登録されるかは必ず文字で見せる（黙って登録しない＝v16）。学べる差分が無い時は行ごと出ない。 -->
+       何が登録されるかは必ず文字で見せる（黙って登録しない＝v16）。学べる差分が無い時は行ごと出ない。
+       🔴 v45: **保存ボタンより上**に置く（実機FB第27回「辞書登録がでない」）。フォームを直した直後の
+       目線と、保存へ向かう指の間に必ず入る＝スクロールしないと見えない位置に置かない。 -->
   <div class="learn-row" id="learnRow" hidden>
     <div class="learn-hint" id="learnHint"></div>
     <button id="saveLearn" type="button">🔤 辞書に登録して保存</button>
+  </div>
+
+  <div class="actions">
+    <button id="save" type="button">カレンダーに保存</button>
+    <button id="clear" type="button">クリア</button>
   </div>
 
   <!-- 権限の復帰導線（v23）: 拒否は初回ダイアログの一度きりで決まり、以後アプリからは聞けない。
@@ -430,8 +431,8 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
       <!-- AI 設定（v40 BYOK）: v43 で「まとめて入力」からここへ移動（実機FB第25回）。
            設定の一覧（settingsList）とは別物なので「既定に戻す」の外に置く＝リセットの対象に見せない。
            キー未設定なら「まとめて入力」の AI ボタンは出ない＝既定の体験は不変（v19）。 -->
-      <details class="ai-config" id="aiConfigBox">
-        <summary>AI 設定（自分の API キーで直接解釈・任意）<span class="rec-count" id="aiConfigState"></span></summary>
+      <div class="ai-config" id="aiConfigBox">
+        <div class="ai-title">AI 設定（自分の API キーで直接解釈・任意）<span class="rec-count" id="aiConfigState"></span></div>
         <div class="ai-hint">自分の API キーを入れると、「まとめて入力」の長文をボタン1つで解釈できます（コピーの往復が不要になります）。詳細設定の「音声を AI で解釈する」もこのキーを使います。<b>キーはこの端末の中にのみ保存され、開発者のサーバは存在しません。</b>本文（辞書の展開結果を含む）は選んだ AI 社へ端末から直接送信されます。本アプリ専用に<b>使用上限付きのキー</b>を発行するのがおすすめです。共有端末では保存しないでください。※ OpenAI は非対応（ブラウザからの直接接続を許可していないため）。</div>
         <div class="ai-row"><label for="aiProvider">プロバイダ</label><select id="aiProvider"></select></div>
         <div class="ai-row"><label for="aiModel">モデル</label><input id="aiModel" type="text" autocomplete="off"></div>
@@ -441,7 +442,7 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
           <button id="aiTest" type="button">テスト送信</button>
           <button id="aiClear" type="button">キーを消す</button>
         </div>
-      </details>
+      </div>
     </div>
   </details>
 
@@ -527,19 +528,19 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
      理由: この版文字列は index.html にしかないが、ロジックは別ファイル＝別キャッシュ。
      付けないと「フッタは新しいのにパーサは古い」という嘘の状態が成立する（v9 で実際に踏んだ）。
      index.html が更新されれば src の URL も変わる → JS も必ず新しく取り直される。 -->
-<script src="engine/settings.js?v=44"></script>
-<script src="engine/schema.js?v=44"></script>
-<script src="engine/parser.js?v=44"></script>
-<script src="engine/dictionary.js?v=44"></script>
-<script src="engine/contract.js?v=44"></script>
-<script src="engine/batch.js?v=44"></script>
-<script src="engine/ai.js?v=44"></script>
-<script src="input/transcriber.js?v=44"></script>
-<script src="adapters/calendar.js?v=44"></script>
-<script src="adapters/records.js?v=44"></script>
+<script src="engine/settings.js?v=45"></script>
+<script src="engine/schema.js?v=45"></script>
+<script src="engine/parser.js?v=45"></script>
+<script src="engine/dictionary.js?v=45"></script>
+<script src="engine/contract.js?v=45"></script>
+<script src="engine/batch.js?v=45"></script>
+<script src="engine/ai.js?v=45"></script>
+<script src="input/transcriber.js?v=45"></script>
+<script src="adapters/calendar.js?v=45"></script>
+<script src="adapters/records.js?v=45"></script>
 <script>
 'use strict';
-const BUILD = 'v44：辞書に登録して保存（手直しを次から自動で当てる・日時語は登録しない）＋AI設定を詳細設定へ＋🔤を発話直後に表示＋辞書の語を認識器へ｜v43：AIの曖昧をメモ欄に · 2026-07-20';
+const BUILD = 'v45：辞書登録ボタンを保存の上へ＋基準は音声が書いた欄だけ更新（出ない対策）・AI設定はトグル無し太字｜v44：辞書に登録して保存 · 2026-07-20';
 console.log('BUILD:', BUILD);
 document.getElementById('build').textContent = BUILD;
 
@@ -2108,9 +2109,16 @@ function refreshLearnRow() {
 
 store.subscribe((change) => {
   if (change.type === 'voice') {
+    // 🔴 v45: **音声が実際に書いた欄だけ**基準を更新する（実機FB第27回「辞書登録がでない」の対策）。
+    // v44 は 'voice' のたびに全欄を撮り直していたため、手直しの**後**に別の発話（環境音・言い直し・
+    // 欄指定など、その欄に触れないもの）が1つ入るだけで、基準が「直した後の値」に置き換わり
+    // 差分が消えて**ボタンが黙って出なくなる**。触っていない欄の基準は保つのが正しい。
     const cur = store.get();
-    voiceBaseline = {};
-    for (const f of LEARN_FIELDS) voiceBaseline[f] = cur[f];
+    voiceBaseline = voiceBaseline || {};
+    for (const f of LEARN_FIELDS) {
+      if (change.fields.includes(f)) voiceBaseline[f] = cur[f];          // 上書きされた＝新しい基準
+      else if (change.cleared.includes(f)) delete voiceBaseline[f];      // 掃除された＝学ぶ元が消えた
+    }
   } else if (change.type === 'reset' || change.type === 'restore') {
     voiceBaseline = null; // 保存後・クリア・↩ 復元＝その発話は終わり
   }
