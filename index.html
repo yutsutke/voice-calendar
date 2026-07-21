@@ -210,11 +210,15 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
   /* ---- 詳細設定 ---- */
   .set-item { padding: 12px 0; border-bottom: 1px solid var(--line); }
   .set-item:last-child { border-bottom: none; }
-  .set-head { display: flex; align-items: center; gap: 10px; }
-  .set-head label { flex: 1; font-size: 14px; color: var(--ink); }
+  /* 🔴 v47: ラベルが1文字ずつ縦積みになる事故を直した（実機FB第30回）。原因は `flex: 1`＝basis 0 で
+     ラベルに幅の主張が無く、選択肢の文字列が長い select（「いつでも（日時なしは今の日時）」）が
+     幅を総取りしてラベルが最小幅（日本語は語境界が無いので1文字）まで潰れていた。
+     → ラベルに下限を持たせ、入り切らない control は**次の行へ回す**（縦積みにはならない） */
+  .set-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .set-head label { flex: 1 1 auto; min-width: 55%; font-size: 14px; color: var(--ink); }
   .set-item .set-hint { font-size: 11px; color: var(--sub); margin-top: 4px; line-height: 1.45; }
   .set-item select { border: 1px solid var(--line); border-radius: 8px; padding: 5px 8px; font-size: 14px;
-    background: var(--card); color: var(--ink); font-family: inherit; }
+    background: var(--card); color: var(--ink); font-family: inherit; max-width: 100%; }
   .set-item input[type="checkbox"] { width: 20px; height: 20px; }
   .set-native { font-size: 10px; color: var(--sub); border: 1px solid var(--line); border-radius: 4px;
     padding: 1px 5px; margin-left: 6px; white-space: nowrap; }
@@ -555,19 +559,19 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
      理由: この版文字列は index.html にしかないが、ロジックは別ファイル＝別キャッシュ。
      付けないと「フッタは新しいのにパーサは古い」という嘘の状態が成立する（v9 で実際に踏んだ）。
      index.html が更新されれば src の URL も変わる → JS も必ず新しく取り直される。 -->
-<script src="engine/settings.js?v=47"></script>
-<script src="engine/schema.js?v=47"></script>
-<script src="engine/parser.js?v=47"></script>
-<script src="engine/dictionary.js?v=47"></script>
-<script src="engine/contract.js?v=47"></script>
-<script src="engine/batch.js?v=47"></script>
-<script src="engine/ai.js?v=47"></script>
-<script src="input/transcriber.js?v=47"></script>
-<script src="adapters/calendar.js?v=47"></script>
-<script src="adapters/records.js?v=47"></script>
+<script src="engine/settings.js?v=48"></script>
+<script src="engine/schema.js?v=48"></script>
+<script src="engine/parser.js?v=48"></script>
+<script src="engine/dictionary.js?v=48"></script>
+<script src="engine/contract.js?v=48"></script>
+<script src="engine/batch.js?v=48"></script>
+<script src="engine/ai.js?v=48"></script>
+<script src="input/transcriber.js?v=48"></script>
+<script src="adapters/calendar.js?v=48"></script>
+<script src="adapters/records.js?v=48"></script>
 <script>
 'use strict';
-const BUILD = 'v47：自動保存を3択（日時なしも「いつでも」で入る）· 来歴の1件削除 · 位置情報の許可の直し方｜v46：辞書登録ボタンに色 · 2026-07-21';
+const BUILD = 'v48：設定の見た目を修正（ラベルの縦積み）· AI 解釈の自動保存を選べる｜v47：自動保存を3択 · 来歴の1件削除 · 2026-07-21';
 console.log('BUILD:', BUILD);
 document.getElementById('build').textContent = BUILD;
 
@@ -796,9 +800,13 @@ async function interpretByAI({ text, rawText, dictHits, meta, rule, seq }) {
   const changed = a.skipped.length !== Object.keys(patch).length || a.cleared.length > 0;
   const isNew = !!settings.get('plainUtteranceIsNew');
   logHistory({ at: Date.now(), text: rawText, dict: dictHits, conf: meta && meta.confidence, fb: !!(meta && meta.fallback), tg: false, nw: isNew, ai: true, patch, notes, skipped: a.skipped, cleared: a.cleared, err: null, after: changed ? store.snapshot() : null });
-  // 🔴 AI 経路は自動保存(v28)を**呼ばない**（ユーザー合意済み・engine/settings.js の why 参照）:
-  // ルールパーサは決定的＝「patch に日時が在る＝実際に言った」が保証されるが、AI は創作し得る。
-  // 保存は不可逆（読めない＝消せない）＝この保証なしに黙って確定しない（SPEC §2-4）。
+  // AI 経路の自動保存（v47・設定 autoSaveAI・既定オフ＝v42-v46 は呼んでいなかった）。
+  // v42 で塞いだ理由＝「ルールパーサは決定的＝patch に日時が在る＝実際に言った、が保証されるが、
+  // AI は創作し得る。保存は不可逆（読めない＝消せない）」。**その時に「精度を実機で見てから再検討」と
+  // 条件を書いていた** → 実機FB第25回「あいまいなものを確定させてないのはいい」で条件が揃った（v47）。
+  // 🔒 安全弁は shouldAutoSave の `notes` の門: notes = AI の ambiguities + problems + warnings ＝
+  //    **AI が少しでも曖昧だと申告した発話は自動保存されない**（v43 でメモ欄に ⚠ が残るケースがまさにそれ）。
+  if (settings.get('autoSaveAI') && shouldAutoSave({ changed, targeted: false, notes, patch, text })) doSave({ auto: true });
 }
 
 /// 自動保存の条件（v28・実機FB「記録後、保存を自動にできる設定」）。
