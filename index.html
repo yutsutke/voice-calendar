@@ -568,19 +568,19 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
      理由: この版文字列は index.html にしかないが、ロジックは別ファイル＝別キャッシュ。
      付けないと「フッタは新しいのにパーサは古い」という嘘の状態が成立する（v9 で実際に踏んだ）。
      index.html が更新されれば src の URL も変わる → JS も必ず新しく取り直される。 -->
-<script src="engine/settings.js?v=49"></script>
-<script src="engine/schema.js?v=49"></script>
-<script src="engine/parser.js?v=49"></script>
-<script src="engine/dictionary.js?v=49"></script>
-<script src="engine/contract.js?v=49"></script>
-<script src="engine/batch.js?v=49"></script>
-<script src="engine/ai.js?v=49"></script>
-<script src="input/transcriber.js?v=49"></script>
-<script src="adapters/calendar.js?v=49"></script>
-<script src="adapters/records.js?v=49"></script>
+<script src="engine/settings.js?v=50"></script>
+<script src="engine/schema.js?v=50"></script>
+<script src="engine/parser.js?v=50"></script>
+<script src="engine/dictionary.js?v=50"></script>
+<script src="engine/contract.js?v=50"></script>
+<script src="engine/batch.js?v=50"></script>
+<script src="engine/ai.js?v=50"></script>
+<script src="input/transcriber.js?v=50"></script>
+<script src="adapters/calendar.js?v=50"></script>
+<script src="adapters/records.js?v=50"></script>
 <script>
 'use strict';
-const BUILD = 'v49：録音中の「やめる」· 位置情報の許可を戻った時に見直す｜v48：設定の見た目 · AI解釈の自動保存｜v47：自動保存3択 · 2026-07-21';
+const BUILD = 'v50：位置情報を切ったら本当に取らない（60秒キャッシュの撤去）｜v49：録音中の「やめる」· 位置の許可を戻った時に見直す｜v48：設定の見た目 · 2026-07-22';
 console.log('BUILD:', BUILD);
 document.getElementById('build').textContent = BUILD;
 
@@ -1017,7 +1017,14 @@ renderHistory();
 // 台帳が読み込めなくても本体（フォーム・保存）は殺さない（v13: 補助機能の失敗が本体を殺さない）。
 // ===== 位置情報（v38・設定オン時のみ）=====
 // 保存時にいた場所を台帳の行に残す。失敗は診断に出す（補助機能＝toast で騒がないが黙って消えない v16）。
-// maximumAge 60s: 1分前の位置で十分（「どこで保存したか」の用途）＝取得が速く電池にも優しい。
+// 🔴 **maximumAge は 0**（v50・実機で実証した defect の修正）: v38 は `maximumAge: 60000` にしていた
+//   ＝「1分前の位置で十分・取得が速く電池にも優しい」。しかしそれは **OS に聞きに行かずキャッシュを返す**
+//   ということで、**利用者が OS 設定で位置情報をオフにしても 60 秒間は位置が記録され続けた**
+//   （実機FB第32回で観測 → 「2分待てば付かない」で原因を確定＝許可判定そのものは効いていた）。
+//   v38 で決めた「位置は黙って取らない（既定オフ・opt-in）」という約束を 60 秒ぶん破っていた＝
+//   **速さと電池は、切ったのに記録される、と引き換えにしてよいものではない**。
+//   0 にしても保存はブロックしない（v38 の非同期設計）＝遅くなるのは「行に位置が付く瞬間」だけ。
+const GEO_OPTS = { enableHighAccuracy: false, timeout: 8000, maximumAge: 0 };
 // 拒否バナーの文言は1か所に（保存時・設定オン時・復帰時の3経路が同じことを言う）
 const GEO_DENIED_MSG = '位置情報が許可されていません。「設定を開く」→ 位置情報 を許可してください。保存そのものは今までどおり動きます。';
 function captureGeoFor(recId) {
@@ -1037,7 +1044,7 @@ function captureGeoFor(recId) {
       // 一度拒否すると OS はダイアログを二度と出さない＝ここが唯一の復帰導線になる。
       if (err && err.code === 1) geoBanner(true, GEO_DENIED_MSG);
     },
-    { enableHighAccuracy: false, timeout: 8000, maximumAge: 60000 }
+    GEO_OPTS
   );
 }
 // 設定をオンにした瞬間に一度だけ権限を確かめる＝原因と結果が目の前で繋がる
@@ -1056,7 +1063,7 @@ settings.subscribe((k, v) => {
       // v47: 拒否は toast で流さずバナーで残す（拒否後は OS がダイアログを出さない＝流れると行き止まり）
       if (denied) geoBanner(true, GEO_DENIED_MSG);
     },
-    { enableHighAccuracy: false, timeout: 8000, maximumAge: 60000 }
+    GEO_OPTS
   );
 });
 
@@ -1080,7 +1087,9 @@ function probeGeoIfBannerShown() {
   navigator.geolocation.getCurrentPosition(
     () => geoBanner(false),
     (err) => { if (err && err.code === 1) geoBanner(true, GEO_DENIED_MSG); }, // 一時的な失敗では表示を変えない
-    { enableHighAccuracy: false, timeout: 8000, maximumAge: 600000 } // OS のキャッシュを使う＝復帰のたびに GPS を起こさない
+    // v50: ここも 0（v49 は 600000＝10分キャッシュ）。**拒否中にしか走らない**経路なので即エラーで返り
+    // GPS は起きない。逆にキャッシュを許すと「もう許可された」と誤判定してバナーを消しかねない
+    GEO_OPTS
   );
 }
 function recheckGeoPermission() {
