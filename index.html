@@ -109,6 +109,12 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
   #mic:disabled { background: var(--line); box-shadow: none; cursor: default; }
   @keyframes pulse { 50% { box-shadow: 0 0 0 16px rgb(255 55 95 / .06); } }
   .mic-state { color: var(--sub); font-size: 13px; margin-top: 8px; min-height: 20px; }
+  /* v49「やめる」: 録音中だけ出る。赤いマイクと同じ色の系統で「今の録音を止める操作」だと分かるが、
+     主行動（マイク）より弱い見た目にする（枠線だけ）＝押し間違いで発話を失わないように。 */
+  #micCancel { margin-top: 6px; border: 1px solid #ff375f; border-radius: 999px; padding: 7px 16px;
+    background: transparent; color: #ff375f; font-size: 13px; font-family: inherit; cursor: pointer; }
+  #micCancel:active { opacity: .6; }
+  #micCancel[hidden] { display: none; }
   .transcript { min-height: 24px; text-align: center; color: var(--sub); font-size: 14px; margin: 2px 0 4px; overflow-wrap: anywhere; }
   .transcript .final { color: var(--ink); }
   .notes { text-align: center; font-size: 12px; color: var(--warn); min-height: 18px; margin-bottom: 8px; }
@@ -319,6 +325,9 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
   <div class="mic-wrap">
     <button id="mic" type="button" aria-label="録音">🎤</button>
     <div class="mic-state" id="micState"></div>
+    <!-- v49: 言い間違えに気づいた時の「やめる」（実機FB第31回）。録音中だけ出す。
+         マイクをもう一度押す＝止めて**確定する**なので、言い間違えの取り消しには使えなかった。 -->
+    <button id="micCancel" type="button" hidden>✕ やめる（入力しない）</button>
   </div>
   <div class="transcript" id="transcript"></div>
   <div class="notes" id="notes"></div>
@@ -559,19 +568,19 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
      理由: この版文字列は index.html にしかないが、ロジックは別ファイル＝別キャッシュ。
      付けないと「フッタは新しいのにパーサは古い」という嘘の状態が成立する（v9 で実際に踏んだ）。
      index.html が更新されれば src の URL も変わる → JS も必ず新しく取り直される。 -->
-<script src="engine/settings.js?v=48"></script>
-<script src="engine/schema.js?v=48"></script>
-<script src="engine/parser.js?v=48"></script>
-<script src="engine/dictionary.js?v=48"></script>
-<script src="engine/contract.js?v=48"></script>
-<script src="engine/batch.js?v=48"></script>
-<script src="engine/ai.js?v=48"></script>
-<script src="input/transcriber.js?v=48"></script>
-<script src="adapters/calendar.js?v=48"></script>
-<script src="adapters/records.js?v=48"></script>
+<script src="engine/settings.js?v=49"></script>
+<script src="engine/schema.js?v=49"></script>
+<script src="engine/parser.js?v=49"></script>
+<script src="engine/dictionary.js?v=49"></script>
+<script src="engine/contract.js?v=49"></script>
+<script src="engine/batch.js?v=49"></script>
+<script src="engine/ai.js?v=49"></script>
+<script src="input/transcriber.js?v=49"></script>
+<script src="adapters/calendar.js?v=49"></script>
+<script src="adapters/records.js?v=49"></script>
 <script>
 'use strict';
-const BUILD = 'v48：設定の見た目を修正（ラベルの縦積み）· AI 解釈の自動保存を選べる｜v47：自動保存を3択 · 来歴の1件削除 · 2026-07-21';
+const BUILD = 'v49：録音中の「やめる」· 位置情報の許可を戻った時に見直す｜v48：設定の見た目 · AI解釈の自動保存｜v47：自動保存3択 · 2026-07-21';
 console.log('BUILD:', BUILD);
 document.getElementById('build').textContent = BUILD;
 
@@ -655,6 +664,7 @@ const transcriptEl = document.getElementById('transcript');
 const notesEl = document.getElementById('notes');
 const micBtn = document.getElementById('mic');
 const micState = document.getElementById('micState');
+const micCancelBtn = document.getElementById('micCancel');
 
 function onUtterance(text, meta) {
   // v37: 辞書（言い換え）展開＝**解釈より前**に生テキストへ適用（欄指定「メモ 僕のメールアドレス」でも効く）。
@@ -1008,6 +1018,8 @@ renderHistory();
 // ===== 位置情報（v38・設定オン時のみ）=====
 // 保存時にいた場所を台帳の行に残す。失敗は診断に出す（補助機能＝toast で騒がないが黙って消えない v16）。
 // maximumAge 60s: 1分前の位置で十分（「どこで保存したか」の用途）＝取得が速く電池にも優しい。
+// 拒否バナーの文言は1か所に（保存時・設定オン時・復帰時の3経路が同じことを言う）
+const GEO_DENIED_MSG = '位置情報が許可されていません。「設定を開く」→ 位置情報 を許可してください。保存そのものは今までどおり動きます。';
 function captureGeoFor(recId) {
   if (!navigator.geolocation) { window.__vcNote('位置情報', 'この環境では使えません（geolocation 非対応）'); return; }
   navigator.geolocation.getCurrentPosition(
@@ -1023,7 +1035,7 @@ function captureGeoFor(recId) {
       window.__vcNote('位置情報', `取得できませんでした（code ${err && err.code}: ${err && err.message}）`);
       // v47: 拒否（code 1）は診断に埋めない＝**設定はオンなのに位置が付かない理由**を画面に残す。
       // 一度拒否すると OS はダイアログを二度と出さない＝ここが唯一の復帰導線になる。
-      if (err && err.code === 1) geoBanner(true, '位置情報が許可されていません。「設定を開く」→ 位置情報 を許可してください。保存そのものは今までどおり動きます。');
+      if (err && err.code === 1) geoBanner(true, GEO_DENIED_MSG);
     },
     { enableHighAccuracy: false, timeout: 8000, maximumAge: 60000 }
   );
@@ -1042,11 +1054,45 @@ settings.subscribe((k, v) => {
         ? '⚠ 位置情報が許可されていません'
         : '⚠ 位置情報を取得できませんでした（保存はそのまま動きます）');
       // v47: 拒否は toast で流さずバナーで残す（拒否後は OS がダイアログを出さない＝流れると行き止まり）
-      if (denied) geoBanner(true, '位置情報が許可されていません。「設定を開く」→ 位置情報 を許可してください。保存そのものは今までどおり動きます。');
+      if (denied) geoBanner(true, GEO_DENIED_MSG);
     },
     { enableHighAccuracy: false, timeout: 8000, maximumAge: 60000 }
   );
 });
+
+// v49（実機FB第31回）: 位置情報の許可を**アプリに戻った時に確かめ直す**。
+// 症状:「設定を開く」→ OS で許可 → アプリに戻ってもバナーが消えず位置も付かない（**アプリの開き直しが要った**）。
+// 原因: 許可の状態を「設定を切り替えた瞬間」と「保存時」にしか見ていなかった＝OS 側で変わっても誰も気づかない。
+// 🚫 注意書き（「戻ったら開き直してください」）で済ませない＝**直せる不具合を説明にすり替える**ことになる（v20）。
+// 🚨 確認に getCurrentPosition を無条件で使わない: まだ答えていない人に**不意に許可ダイアログを出す**
+//    （v38 は「設定をオンにした瞬間に一度だけ聞く」と決めた＝原因と結果を繋げるため）。
+//    → 聞かずに状態だけ読める Permissions API を優先し、無い環境では**バナーが出ている時だけ**
+//      （＝既に拒否と分かっていてダイアログは出ない）実測で確かめる。
+let geoPermStatus = null;
+function applyGeoPermState(state) {
+  if (state === 'granted') geoBanner(false);
+  else if (state === 'denied') geoBanner(true, GEO_DENIED_MSG);
+  // 'prompt'（まだ決めていない）は告知することが無い＝何もしない
+}
+function probeGeoIfBannerShown() {
+  const el = document.getElementById('geoBanner');
+  if (!el || !el.classList.contains('show')) return;
+  navigator.geolocation.getCurrentPosition(
+    () => geoBanner(false),
+    (err) => { if (err && err.code === 1) geoBanner(true, GEO_DENIED_MSG); }, // 一時的な失敗では表示を変えない
+    { enableHighAccuracy: false, timeout: 8000, maximumAge: 600000 } // OS のキャッシュを使う＝復帰のたびに GPS を起こさない
+  );
+}
+function recheckGeoPermission() {
+  if (!settings.get('captureLocation') || !navigator.geolocation) return;
+  if (!(navigator.permissions && navigator.permissions.query)) { probeGeoIfBannerShown(); return; }
+  navigator.permissions.query({ name: 'geolocation' }).then((st) => {
+    applyGeoPermState(st.state);
+    if (!geoPermStatus) { geoPermStatus = st; st.onchange = () => applyGeoPermState(st.state); } // 変わった瞬間に反映
+  }).catch(() => probeGeoIfBannerShown()); // geolocation 名に未対応の環境（WKWebView 等）は実測へ
+}
+document.addEventListener('visibilitychange', () => { if (!document.hidden) recheckGeoPermission(); });
+recheckGeoPermission(); // 起動時にも一度＝前回の拒否を引きずったまま黙っていない
 
 const REC_VIEW_KEY = 'vc_recview_v1';
 const recShowPlan = document.getElementById('recShowPlan');
@@ -1770,8 +1816,10 @@ const transcriber = VCTranscriber.createTranscriber({
   onFinal(t, meta) { onUtterance(t, meta); },
   onDebug(msg) { window.__vcDebugNote(`🎙 ${msg}`); }, // Swift 内部の出来事 → 診断（v15）
   onState(s) {
-    micBtn.classList.toggle('listening', s === 'listening');
-    micState.textContent = s === 'listening' ? '聞いています…（もう一度押すと停止）' : '';
+    const on = s === 'listening';
+    micBtn.classList.toggle('listening', on);
+    micState.textContent = on ? '聞いています…（もう一度押すと停止）' : '';
+    micCancelBtn.hidden = !on; // v49: 「やめる」は録音中だけ＝押せる時にだけ在る
   },
   onError(e) {
     if (e === 'no-speech') { micState.textContent = ''; return; } // web の「無言」は正常系
@@ -1800,6 +1848,16 @@ function micOpts() {
 
 if (transcriber.available) {
   micBtn.addEventListener('click', () => transcriber.toggle(micOpts()));
+  // v49: 言い間違えの取り消し。**止めるだけでなく、この発話を解釈へ流さない**（transcriber.cancel）。
+  // 途中結果の表示も消す＝画面から言い間違えが消える。黙って消さないよう toast で告げる（v16）。
+  micCancelBtn.addEventListener('click', () => {
+    if (typeof transcriber.cancel !== 'function') { transcriber.stop(); return; } // 古い転写層でも止まる
+    transcriber.cancel();
+    micCancelBtn.hidden = true;
+    transcriptEl.textContent = '';
+    micState.textContent = '';
+    toast('🎤 やめました（何も入力していません）');
+  });
 } else {
   micBtn.disabled = true;
   micState.textContent = transcriber.nativeFailure

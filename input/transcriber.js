@@ -31,12 +31,17 @@
   // （音声と無関係なフォームが巻き添え＝背骨①「フォームが単一の真実」の違反）。
   // 音声はフォームの補助であって前提ではない。ここは静かに諦めて呼び手に返す。
   function createNative(h, C) {
-    let plugin, listening = false;
+    let plugin, listening = false, cancelled = false;
     try {
       plugin = nativePlugin(C, 'SpeechRecognition');
       if (!plugin) return { failed: 'SpeechRecognition プラグインが native に登録されていません' };
-      plugin.addListener('interim', (d) => h.onInterim(d.text || ''));
+      plugin.addListener('interim', (d) => { if (cancelled) return; h.onInterim(d.text || ''); });
       plugin.addListener('final', (d) => {
+        // v49: 「やめる」を押した発話は解釈へ流さない。**これは v16「黙って捨てない」に反しない**
+        // ＝捨てろと言ったのは人であり、機械が勝手に握り潰しているのではない（呼び手が toast で告げる）。
+        // Swift 側に cancel を足さずに済むのは、確定を**受け取ってから捨てる**形にしたため
+        // ＝native の再ビルド無しでこの機能が成立する（stop は既存メソッド）。
+        if (cancelled) return;
         const meta = { engine: 'sfspeech' };
         if (typeof d.confidence === 'number') meta.confidence = d.confidence;
         if (d.fallback) meta.fallback = true; // isFinal が来ず途中結果で確定した印（v15 の保険）
@@ -58,6 +63,7 @@
       engine: 'sfspeech',
       // opts.silenceMs: 話し終わってから確定するまでの無音（v19 の設定。native へ渡す）
       start(opts) {
+        cancelled = false; // 新しい発話＝前回のキャンセルを引きずらない
         try {
           plugin.start(opts || {}).catch((e) => {
             listening = false;
@@ -74,6 +80,13 @@
         } catch (e) { h.onError((e && e.message) || String(e)); }
       },
       stop() { try { plugin.stop().catch(() => {}); } catch {} },
+      // v49（実機FB第31回「録音中、言い間違えに気が付いたらキャンセルできるボタンが欲しい」）:
+      // stop は「止めて確定する」・cancel は「止めて、この発話を無かったことにする」。**別の操作**。
+      cancel() {
+        cancelled = true;
+        try { plugin.stop().catch(() => {}); } catch {} // 録音そのものは既存の stop で止める
+      },
+      isCancelled: () => cancelled,
       toggle(opts) { listening ? this.stop() : this.start(opts); },
       isListening: () => listening,
       simulate(text) { const t = String(text || '').trim(); if (t) h.onFinal(t, { engine: 'simulated' }); },
@@ -85,14 +98,17 @@
     const SR = global.SpeechRecognition || global.webkitSpeechRecognition;
     let rec = null;
     let listening = false;
+    let cancelled = false;
 
     function start() {
       if (!SR || listening) return;
+      cancelled = false;
       rec = new SR();
       rec.lang = 'ja-JP';
       rec.interimResults = true;
       rec.continuous = false; // 1回の押下 = 1発話。話し終わりで自動停止
       rec.onresult = (e) => {
+        if (cancelled) return; // v49: 「やめる」の後に届いた結果は流さない（abort より後に来る保険）
         let interim = '', final = '', confidence = null;
         for (let i = e.resultIndex; i < e.results.length; i++) {
           const r = e.results[i];
@@ -116,11 +132,20 @@
       if (rec && listening) rec.stop();
     }
 
+    // v49: abort() は「結果を出さずに終わる」＝キャンセルの本来の道具（stop() は最後の結果を確定させる）
+    function cancel() {
+      cancelled = true;
+      if (!rec || !listening) return;
+      try { if (typeof rec.abort === 'function') rec.abort(); else rec.stop(); } catch {}
+    }
+
     return {
       available: !!SR,
       engine: SR ? 'webspeech' : 'none',
       start, // opts（silenceMs 等）は web では効かない＝Web Speech API 側が無音判定を持つ
       stop,
+      cancel,
+      isCancelled: () => cancelled,
       toggle() { listening ? stop() : start(); },
       isListening: () => listening,
       simulate(text) { const t = String(text || '').trim(); if (t) h.onFinal(t, { engine: 'simulated' }); },

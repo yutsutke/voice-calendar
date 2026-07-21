@@ -135,5 +135,62 @@ t('v44: opts 無しでも native の start は呼べる（ヒント無し＝欄�
   });
 });
 
+// ===== v49: 言い間違えの「やめる」（cancel） =====
+// stop は「止めて確定する」・cancel は「止めて、この発話を無かったことにする」＝**別の操作**。
+// 🔑 Swift に cancel を足さずに済ませている（確定を受け取ってから捨てる）＝native の再ビルド無しで成立する。
+//    その代わり **JS 側が確実に捨てること**がこの機能の全てなので、ここで縛る。
+function nativeWithListeners() {
+  const L = {};
+  const plugin = {
+    addListener: (name, fn) => { L[name] = fn; },
+    start: () => Promise.resolve(),
+    stop: () => Promise.resolve(),
+  };
+  return { L, cap: { isNativePlatform: () => true, Plugins: { SpeechRecognition: plugin } } };
+}
+
+t('v49: cancel の後に届いた final は解釈へ流さない（native）', () => {
+  const { L, cap } = nativeWithListeners();
+  withCapacitor(cap, () => {
+    let finals = [], interims = [];
+    const tr = createTranscriber({ onInterim: (t2) => interims.push(t2), onFinal: (t2) => finals.push(t2), onState() {}, onError() {} });
+    tr.start();
+    L.interim({ text: '明日15時に' });
+    tr.cancel();
+    L.interim({ text: '明日15時に歯医者' }); // キャンセル後の途中結果
+    L.final({ text: '明日15時に歯医者' });    // stop の結果として必ず飛んでくる
+    eq(interims, ['明日15時に'], 'キャンセル前の途中結果までは届いている');
+    eq(finals, [], '🔴 キャンセル後の確定は1つも流れない（流れると言い間違えが入る）');
+    ok(tr.isCancelled(), 'キャンセル済みだと分かる');
+  });
+});
+
+t('v49: 次の start でキャンセルは解除される（1回きりの効果）', () => {
+  const { L, cap } = nativeWithListeners();
+  withCapacitor(cap, () => {
+    let finals = [];
+    const tr = createTranscriber({ onInterim() {}, onFinal: (t2) => finals.push(t2), onState() {}, onError() {} });
+    tr.start();
+    tr.cancel();
+    L.final({ text: '捨てられる' });
+    tr.start(); // 言い直し
+    L.final({ text: '明日15時に歯医者' });
+    eq(finals, ['明日15時に歯医者'], '🔴 次の発話まで捨て続けたら音声が死ぬ');
+    ok(!tr.isCancelled(), 'start で解除されている');
+  });
+});
+
+t('v49: cancel は録音を止める（既存の stop を使う＝Swift の追加メソッド不要）', () => {
+  const { cap } = nativeWithListeners();
+  let stopped = 0;
+  cap.Plugins.SpeechRecognition.stop = () => { stopped++; return Promise.resolve(); };
+  withCapacitor(cap, () => {
+    const tr = createTranscriber(H);
+    tr.start();
+    tr.cancel();
+    eq(stopped, 1, 'マイクは実際に止まる（赤いままにしない）');
+  });
+});
+
 console.log(`\ntranscriber.test: ${pass} passed, ${fail} failed`);
 if (failures.length) { console.log('\n' + failures.join('\n\n')); process.exit(1); }
