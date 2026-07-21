@@ -568,19 +568,19 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
      理由: この版文字列は index.html にしかないが、ロジックは別ファイル＝別キャッシュ。
      付けないと「フッタは新しいのにパーサは古い」という嘘の状態が成立する（v9 で実際に踏んだ）。
      index.html が更新されれば src の URL も変わる → JS も必ず新しく取り直される。 -->
-<script src="engine/settings.js?v=50"></script>
-<script src="engine/schema.js?v=50"></script>
-<script src="engine/parser.js?v=50"></script>
-<script src="engine/dictionary.js?v=50"></script>
-<script src="engine/contract.js?v=50"></script>
-<script src="engine/batch.js?v=50"></script>
-<script src="engine/ai.js?v=50"></script>
-<script src="input/transcriber.js?v=50"></script>
-<script src="adapters/calendar.js?v=50"></script>
-<script src="adapters/records.js?v=50"></script>
+<script src="engine/settings.js?v=51"></script>
+<script src="engine/schema.js?v=51"></script>
+<script src="engine/parser.js?v=51"></script>
+<script src="engine/dictionary.js?v=51"></script>
+<script src="engine/contract.js?v=51"></script>
+<script src="engine/batch.js?v=51"></script>
+<script src="engine/ai.js?v=51"></script>
+<script src="input/transcriber.js?v=51"></script>
+<script src="adapters/calendar.js?v=51"></script>
+<script src="adapters/records.js?v=51"></script>
 <script>
 'use strict';
-const BUILD = 'v50：位置情報を切ったら本当に取らない（60秒キャッシュの撤去）｜v49：録音中の「やめる」· 位置の許可を戻った時に見直す｜v48：設定の見た目 · 2026-07-22';
+const BUILD = 'v51：AI 設定の場所とキーの必要を説明に明記（古い記述2つを訂正）｜v50：位置情報の60秒キャッシュ撤去｜v49：録音中の「やめる」 · 2026-07-22';
 console.log('BUILD:', BUILD);
 document.getElementById('build').textContent = BUILD;
 
