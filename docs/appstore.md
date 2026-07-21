@@ -164,3 +164,104 @@ The app is designed for iPhone (on-the-go voice input).
 - [ ] `privacy.html` / `support.html` をデプロイ（= commit/push。公開ページなので**ゆうの了承後**に実施）
 - [ ] スクショ（構成は §9）を用意 — 私はキャプション文の英訳やレイアウト案を出せます
 - [ ] ASC のサブタイトル／キーワード等、§1-3 のドラフトと照合（貼ってもらえれば差分を出します）
+
+---
+
+## 11. 審査対応ログ
+
+### 11-1. 1.0 (12) — Guideline 2.1 Information Needed（2026-07-20 審査 / 07-21 対応）
+
+**指摘（Apple・Review Device: iPad Pro 11-inch (M4)・Submission ID `12b4cfec-5349-4508-83f9-2536402ddc86`）**
+> We need more information to continue the review.
+> 1. Does the app use a native AI agent?
+> 2. Does it rely on a third party AI service? If so what information is sent to whom?
+
+ASC 上のステータスは「**却下済み** / 2.1.0 Performance: App Completeness」。＝**機能の欠陥ではなく情報不足**。
+
+**引き金の推定（重要）**
+- 提出済みの**プライバシーポリシー URL に「AI Integration (Optional, Off by Default)」の節がある**（v40 で追記＝BYOK で Anthropic / Google へ送る記述）。
+- しかし**審査バイナリ 1.0 (12) にその機能は入っていない**（下記のとおりコードが存在しない）。
+- → 審査官がポリシーを読んで矛盾に気づいた、という筋が最も自然。**返信では先回りしてこの矛盾を説明する**。
+
+**返信前に裏取りした事実（推測で答えない）**
+| 主張 | 裏取り方法と結果 |
+|---|---|
+| AI/LLM のコードが無い | `git log --diff-filter=A -- engine/ai.js` → 初出は **v40 (2026-07-19)** ＝提出（07-18）の**翌日**。提出時点 `89d0d13` の JS は parser / schema / settings / transcriber / calendar の**5本のみ** |
+| ネットワーク通信が一切無い | `git grep -E "fetch\(\|XMLHttpRequest\|https?://" 89d0d13 -- index.html engine input adapters` → **ヒット0**。`capacitor.config.json` に `server.url` 無し＝ローカルファイルのみ |
+| 音声認識は Apple の OS 機能 | `SpeechRecognitionPlugin.swift:135-138` ＝ `supportsOnDeviceRecognition` が真なら `requiresOnDeviceRecognition = true` |
+
+**送った返信（英語・Resolution Center）**
+
+```
+Hello,
+
+Thank you for the review. Here are detailed answers to both questions.
+
+1) Does the app use a native AI agent?
+
+No. Build 1.0 (12) contains no AI agent, no LLM, and no machine-learning
+model of my own. It does not use Apple Intelligence or the Foundation
+Models framework, and no ML model is bundled with the app.
+
+The app performs exactly two steps, both on device:
+
+- Speech-to-text: Apple's own SFSpeechRecognizer (Speech framework, ja-JP).
+  The app sets requiresOnDeviceRecognition = true whenever
+  supportsOnDeviceRecognition is true, so recognition runs on device on
+  supported devices and languages. Where on-device recognition is not
+  available, the standard iOS speech API may process the audio through
+  Apple's own speech service. No third party is involved.
+- Interpretation: a deterministic, rule-based Japanese date/time parser
+  that I wrote in JavaScript (for example, "明日15時" becomes tomorrow at
+  15:00). It is plain pattern matching - no model, no inference, no
+  learning - and it runs entirely on device.
+
+2) Does it rely on a third party AI service? If so what information is
+sent to whom?
+
+No. Build 1.0 (12) makes no network requests at all. There is no developer
+server, no analytics or third-party SDK, no account and no login. Nothing
+the user speaks or types leaves the device, except through Apple's own OS
+services: the speech API fallback described above, and EventKit writing the
+event into the user's own calendar. This is why the App Privacy answer is
+"Data Not Collected".
+
+Why my Privacy Policy mentions AI
+
+I believe this is what prompted the question. My Privacy Policy at
+https://yutsutke.github.io/voice-calendar/privacy.html includes a section
+titled "AI Integration (Optional, Off by Default)". That section describes
+a feature of a future update that is NOT part of build 1.0 (12); I
+published the policy text ahead of that update. For full transparency,
+here is how that future feature works:
+
+- It is optional and inactive unless the user enters their own API key
+  (Anthropic or Google Gemini) in the app's settings. Without a key the
+  feature is not offered and no request is ever made.
+- When the user enables and uses it, the text the user typed or dictated
+  is sent directly from the user's device to the provider the user chose,
+  authenticated with the user's own key, in order to parse long free text
+  into draft events. The result is always shown to the user for review
+  before anything is saved.
+- I receive nothing. I operate no server. The API key is stored only on
+  the user's device and is never transmitted to me.
+
+When I submit the version that contains that feature, I will disclose it
+in the App Privacy answers and in the App Review notes accordingly.
+
+Please let me know if anything else would help. I am happy to provide more
+detail or a walkthrough.
+
+Best regards,
+Yusuke Tanaka
+```
+
+**次バージョン（AI 入り＝v36 以降）を提出する時に必ずやること**
+- [ ] **App プライバシーの回答を見直す**（現在「データを収集していません」）。BYOK は利用者の文章が第三者へ渡る＝そのままでよいか要判断。
+- [ ] **第三者 AI へ送る前の明示同意**（ガイドライン 5.1.2 系が 2025 年後半に AI を明記する形へ更新）。本アプリは「自分のキーを入れる」「既定オフ」で実質同意に近いが、**送信前に一文出す**のが安全。
+- [ ] 審査メモ（§8）に追記: 「BYOK＝キーが無ければ一切通信しない。審査時はキー未設定のまま全機能をテスト可能」。
+- [ ] 上の返信で Apple に「次で開示する」と**約束済み**＝守らないと信用を失う。
+
+**教訓**
+- **公開ページ（プライバシーポリシー）は審査対象の一部**。バイナリに無い機能を先回りで書くと、審査官には「申告漏れ」に見える。ポリシーを先出しするなら、**審査メモにも同じことを書いておく**べきだった。
+- 返信の前に**バイナリに何が入っているかを git で確定させた**（ai.js の初出日・grep でネットワーク0）。「たぶん入っていない」で答えると嘘になる。
