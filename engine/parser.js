@@ -49,6 +49,35 @@
     return t;
   }
 
+  // 言い淀み・相づちだけの発話か（v47）。**自動保存の門でだけ使う判定**で、interpret には一切関与しない
+  // ＝発話は今までどおり素通しでタイトルに残る（v7「素通しの痕跡」）。捨てるのではなく「黙って確定しない」。
+  //
+  // なぜ要るか: v47 で「日時を言わなくても自動保存する」を解禁した＝v28 で塞いだ穴が再び開く。
+  //   パーサは意味を判定しない（LLM なし）→「えーっと」もタイトルになり、v27「日時なし→今」で確定し、
+  //   v24「起動＝即録音」と重なると **アプリを開くだけで環境音が予定になる**（保存は不可逆）。
+  //   意味の判定は出来ないが、**言い淀みの定型語そのもの**なら決定的に弾ける。
+  //
+  // 🚨 **完全一致だけ**（部分一致・前方一致にしない）: 日本語は語境界が無いので、部分一致にすると
+  //   「あの店で待ち合わせ」「はいチーズ」のような正当な発話まで殺す＝v22「場所 メモリアルホール」・
+  //   v27「今井さん」と同じ silent wrong answer。**弾く範囲は狭く・確実に**。
+  const FILLER_ONLY = new Set([
+    'えーっと', 'えーと', 'えっと', 'ええと', 'えと', 'えー', 'えっ', 'え',
+    'あのー', 'あのう', 'あの', 'あー', 'ああ', 'あ',
+    'うーん', 'ううん', 'うん', 'うー', 'う',
+    'んー', 'んん', 'ん',
+    'そのー', 'その',
+    'まあ', 'まー', 'ま',
+    'はい', 'ええ', 'ねー', 'ねえ',
+  ]);
+  function isFillerOnly(raw) {
+    let t = normalize(raw);
+    t = t.replace(/ｰ/g, 'ー');                              // 半角長音 ｰ → ー
+    t = t.replace(/[\s、。,.，．!?！？・…「」『』〜]/g, '');       // 記号・空白は中身ではない
+    t = t.replace(/ー{2,}/g, 'ー');                              // 「えーーーっと」→「えーっと」
+    if (!t) return true;                                        // 中身が無い＝確定させるものが無い
+    return FILLER_ONLY.has(t);
+  }
+
   // ---------- 日付ヘルパ（すべて端末ローカル時刻） ----------
   const pad2 = (n) => String(n).padStart(2, '0');
   const fmtDate = (d) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
@@ -487,7 +516,7 @@
     return { patch, notes, normalizedText: text };
   }
 
-  const api = { interpret, normalize };
+  const api = { interpret, normalize, isFillerOnly };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else global.VCParser = api;
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -2,7 +2,7 @@
 // now を固定して純関数 interpret() の入出力だけを検証する（端末 TZ に依存しない
 // よう、期待値もローカル構成の文字列で書く）。
 'use strict';
-const { interpret } = require('../engine/parser.js');
+const { interpret, isFillerOnly } = require('../engine/parser.js');
 
 // 固定の現在時刻: 2026-07-16 (木) 13:43
 const NOW = new Date(2026, 6, 16, 13, 43);
@@ -215,6 +215,48 @@ check('今から1時間 集中', { title: '集中', startDate: '2026-07-16', sta
 // 欄指定も漢数字を受ける（TIME_VALUE_RE は本文と同じ意味論＝v17 の約束）
 check('開始 十時半', { startTime: '10:30' });
 check('終了 午後三時', { endTime: '15:00' });
+
+// ===== 言い淀みだけの発話（v47・isFillerOnly） =====
+// これは **interpret には影響しない**（発話は今までどおり素通しでタイトルに残る）。
+// 使い道は自動保存の門だけ＝v47 で「日時を言わなくても自動保存」を解禁した穴（v28 で塞いだもの）を受け直す。
+// 🚨 **完全一致だけ**が仕様: 部分一致にすると「あの店」「はいチーズ」まで殺す
+//    ＝v22「場所 メモリアルホール」・v27「今井さん」と同じ silent wrong answer。
+function filler(text, expected, why) {
+  const got = isFillerOnly(text);
+  if (got === expected) { pass++; return; }
+  fail++;
+  failures.push(`✗ isFillerOnly(${JSON.stringify(text)})\n    期待 ${expected} / 実際 ${got}${why ? `\n    ${why}` : ''}`);
+}
+
+// 弾く: 言い淀み・相づちそのもの
+filler('えーっと', true);
+filler('えっと', true);
+filler('ええと', true);
+filler('あのー', true);
+filler('あの', true);
+filler('うーん', true);
+filler('んー', true);
+filler('えー', true);
+filler('まあ', true);
+filler('はい', true);
+filler('その', true);
+filler('えーーーっと', true, '長音の伸びは畳んで同一視する（認識器は伸ばし方を揺らす）');
+filler('えーっと。', true, '句読点は中身ではない');
+filler('  あの　', true, '前後の空白・全角空白は中身ではない');
+filler('あー、', true);
+filler('えｰっと', true, '半角長音 ｰ でも同じ（認識器・IME で混ざる）');
+filler('', true, '空＝確定させるものが無い');
+
+// 通す: 中身のある発話（**ここを1つでも落とすと「言ったのに保存されない」になる**）
+filler('あの店で待ち合わせ', false, '🚨 フィラー語で始まる正当な発話を殺さない');
+filler('はいチーズ', false, '🚨 部分一致にしていない証拠');
+filler('まあまあの結果', false);
+filler('うんどう会', false);
+filler('その本を返す', false);
+filler('新宿駅に着いた', false, 'v47 の主役＝日時なしでも自動保存される発話');
+filler('明日15時に歯医者', false);
+filler('えーっと 明日15時 歯医者', false, '言い淀んでから本題を言った発話は通す');
+filler('会議', false);
 
 // ===== 結果 =====
 console.log(`\nparser.test: ${pass} passed, ${fail} failed`);

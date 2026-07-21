@@ -187,6 +187,12 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
   .rec-count { color: var(--sub); font-size: 11px; margin-left: 6px; font-weight: 400; }
 
   /* ---- 来歴の追加要素（v33） ---- */
+  /* v47: 1件削除の × 。リストの .rec-del と同じ見た目（薄いグレーの ×）＝**同じ操作は同じ姿**。
+     行は縦積みなので絶対配置で右上に置き、本文と重ならないよう右に余白を空ける。 */
+  .history-list .h-item { position: relative; padding-right: 26px; }
+  .history-list .h-del { position: absolute; top: 5px; right: -4px; border: none; background: transparent;
+    color: var(--sub); font-size: 13px; cursor: pointer; padding: 2px 6px; font-family: inherit; line-height: 1; }
+  .history-list .h-del:active { opacity: .5; }
   .history-list .h-saved { color: var(--ok); font-size: 12px; margin-top: 2px; }
   .history-list .h-more { margin-top: 8px; padding: 6px 12px; border: 1px solid var(--line); border-radius: 8px;
     background: transparent; color: var(--sub); font-size: 12px; cursor: pointer; font-family: inherit; width: 100%; }
@@ -382,6 +388,15 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
     <button id="permOpen" type="button">設定を開く</button>
   </div>
 
+  <!-- 位置情報の復帰導線（v47・実機FB第29回「一度間違えて許可をしなかった時の挙動がきになります」）。
+       カレンダー（v23）と同じ形。iOS の位置情報ダイアログも初回の一度きり＝拒否されるとアプリからは
+       二度と出せず、v46 までは toast と診断パネルにしか出ていなかった＝
+       **設定はオンなのに位置が付かない理由が利用者に見えない**（黙って効かない設定＝最悪の姿）。 -->
+  <div class="perm" id="geoBanner">
+    <span id="geoText">位置情報が許可されていません。</span>
+    <button id="geoOpen" type="button">設定を開く</button>
+  </div>
+
   <!-- 来歴（SPEC §5-①）: 音声の生テキストと解釈結果の記録。
        「言ったのに変な値が入った」の原因切り分け（認識か解釈か）はここを見る。
        v33: リストより上に配置（ユーザー要望）・直近5件だけ表示（残りは「もっと見る」）・
@@ -491,43 +506,44 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
       <div class="ex-head">📅 予定として使う</div>
       <div class="ex-item">
         <div class="ex-flow">Hey Siri → ボイカレ開いて → 「明日10時 会議」</div>
-        <div class="ex-note">明日10:00・タイトル「会議」でカレンダーに入ります。<br>※詳細設定「話し終わったら自動で保存する」に ☑ が必要。☑ なしの場合は「カレンダーに保存」ボタンを押します。</div>
+        <div class="ex-note">明日10:00・タイトル「会議」でカレンダーに入ります。<br>※詳細設定「話し終わったら自動で保存する」を「日時を言った発話だけ」か「いつでも」に。「しない」の場合は「カレンダーに保存」ボタンを押します。</div>
       </div>
       <div class="ex-item">
         <div class="ex-flow">Hey Siri → ボイカレ開いて → 「明日10時から11時まで会議」</div>
-        <div class="ex-note">開始10:00・終了11:00・タイトル「会議」で入ります。※☑ の要否は上と同じ。</div>
+        <div class="ex-note">開始10:00・終了11:00・タイトル「会議」で入ります。※自動保存の設定は上と同じ。</div>
       </div>
       <div class="ex-item">
         <div class="ex-flow">Hey Siri → ボイカレ開いて → 「明日10時 会議」→「場所 丸の内」→「タイトル 経営会議」→「終了時間 11時」→「メモ 資料を事前受け取り」→ 保存ボタン</div>
-        <div class="ex-note">1発話につき1項目ずつ直して組み立てる使い方。<br>※この使い方では自動保存の ☑ を<b>外す</b>必要があります（☑ があると最初の発話で先に保存されます）。</div>
+        <div class="ex-note">1発話につき1項目ずつ直して組み立てる使い方。<br>※この使い方では自動保存を<b>「しない」</b>にする必要があります（自動保存が効いていると最初の発話で先に保存されます）。</div>
       </div>
       <div class="ex-item">
         <div class="ex-flow">Hey Siri → ボイカレ開いて → 「30分後に会議」</div>
-        <div class="ex-note">「30分後に会議が始まる」予定。開始＝今から30分後・終了＝その1時間後（詳細設定「終了を言わなかった時の長さ」で変更可）・タイトル「会議」。開始が未来なので📅予定。※自動保存に ☑ が必要。</div>
+        <div class="ex-note">「30分後に会議が始まる」予定。開始＝今から30分後・終了＝その1時間後（詳細設定「終了を言わなかった時の長さ」で変更可）・タイトル「会議」。開始が未来なので📅予定。※自動保存の設定が必要（「日時を言った発話だけ」で入ります）。</div>
       </div>
       <div class="ex-head">📝 記録として使う</div>
       <div class="ex-item">
         <div class="ex-flow">Hey Siri → ボイカレ開いて → 「現在 新宿駅に着いた」</div>
-        <div class="ex-note">今の日時・タイトル「新宿駅に着いた」で入ります。※自動保存に ☑ が必要。<br><span class="ex-tip">💡「今」より「現在」の方が確実に入ります（「今」は後ろに区切りが無いと日時になりません）。</span></div>
+        <div class="ex-note">今の日時・タイトル「新宿駅に着いた」で入ります。※自動保存の設定が必要（「日時を言った発話だけ」で入ります）。<br><span class="ex-tip">💡「今」より「現在」の方が確実に入ります（「今」は後ろに区切りが無いと日時になりません）。</span></div>
       </div>
       <div class="ex-item">
         <div class="ex-flow">Hey Siri → ボイカレ開いて → 「新宿駅に着いた」→ 保存ボタン</div>
-        <div class="ex-note">日時を言わなかった発話は、保存ボタンで「今の日時」として入ります。<br>※日時を言っていない発話は、自動保存の ☑ があっても自動では入りません（フォームに残る＝ボタンで保存）。</div>
+        <div class="ex-note">日時を言わなかった発話は、保存ボタンで「今の日時」として入ります。<br>※自動保存を<b>「いつでも」</b>にすると、この発話も今の日時で自動で入ります（v47）。「日時を言った発話だけ」ならフォームに残る＝ボタンで保存。</div>
       </div>
       <div class="ex-item">
         <div class="ex-flow">Hey Siri → ボイカレ開いて → 「現在 業務終了」→「場所 丸の内」→「メモ 直帰します」→ 保存ボタン</div>
-        <div class="ex-note">記録も欄指定で組み立てられます。※この使い方では自動保存の ☑ を<b>外す</b>必要があります。</div>
+        <div class="ex-note">記録も欄指定で組み立てられます。※この使い方では自動保存を<b>「しない」</b>にする必要があります。</div>
       </div>
       <div class="ex-item">
         <div class="ex-flow">Hey Siri → ボイカレ開いて → 「今から3時間開発」</div>
-        <div class="ex-note">開始＝今・終了＝3時間後・タイトル「開発」。開始が今なので📝記録（これから何をするかの時間の記録）。※自動保存に ☑ が必要。</div>
+        <div class="ex-note">開始＝今・終了＝3時間後・タイトル「開発」。開始が今なので📝記録（これから何をするかの時間の記録）。※自動保存の設定が必要（「日時を言った発話だけ」で入ります）。</div>
       </div>
       <div class="ex-item">
         <div class="ex-flow">Hey Siri → ボイカレ開いて → 「今から15時まで作業」</div>
-        <div class="ex-note">開始＝今・終了＝15時・タイトル「作業」・📝記録。※自動保存に ☑ が必要。</div>
+        <div class="ex-note">開始＝今・終了＝15時・タイトル「作業」・📝記録。※自動保存の設定が必要（「日時を言った発話だけ」で入ります）。</div>
       </div>
       <div class="ex-foot">📅予定 と 📝記録 は<b>開始の時刻で自動</b>に分かれます＝開始が未来なら予定、今か過去なら記録（「30分後に会議」は開始が30分後＝未来なので予定、「今から3時間開発」は開始が今なので記録）。</div>
       <div class="ex-foot">保存先を「リスト」「両方」にしている場合は、カレンダーの代わりに／加えてアプリ内のリストに入ります（詳細設定）。Siri で開けるのはアプリ版のみ（この web 版はマイクをタップ）。</div>
+      <div class="ex-foot"><b>自動保存は3段階</b>（詳細設定）＝<b>しない</b>／<b>日時を言った発話だけ</b>（「明日15時に歯医者」「現在 業務終了」）／<b>いつでも</b>（「新宿駅に着いた」も今の日時で入る＝毎回「現在」と言わなくてよい）。「いつでも」は<b>環境音や独り言も入りやすくなります</b>——カレンダーに入れた分はアプリから消せない（追加のみの権限）ので、迷うなら保存先を「リスト」にしておくと1件ずつ消せます。言い淀みだけの発話（「えーっと」）はどの設定でも自動保存しません。</div>
     </div>
   </details>
 
@@ -539,19 +555,19 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
      理由: この版文字列は index.html にしかないが、ロジックは別ファイル＝別キャッシュ。
      付けないと「フッタは新しいのにパーサは古い」という嘘の状態が成立する（v9 で実際に踏んだ）。
      index.html が更新されれば src の URL も変わる → JS も必ず新しく取り直される。 -->
-<script src="engine/settings.js?v=46"></script>
-<script src="engine/schema.js?v=46"></script>
-<script src="engine/parser.js?v=46"></script>
-<script src="engine/dictionary.js?v=46"></script>
-<script src="engine/contract.js?v=46"></script>
-<script src="engine/batch.js?v=46"></script>
-<script src="engine/ai.js?v=46"></script>
-<script src="input/transcriber.js?v=46"></script>
-<script src="adapters/calendar.js?v=46"></script>
-<script src="adapters/records.js?v=46"></script>
+<script src="engine/settings.js?v=47"></script>
+<script src="engine/schema.js?v=47"></script>
+<script src="engine/parser.js?v=47"></script>
+<script src="engine/dictionary.js?v=47"></script>
+<script src="engine/contract.js?v=47"></script>
+<script src="engine/batch.js?v=47"></script>
+<script src="engine/ai.js?v=47"></script>
+<script src="input/transcriber.js?v=47"></script>
+<script src="adapters/calendar.js?v=47"></script>
+<script src="adapters/records.js?v=47"></script>
 <script>
 'use strict';
-const BUILD = 'v46：辞書登録ボタンに色（見落とし対策・音声フラッシュと同じ視覚言語）｜v45：位置と基準の修正｜v44：辞書に登録して保存 · 2026-07-20';
+const BUILD = 'v47：自動保存を3択（日時なしも「いつでも」で入る）· 来歴の1件削除 · 位置情報の許可の直し方｜v46：辞書登録ボタンに色 · 2026-07-21';
 console.log('BUILD:', BUILD);
 document.getElementById('build').textContent = BUILD;
 
@@ -718,7 +734,7 @@ function applyRuleResult({ rule, text, rawText, dictHits, meta, aiFbNote }) {
   const isNew = !targeted && !!settings.get('plainUtteranceIsNew');
   logHistory({ at: Date.now(), text: rawText, dict: dictHits, conf: meta && meta.confidence, fb: !!(meta && meta.fallback), tg: targeted, nw: isNew, aiFb: !!aiFbNote, patch, notes, skipped, cleared, err: null, after: changed ? store.snapshot() : null });
 
-  if (shouldAutoSave({ changed, targeted, notes, patch })) doSave({ auto: true });
+  if (shouldAutoSave({ changed, targeted, notes, patch, text })) doSave({ auto: true });
 }
 
 // ===== v42: 音声 → AI 解釈（設定 voiceAI・既定オフ・要 API キー） =====
@@ -789,19 +805,24 @@ async function interpretByAI({ text, rawText, dictHits, meta, rule, seq }) {
 /// **SPEC §2-4「ノールックの条件＝曖昧さゼロで黙って1個に確定できる時だけ」をそのまま条件にする。**
 /// 保存は不可逆（アプリに読み取り権限が無い＝入った予定はカレンダー側で手で消すしかない）＝
 /// 迷ったら保存しない（人がフォームを見て押せばいい＝失うのは1タップだけ）。
-function shouldAutoSave({ changed, targeted, notes, patch }) {
-  if (!settings.get('autoSaveAfterUtterance')) return false; // 既定オフ
+function shouldAutoSave({ changed, targeted, notes, patch, text }) {
+  const mode = settings.get('autoSaveAfterUtterance'); // v47: 'off' | 'datetime' | 'always'（v46 まで boolean）
+  if (mode === 'off') return false; // 既定
   if (!changed) return false;      // フォームが変わっていない＝空の予定を作らない
   if (targeted) return false;      // 欄指定は**まだ組み立て中**（「場所 立川」で保存したら場所だけの予定が入る）
   if (notes.length) return false;  // 解釈できなかった断片がある＝曖昧＝人に見せる（SPEC §7）
-  // 🔴 **日時を言っていない発話は自動保存しない**（v28 の検証で見つけた穴）:
-  // パーサは意味を判定しない＝「えーっと」もタイトルになり、v27 の「日時を言わなければ今」と
-  // 組み合わさって**今の日時で確定してしまう**（実測: 「えーっと」が自動保存された）。
-  // v24 の「開いた瞬間に録音」と重なると **アプリを開くだけで環境音が予定になる**＝致命的。
-  // → **日時を明示した発話だけ**＝「明日15時に歯医者」「今 牛乳買う」は入る（日時を言う＝意図の表明）。
-  //   「牛乳を買う」だけの発話はフォームに残る＝人が見て保存を押す（失うのは1タップ）。
-  //   v27 の「今/現在」の語彙が、ここで**意図の表明**として効いている。
-  if (!patch.startDate && !patch.startTime) return false;
+  // 🔴 **言い淀みだけの発話は、どのモードでも自動保存しない**（v47）:
+  // パーサは意味を判定しない＝「えーっと」もタイトルになる。v28 では「日時を言った発話だけ」に
+  // 限ることでこれを塞いでいたが、v47 の 'always' はその門を開ける＝ここで受け直す。
+  // 判定は engine の純関数（VCParser.isFillerOnly・完全一致のみ＝正当な発話を殺さない）。
+  // **弾いてもフォームには残る**＝黙って捨てていない（v16）。人が見て保存を押せる。
+  if (VCParser.isFillerOnly(text)) return false;
+  // 日時を言っていない発話をどう扱うか（v28 で塞ぎ、v47 で選べるようにした）:
+  // 'datetime'（v28-v46 の実挙動）= 日時を明示した発話だけ入る。日時を言う＝意図の表明であり、
+  //   v24「起動＝即録音」と重なっても環境音は入らない。「牛乳を買う」はフォームに残る（失うのは1タップ）。
+  // 'always'（v47・実機FB第29回）= メモ用途で毎回「現在」と言う冗長さを外す。**保存は不可逆**なので
+  //   選んだ人だけが引き受ける（保存先を「リスト」にしていれば1件削除できる＝逃げ道がある）。
+  if (mode !== 'always' && !patch.startDate && !patch.startTime) return false;
   return true;
 }
 
@@ -850,7 +871,8 @@ function renderHistory() {
     return;
   }
   const shown = historyShowAll ? h : h.slice(0, HISTORY_VISIBLE); // 直近だけ（v33）
-  for (const e of shown) {
+  // shown は h の先頭からの切り出し＝**添字は h と一致する**（削除はこの添字で行う・v47）
+  shown.forEach((e, idx) => {
     const item = document.createElement('div');
     item.className = 'h-item';
     const line1 = document.createElement('div');
@@ -921,8 +943,18 @@ function renderHistory() {
       undo.addEventListener('click', () => restoreTo(e));
       item.appendChild(undo);
     }
+    // × この行だけ消す（v47・実機FB第29回「来歴、リストどちらも一件ごとの削除機能が欲しい」）。
+    // リストの × と**同じ見た目・同じ位置づけ**にする（新しい語彙を増やさない・v46 の流儀）。
+    // 確認ダイアログは出さない（背骨②）＝消えたことは toast で告げる。
+    const del = document.createElement('button');
+    del.type = 'button';
+    del.className = 'h-del';
+    del.textContent = '×';
+    del.setAttribute('aria-label', 'この発話を来歴から削除');
+    del.addEventListener('click', () => removeHistoryAt(idx, e.text));
+    item.appendChild(del);
     list.appendChild(item);
-  }
+  });
   // v33: 6件目以降は畳んでおく（「基本5件・それ以降は別に」）
   if (h.length > HISTORY_VISIBLE) {
     const more = document.createElement('button');
@@ -932,6 +964,17 @@ function renderHistory() {
     more.addEventListener('click', () => { historyShowAll = !historyShowAll; renderHistory(); });
     list.appendChild(more);
   }
+}
+
+// 来歴から1件だけ消す（v47）。来歴は**発話の記録**であって保存物ではない＝消しても
+// カレンダー/リストの中身には触れない（そう toast で名乗る＝「消えたと思ったら残っていた」を防ぐ）。
+function removeHistoryAt(i, label) {
+  const h = loadHistory();
+  if (!(i >= 0 && i < h.length)) { renderHistory(); return; } // 表示と実体がズレていたら描き直すだけ
+  h.splice(i, 1);
+  try { localStorage.setItem(HISTORY_KEY, JSON.stringify(h)); } catch (e) { toast(`削除に失敗: ${(e && e.message) || e}`); return; }
+  renderHistory();
+  toast(`来歴から「${label || ''}」を削除しました（保存した予定は消えません）`);
 }
 
 // 来歴からの巻き戻し。フォーカスを外してから復元する＝ロック中の欄を描画がスキップして
@@ -962,25 +1005,37 @@ function captureGeoFor(recId) {
   navigator.geolocation.getCurrentPosition(
     (pos) => {
       try {
+        geoBanner(false); // 取れた＝許可されている
         const r = VCRecords.attachGeo(recId, pos.coords.latitude, pos.coords.longitude);
         if (r) { renderRecords(); window.__vcDebugNote(`📍 位置を記録 (${r.lat}, ${r.lng})`); }
         else window.__vcNote('位置情報', '行が見つからず記録できませんでした');
       } catch (e) { window.__vcNote('位置情報', (e && e.message) || String(e)); }
     },
-    (err) => { window.__vcNote('位置情報', `取得できませんでした（code ${err && err.code}: ${err && err.message}）`); },
+    (err) => {
+      window.__vcNote('位置情報', `取得できませんでした（code ${err && err.code}: ${err && err.message}）`);
+      // v47: 拒否（code 1）は診断に埋めない＝**設定はオンなのに位置が付かない理由**を画面に残す。
+      // 一度拒否すると OS はダイアログを二度と出さない＝ここが唯一の復帰導線になる。
+      if (err && err.code === 1) geoBanner(true, '位置情報が許可されていません。「設定を開く」→ 位置情報 を許可してください。保存そのものは今までどおり動きます。');
+    },
     { enableHighAccuracy: false, timeout: 8000, maximumAge: 60000 }
   );
 }
 // 設定をオンにした瞬間に一度だけ権限を確かめる＝原因と結果が目の前で繋がる
 // （初回の許可ダイアログが「次の保存時」に突然出ると、何のための許可か分からない）
 settings.subscribe((k, v) => {
-  if (k !== 'captureLocation' || v !== true) return;
+  if (k !== 'captureLocation') return;
+  if (v !== true) { geoBanner(false); return; } // オフにした＝もう関係ない告知は消す（v47）
   if (!navigator.geolocation) { toast('この環境では位置情報を使えません'); return; }
   navigator.geolocation.getCurrentPosition(
-    () => toast('📍 位置情報を使えます（リストに保存した行に付きます）'),
-    (err) => toast(err && err.code === 1
-      ? '⚠ 位置情報が許可されていません（ブラウザ/OS の設定で許可してください）'
-      : '⚠ 位置情報を取得できませんでした（保存はそのまま動きます）'),
+    () => { geoBanner(false); toast('📍 位置情報を使えます（リストに保存した行に付きます）'); },
+    (err) => {
+      const denied = !!(err && err.code === 1);
+      toast(denied
+        ? '⚠ 位置情報が許可されていません'
+        : '⚠ 位置情報を取得できませんでした（保存はそのまま動きます）');
+      // v47: 拒否は toast で流さずバナーで残す（拒否後は OS がダイアログを出さない＝流れると行き止まり）
+      if (denied) geoBanner(true, '位置情報が許可されていません。「設定を開く」→ 位置情報 を許可してください。保存そのものは今までどおり動きます。');
+    },
     { enableHighAccuracy: false, timeout: 8000, maximumAge: 60000 }
   );
 });
@@ -1907,11 +1962,23 @@ function permBanner(show, msg) {
   el.classList.toggle('show', !!show);
 }
 
-document.getElementById('permOpen').addEventListener('click', async () => {
+/// 位置情報の版（v47）。**カレンダーと同じ形にする**＝拒否は流さず残す。
+/// native の openSettings が開くのは「このアプリの設定ページ」＝カレンダーも位置情報もそこに並ぶ
+/// ＝Swift の追加は不要（既存メソッドをそのまま使える）。
+function geoBanner(show, msg) {
+  const el = document.getElementById('geoBanner');
+  if (!el) return;
+  if (msg) document.getElementById('geoText').textContent = msg;
+  el.classList.toggle('show', !!show);
+}
+
+async function openAppSettings() {
   const adapter = VCAdapter.pickAdapter();
   if (typeof adapter.openSettings !== 'function') { toast('この画面（web）では設定を開けません'); return; }
   try { await adapter.openSettings(); } catch (err) { toast(`設定を開けませんでした: ${(err && err.message) || err}`); }
-});
+}
+document.getElementById('permOpen').addEventListener('click', openAppSettings);
+document.getElementById('geoOpen').addEventListener('click', openAppSettings);
 
 // 拒否は Swift の reject 第2引数 'PERMISSION_DENIED' で来る
 function handleCalendarError(err, prefix) {

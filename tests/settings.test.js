@@ -39,7 +39,7 @@ t('既定値がこれまでの実挙動と一致する（触らない人の体�
   eq(s.get('autoOpenOptional'), true, '任意欄は自動オープン（v1）');
   eq(s.get('defaultDurationMin'), 60, '終了なし→+1時間（v1 の決め打ち）');
   eq(s.get('silenceMs'), 1800, '無音1.8秒（v15/v16 の決め打ち）');
-  eq(s.get('autoSaveAfterUtterance'), false, '🔴 自動保存はオフ＝保存は自分で押す（v27 までの動き）。保存は不可逆なので既定で勝手に入れない');
+  eq(s.get('autoSaveAfterUtterance'), 'off', '🔴 自動保存はしない＝保存は自分で押す（v27 までの動き）。保存は不可逆なので既定で勝手に入れない（v47 で boolean → 3択）');
   eq(s.get('recordDest'), 'calendar', '保存先はカレンダーのみ＝v31 までの動き（v32 のリストは opt-in）');
   eq(s.get('captureLocation'), false, '🔴 位置情報はオフ＝黙って取らない（v38・プライバシーの opt-in）');
   eq(s.get('voiceAI'), false, '🔴 音声のAI解釈はオフ＝音声の核経路はオフライン・決定的のまま（v42・外部送信とコストの opt-in）');
@@ -105,6 +105,33 @@ t('enum（保存先 v32）: 未知の保存値は既定へ・未知の set は�
   s.set('recordDest', '変な値');
   eq(s.get('recordDest'), 'list', '未知値の set は無視（実行中も壊れない）');
   eq(createSettings().get('recordDest'), 'list', '正しい値は保存もされる');
+});
+
+// ===== 自動保存の3択（v47・実機FB第29回「現在と言うのが面倒」） =====
+t('自動保存（v47）: 3択が通り、未知値では壊れない', () => {
+  const s = createSettings();
+  eq(s.get('autoSaveAfterUtterance'), 'off', '既定＝しない');
+  s.set('autoSaveAfterUtterance', 'always');
+  eq(s.get('autoSaveAfterUtterance'), 'always', '「いつでも」が通る');
+  s.set('autoSaveAfterUtterance', 'ときどき');
+  eq(s.get('autoSaveAfterUtterance'), 'always', '未知値の set は無視（実行中も壊れない）');
+  eq(createSettings().get('autoSaveAfterUtterance'), 'always', '保存もされる');
+});
+
+t('🔴 自動保存（v47）: v46 までの boolean を移行する＝使っていた人の自動保存を黙って止めない', () => {
+  // migrate が無いと enum の検証（options に無い値は既定へ）に落ちて off に戻る＝
+  // 「アプリを更新したら自動保存されなくなった」という**気づきにくい退行**になる
+  localStorage.setItem(KEY, JSON.stringify({ autoSaveAfterUtterance: true }));
+  eq(createSettings().get('autoSaveAfterUtterance'), 'datetime', 'true → 日時を言った発話だけ（v28-v46 の実挙動そのもの）');
+  mem.clear();
+  localStorage.setItem(KEY, JSON.stringify({ autoSaveAfterUtterance: false }));
+  eq(createSettings().get('autoSaveAfterUtterance'), 'off', 'false → しない');
+  mem.clear();
+  localStorage.setItem(KEY, JSON.stringify({ autoSaveAfterUtterance: 'always' }));
+  eq(createSettings().get('autoSaveAfterUtterance'), 'always', 'v47 以降の値はそのまま通る');
+  mem.clear();
+  localStorage.setItem(KEY, JSON.stringify({ autoSaveAfterUtterance: 42 }));
+  eq(createSettings().get('autoSaveAfterUtterance'), 'off', '壊れた値は既定へ（黙って壊れない）');
 });
 
 t('未知のキーを set しても壊れない', () => {
