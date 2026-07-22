@@ -56,6 +56,9 @@
       kind: (r.kind === 'plan' || r.kind === 'record') ? r.kind : (startMs > savedAt ? 'plan' : 'record'),
       dest: r.dest === 'both' ? 'both' : 'list', // 台帳に載る＝list か both（calendar はそもそも add しない）
     };
+    // v54: 直した回数（初回保存=1）。壊れた値・欠損は 1 に倒す＝旧レコードもそのまま読める
+    const rv = Math.trunc(num(r.rev, 1));
+    out.rev = Number.isFinite(rv) && rv >= 1 ? rv : 1;
     // 位置情報（v38・任意）: 両方が有限数の時だけ持つ（片方だけ・壊れた値は無かったことに）
     if (Number.isFinite(Number(r.lat)) && Number.isFinite(Number(r.lng))) {
       out.lat = Number(r.lat);
@@ -100,6 +103,7 @@
       // 終日の開始は 0:00 → 「明日 休み」=予定・「今日 休み」=記録（今日は未来ではなく“今”の側）。
       kind: startMs > t ? 'plan' : 'record',
       dest: dest === 'both' ? 'both' : 'list',
+      rev: 1, // v54: 初回保存＝第1版。直すたびに update() が +1 する
     };
     all.push(rec);
     all.sort((a, b) => a.savedAt - b.savedAt); // 上限で落とすのは「最も古く保存したもの」
@@ -107,6 +111,43 @@
     persist(all.slice(-CAP));
     if (dropped) rec.dropped = dropped; // 黙って捨てない（v16）: 呼び出し側が toast で告げる。persist 後の付与＝保存 JSON には入らない
     return rec;
+  }
+
+  // v54: 保存済みの行を直す（実機FB第33回のユーザー要求「あとからまとめてリストや履歴で修正」）。
+  // 直し方は「**フォームに載せて直す**」＝新しい編集画面を作らない（背骨①: フォームが単一の真実。
+  // 声でも直せるのが効く）。ここは台帳側＝**行を差し替える**（ゆう決定: リストは今正しい状態を1つ持つ）。
+  //
+  // 🚨 **カレンダー側は直せない**（write-only＝読めない＝書き換えられない）。だから両方保存だった行は
+  //    呼び出し側が「改正vol{rev}」を付けて**別の予定として追加**し、古い方は人が手で消す（ゆう決定）。
+  //    rev はその番号の出どころ＝ここが版を数える唯一の場所。
+  // 引き継ぐもの: id（リスト上の同一性）／dest（**元がカレンダーにも入ったか**＝更新後の宛先を決める。
+  //    「今の設定」ではない＝設定を変えた後に古い行を直しても宛先が化けない）／位置情報（保存した時にいた場所）。
+  // 付け直すもの: kind（開始を直したら予定/記録も変わる＝add と同じ規則）・savedAt（いつの版か）。
+  function update(id, event, now) {
+    const t = (now && now.getTime) ? now.getTime() : (Number.isFinite(now) ? now : Date.now());
+    const all = loadAll();
+    const i = all.findIndex((r) => r.id === String(id));
+    if (i < 0) return null; // 行が無い（上限で消えた等）＝黙って新規を作らない（v16）。呼び出し側が表に出す
+    const cur = all[i];
+    const startMs = (event && event.start && event.start.getTime) ? event.start.getTime() : cur.startMs;
+    const endMs = (event && event.end && event.end.getTime) ? event.end.getTime() : startMs;
+    const next = {
+      id: cur.id,
+      title: (event && event.title) || '',
+      startMs,
+      endMs,
+      allDay: !!(event && event.allDay),
+      location: (event && event.location) || '',
+      note: (event && event.note) || '',
+      savedAt: t,
+      kind: startMs > t ? 'plan' : 'record',
+      dest: cur.dest,
+      rev: (cur.rev || 1) + 1,
+    };
+    if (Number.isFinite(cur.lat) && Number.isFinite(cur.lng)) { next.lat = cur.lat; next.lng = cur.lng; }
+    all[i] = next;
+    persist(all);
+    return next;
   }
 
   // 時系列（開始 startMs 昇順＝過去→未来）。リストビューが現在位置へスクロールする前提の並び。
@@ -152,7 +193,8 @@
       const v = String(s == null ? '' : s);
       return /[",\r\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
     };
-    const header = ['種類', 'タイトル', '開始日', '開始時刻', '終了日', '終了時刻', '終日', '場所', 'メモ', '保存先', '保存日時', '緯度', '経度'];
+    // v54 の「改訂」は**末尾に足す**＝既存の列位置を動かさない（前に出した CSV と並べて読める）
+    const header = ['種類', 'タイトル', '開始日', '開始時刻', '終了日', '終了時刻', '終日', '場所', 'メモ', '保存先', '保存日時', '緯度', '経度', '改訂'];
     const lines = [header.map(cell).join(',')];
     for (const r of rows || []) {
       lines.push([
@@ -169,6 +211,7 @@
         `${dateS(r.savedAt)} ${timeS(r.savedAt)}`,
         Number.isFinite(r.lat) ? r.lat : '', // 位置情報（v38）: 無い行は空＝創作しない
         Number.isFinite(r.lng) ? r.lng : '',
+        r.rev > 1 ? r.rev : '', // 直していない行は空＝「1」で埋めない（無かったことを列でも創作しない）
       ].map(cell).join(','));
     }
     // BOM: Excel が UTF-8 と認識するため（無いと日本語が化ける）。改行は CRLF（RFC4180）。
@@ -176,7 +219,16 @@
     return '\uFEFF' + lines.join('\r\n') + '\r\n';
   }
 
-  const api = { add, list, remove, clear, attachGeo, toCsv, KEY, CAP };
+  // v54: カレンダーへ「入れ直す」時にだけ付ける版マーク（ゆう決定: **末尾**＝月表示のように幅が
+  // 狭い所でも予定名の先頭が読める）。🚨 **台帳の title には入れない**＝直すたびに
+  // 「会議（改正vol2）（改正vol3）」と積み重なるのを構造的に防ぐ（rev は数字として持つ）。
+  function revTitle(title, rev) {
+    const base = String(title == null ? '' : title);
+    const n = Math.trunc(Number(rev));
+    return (Number.isFinite(n) && n >= 2) ? `${base}（改正vol${n}）` : base;
+  }
+
+  const api = { add, update, list, remove, clear, attachGeo, revTitle, toCsv, KEY, CAP };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else global.VCRecords = api;
 })(typeof window !== 'undefined' ? window : globalThis);

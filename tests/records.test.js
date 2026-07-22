@@ -187,7 +187,7 @@ t('toCsv: BOM で始まり CRLF 区切り・ヘッダ行がある', () => {
   const csv = R.toCsv([]);
   eq(csv.charCodeAt(0), 0xFEFF, '先頭が BOM（無いと Excel で日本語が化ける）');
   const lines = csv.slice(1).split(CRLF);
-  eq(lines[0], '種類,タイトル,開始日,開始時刻,終了日,終了時刻,終日,場所,メモ,保存先,保存日時,緯度,経度');
+  eq(lines[0], '種類,タイトル,開始日,開始時刻,終了日,終了時刻,終日,場所,メモ,保存先,保存日時,緯度,経度,改訂');
   eq(lines[1], '', '末尾は CRLF で終わる（RFC4180）');
 });
 
@@ -197,7 +197,7 @@ t('toCsv: 1行の全列（予定・時刻あり・リスト・位置なし＝末
     allDay: false, location: '駅前', note: '保険証', dest: 'list', savedAt: MS(2026, 7, 19, 9, 5),
   }]);
   eq(csv.slice(1).split(CRLF)[1],
-    '予定,歯医者,2026-07-20,15:00,2026-07-20,16:30,,駅前,保険証,リスト,2026-07-19 09:05,,');
+    '予定,歯医者,2026-07-20,15:00,2026-07-20,16:30,,駅前,保険証,リスト,2026-07-19 09:05,,,');
 });
 
 t('toCsv: 終日は時刻列が空・終日列に○（言っていない時刻を列でも創作しない）', () => {
@@ -206,7 +206,7 @@ t('toCsv: 終日は時刻列が空・終日列に○（言っていない時刻�
     allDay: true, location: '', note: '', dest: 'both', savedAt: MS(2026, 7, 19, 8, 0),
   }]);
   eq(csv.slice(1).split(CRLF)[1],
-    '記録,休み,2026-07-19,,2026-07-19,,○,,,両方,2026-07-19 08:00,,');
+    '記録,休み,2026-07-19,,2026-07-19,,○,,,両方,2026-07-19 08:00,,,');
 });
 
 t('toCsv: 位置情報のある行は緯度・経度列に出る（v38）', () => {
@@ -243,7 +243,7 @@ t('toCsv: list() の実データがそのまま書ける（add → list → toCs
   const line = csv.slice(1).split(CRLF)[1];
   ok(line.startsWith('予定,会議,2026-07-20,10:00,'), `list() の行が出る（実際: ${line}）`);
   ok(line.includes(',丸の内,'), '場所が出る');
-  ok(line.endsWith(',両方,2026-07-19 09:00,,'), '保存先と保存日時が出る（位置なし＝末尾空）');
+  ok(line.endsWith(',両方,2026-07-19 09:00,,,'), '保存先と保存日時が出る（位置なし＝末尾空）');
 });
 
 // ===== 位置情報（v38）=====
@@ -277,6 +277,96 @@ t('位置情報の片方だけ・壊れた保存値は無かったことに（�
   ok(!('lat' in byTitle['A']), '片方欠損は持たない');
   ok(!('lat' in byTitle['B']), '壊れた値は持たない');
   eq(byTitle['C'].lat, 35.6, '正常な行は残る');
+});
+
+// ===== v54: 保存済みの行を直す（update / revTitle）=====
+// カレンダーは読めない＝古い予定を書き換えられない。だからリストは差し替え、カレンダーへは
+// 「改正vol{rev}」を付けて**別の予定として追加**する（ゆう決定）。rev を数えるのはここだけ。
+t('v54: update で行が差し替わり rev が上がる（id は変わらない）', () => {
+  const rec = R.add(ev('会議', 20000), 'both', D(10000));
+  eq(rec.rev, 1, '初回保存は 1');
+  const up = R.update(rec.id, ev('経営会議', 30000), D(15000));
+  eq(up.id, rec.id, '同じ行を差し替える（新しい行を作らない）');
+  eq(up.rev, 2);
+  eq(R.list().length, 1, 'リストは1行のまま');
+  eq(R.list()[0].title, '経営会議');
+  eq(R.list()[0].startMs, 30000);
+  eq(R.list()[0].savedAt, 15000, '直した時刻に更新される（いつの版か）');
+});
+
+t('v54: 何度直しても rev は 1 ずつ増える', () => {
+  const rec = R.add(ev('会議', 20000), 'both', D(10000));
+  eq(R.update(rec.id, ev('a', 20000), D(11000)).rev, 2);
+  eq(R.update(rec.id, ev('b', 20000), D(12000)).rev, 3);
+  eq(R.update(rec.id, ev('c', 20000), D(13000)).rev, 4);
+});
+
+t('🚨 v54: dest は**元の行**を引き継ぐ（今の設定で化けない）', () => {
+  const both = R.add(ev('両方で保存', 20000), 'both', D(10000));
+  const only = R.add(ev('リストだけ', 20000), 'list', D(10001));
+  eq(R.update(both.id, ev('両方で保存2', 20000), D(15000)).dest, 'both', '元がカレンダーにも入った行＝入れ直す');
+  eq(R.update(only.id, ev('リストだけ2', 20000), D(15000)).dest, 'list', '元がリストだけ＝カレンダーには触らない');
+});
+
+t('v54: 開始を直すと kind（予定/記録）も付け直す（add と同じ規則）', () => {
+  const rec = R.add(ev('未来の予定', 90000), 'list', D(10000));
+  eq(rec.kind, 'plan');
+  eq(R.update(rec.id, ev('過去へ移した', 5000), D(50000)).kind, 'record', '開始が過去になったら記録');
+  eq(R.update(rec.id, ev('未来へ戻した', 99000), D(50000)).kind, 'plan');
+});
+
+t('v54: 位置情報は引き継ぐ（保存した時にいた場所＝直しても変わらない）', () => {
+  const rec = R.add(ev('現地', 20000), 'list', D(10000));
+  R.attachGeo(rec.id, 35.681236, 139.767125);
+  const up = R.update(rec.id, ev('現地（直した）', 20000), D(15000));
+  eq(up.lat, 35.68124);
+  eq(up.lng, 139.76713);
+});
+
+t('v54: 行が無い id の update は null（黙って新規を作らない）', () => {
+  R.add(ev('ある行', 20000), 'list', D(10000));
+  eq(R.update('no-such-id', ev('幽霊', 20000), D(15000)), null);
+  eq(R.list().length, 1, '台帳は増えない');
+});
+
+t('v54: 旧レコード（rev 欠損・壊れた値）は 1 として読める', () => {
+  mem.set('vc_records_v1', JSON.stringify([
+    { id: 'a', title: '旧', startMs: 20000, endMs: 20000, savedAt: 10000, dest: 'list' },
+    { id: 'b', title: '壊れ', startMs: 20000, endMs: 20000, savedAt: 10000, dest: 'list', rev: 'あ' },
+    { id: 'c', title: '負', startMs: 20000, endMs: 20000, savedAt: 10000, dest: 'list', rev: -5 },
+  ]));
+  eq(R.list().map((r) => r.rev), [1, 1, 1]);
+  eq(R.update('a', ev('旧を直す', 20000), D(15000)).rev, 2, '欠損からでも 2 になる');
+});
+
+t('🚨 v54: revTitle は台帳の title を汚さない（版マークが積み重ならない）', () => {
+  eq(R.revTitle('会議', 1), '会議', '初回はマークを付けない');
+  eq(R.revTitle('会議', 2), '会議（改正vol2）', '末尾＝月表示でも予定名の先頭が読める（ゆう決定）');
+  eq(R.revTitle('会議', 3), '会議（改正vol3）');
+  const rec = R.add(ev('会議', 20000), 'both', D(10000));
+  const up = R.update(rec.id, ev('会議', 20000), D(15000));
+  eq(up.title, '会議', '台帳の title にマークは入らない＝次に直しても二重にならない');
+  eq(R.revTitle(R.revTitle(up.title, up.rev), up.rev + 1), '会議（改正vol2）（改正vol3）',
+    '※二重に掛ければ当然二重になる＝だから台帳に書き戻さない、が不変条件');
+});
+
+t('v54: revTitle は壊れた rev でも素の title を返す（throw しない）', () => {
+  eq(R.revTitle('会議', undefined), '会議');
+  eq(R.revTitle('会議', 'あ'), '会議');
+  eq(R.revTitle(null, 3), '（改正vol3）', 'タイトル無しは保存側で「予定」が入る＝ここは素直に');
+});
+
+t('v54: CSV の「改訂」列は直した行だけ数字が入る', () => {
+  const a = R.add(ev('直した', 20000), 'list', D(10000));
+  R.add(ev('直してない', 21000), 'list', D(10001));
+  R.update(a.id, ev('直した', 20000), D(15000));
+  const rows = R.list();
+  const lines = R.toCsv(rows).replace(/^﻿/, '').trim().split('\r\n');
+  eq(lines[0].split(',').pop(), '改訂');
+  const byTitle = {};
+  for (const l of lines.slice(1)) { const c = l.split(','); byTitle[c[1]] = c[c.length - 1]; }
+  eq(byTitle['直した'], '2');
+  eq(byTitle['直してない'], '', '直していない行は空＝1 で埋めない');
 });
 
 console.log(`\nrecords.test: ${pass} passed, ${fail} failed`);

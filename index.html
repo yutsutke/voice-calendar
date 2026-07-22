@@ -249,6 +249,22 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
     font-size: 14px; font-weight: 600; padding: 11px 14px; border-radius: 10px; cursor: pointer; white-space: nowrap; }
   .learn-row button:active { opacity: .85; }
   @media (prefers-reduced-motion: reduce) { .learn-row { animation: none; } }
+  /* ---- 保存済みの行を直す（v54）: 今どの行を直しているかと、やめる道 ----
+     🚨 **新しい色・動きの語彙を増やさない**（v46 の判断）。ここは「主行動」ではなく
+     「今どういう状態か」の告知なので、学習行（淡い青＋accent の縦線）とは張り合わせず、
+     既存の枠線＋薄い面（--card / --line）で静かに出す。ボタンも枠線だけ＝保存に主役を譲る。 */
+  .editing-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    margin-top: 16px; padding: 10px 12px; border-radius: 12px;
+    background: var(--card); border: 1px solid var(--line); border-left: 4px solid var(--sub); }
+  .editing-row[hidden] { display: none; }
+  .editing-hint { flex: 1 1 180px; font-size: 12px; color: var(--ink); line-height: 1.5; overflow-wrap: anywhere; }
+  .editing-row button { border: 1px solid var(--line); background: var(--card); color: var(--accent);
+    font-size: 13px; padding: 8px 14px; border-radius: 10px; cursor: pointer; white-space: nowrap; }
+  .editing-row button:active { opacity: .6; }
+  /* リストの ✏️ は × と同じ姿（薄いグレーの記号）＝**同じ場所の同じ種類の操作は同じ見た目**（v47） */
+  .rec-edit { border: none; background: transparent; color: var(--sub); font-size: 13px; cursor: pointer; padding: 2px 4px; align-self: center; }
+  .rec-edit:active { opacity: .5; }
+  .rec-rev { color: var(--sub); font-size: 11px; }
   /* ---- 辞書（v37: 言い回し→実文字列の置き換え） ---- */
   .dict-hint { font-size: 12px; color: var(--sub); padding: 8px 2px; line-height: 1.6; }
   .dict-row { display: flex; align-items: center; gap: 8px; padding: 7px 2px; border-bottom: 1px solid var(--line); font-size: 13px; }
@@ -384,6 +400,15 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
        何が登録されるかは必ず文字で見せる（黙って登録しない＝v16）。学べる差分が無い時は行ごと出ない。
        🔴 v45: **保存ボタンより上**に置く（実機FB第27回「辞書登録がでない」）。フォームを直した直後の
        目線と、保存へ向かう指の間に必ず入る＝スクロールしないと見えない位置に置かない。 -->
+  <!-- v54（実機FB第33回・ユーザー要求「あとからまとめてリストや履歴で修正することが増えそう」）:
+       保存済みの行を **いつものフォームに載せて直す**（新しい編集画面を作らない＝背骨①
+       「フォームが単一の真実」。だから**声でも直せる**）。
+       今どの行を直しているのかと、やめる道を必ず見せる＝黙って編集モードにしない。 -->
+  <div class="editing-row" id="editingRow" hidden>
+    <div class="editing-hint" id="editingHint"></div>
+    <button id="editCancel" type="button">やめる</button>
+  </div>
+
   <div class="learn-row" id="learnRow" hidden>
     <div class="learn-hint" id="learnHint"></div>
     <button id="saveLearn" type="button">🔤 辞書に登録して保存</button>
@@ -568,20 +593,20 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
      理由: この版文字列は index.html にしかないが、ロジックは別ファイル＝別キャッシュ。
      付けないと「フッタは新しいのにパーサは古い」という嘘の状態が成立する（v9 で実際に踏んだ）。
      index.html が更新されれば src の URL も変わる → JS も必ず新しく取り直される。 -->
-<script src="engine/settings.js?v=53"></script>
-<script src="engine/schema.js?v=53"></script>
-<script src="engine/parser.js?v=53"></script>
-<script src="engine/dictionary.js?v=53"></script>
-<script src="engine/contract.js?v=53"></script>
-<script src="engine/batch.js?v=53"></script>
-<script src="engine/ai.js?v=53"></script>
-<script src="input/transcriber.js?v=53"></script>
-<script src="adapters/calendar.js?v=53"></script>
-<script src="adapters/records.js?v=53"></script>
-<script src="adapters/location.js?v=53"></script>
+<script src="engine/settings.js?v=54"></script>
+<script src="engine/schema.js?v=54"></script>
+<script src="engine/parser.js?v=54"></script>
+<script src="engine/dictionary.js?v=54"></script>
+<script src="engine/contract.js?v=54"></script>
+<script src="engine/batch.js?v=54"></script>
+<script src="engine/ai.js?v=54"></script>
+<script src="input/transcriber.js?v=54"></script>
+<script src="adapters/calendar.js?v=54"></script>
+<script src="adapters/records.js?v=54"></script>
+<script src="adapters/location.js?v=54"></script>
 <script>
 'use strict';
-const BUILD = 'v53：まとめて入力の取り込みを自動保存できる（設定・既定オフ）｜v52：位置情報の許可を native から読む｜v51：AI 設定の説明を訂正 · 2026-07-22';
+const BUILD = 'v54：保存済みの行を後から直せる（リストの ✏️ → フォーム → 更新して保存）｜v53：まとめて入力の自動保存｜v52：位置情報の許可を native から読む · 2026-07-22';
 console.log('BUILD:', BUILD);
 document.getElementById('build').textContent = BUILD;
 
@@ -733,7 +758,10 @@ function applyRuleResult({ rule, text, rawText, dictHits, meta, aiFbNote }) {
     // 何も解釈できない発話（咳・雑音など）ではフォームを触らない＝掃除もしない
     toast('解釈できる項目がありませんでした（フォームは手で入力できます）');
   } else {
-    const a = store.applyVoicePatch(patch, text, { targeted });
+    // 🚨 v54: **直している最中は掃除しない**（v6 の言い直しセマンティクスを止める）。
+    // 「直している」は言い直し（＝新規に入れ直す）ではなく差分修正＝v17 の欄指定と同じ論理。
+    // ここで掃除すると「場所 丸の内」と言い足しただけで元の予定のタイトルやメモが消える。
+    const a = store.applyVoicePatch(patch, text, { targeted: targeted || !!editingRec });
     skipped = a.skipped;
     cleared = a.cleared;
   }
@@ -839,6 +867,10 @@ async function interpretByAI({ text, rawText, dictHits, meta, rule, seq }) {
 function shouldAutoSave({ changed, targeted, notes, patch, text }) {
   const mode = settings.get('autoSaveAfterUtterance'); // v47: 'off' | 'datetime' | 'always'（v46 まで boolean）
   if (mode === 'off') return false; // 既定
+  // 🚨 v54: **保存済みの行を直している最中は自動保存しない**。ここで走ると (a) 直しかけの中間状態が
+  // 新規の予定として増え (b)「両方」の行なら**カレンダーに改正volN が発話のたびに積まれる**（不可逆）。
+  // 直しは「更新して保存」を押した時だけ確定する＝押すこと自体が意思表明（v44 と同じ考え）。
+  if (editingRec) return false;
   if (!changed) return false;      // フォームが変わっていない＝空の予定を作らない
   if (targeted) return false;      // 欄指定は**まだ組み立て中**（「場所 立川」で保存したら場所だけの予定が入る）
   if (notes.length) return false;  // 解釈できなかった断片がある＝曖昧＝人に見せる（SPEC §7）
@@ -1198,11 +1230,19 @@ function recItem(r) {
   const title = document.createElement('div');
   title.className = 'rec-title';
   title.textContent = `${r.kind === 'plan' ? '📅' : '📝'} ${r.title}`;
+  // v54: 直した行は版を出す。**台帳の title には入れない**（積み重ならない）＝表示で足す
+  if (r.rev > 1) {
+    const rev = document.createElement('span');
+    rev.className = 'rec-rev';
+    rev.textContent = `（改正vol${r.rev}）`;
+    title.appendChild(rev);
+  }
   main.appendChild(title);
   const subs = [];
   if (r.location) subs.push(`📍${r.location}`);
   if (r.note) subs.push(r.note);
-  if (r.dest === 'both') subs.push('カレンダーにも保存');
+  // v54: 直した行のカレンダー側は「古い版も残っている」＝リストを見て気づけるようにする
+  if (r.dest === 'both') subs.push(r.rev > 1 ? `カレンダーにも保存（古い版が${r.rev - 1}件残っています）` : 'カレンダーにも保存');
   if (subs.length) {
     const sub = document.createElement('div');
     sub.className = 'rec-sub';
@@ -1224,6 +1264,13 @@ function recItem(r) {
       : `https://www.google.com/maps/search/?api=1&query=${r.lat},${r.lng}`;
     main.appendChild(map);
   }
+  // v54: ✏️ でこの行をフォームに載せて直す（× と同じ姿＝同じ場所の同じ種類の操作は同じ見た目）
+  const edit = document.createElement('button');
+  edit.type = 'button';
+  edit.className = 'rec-edit';
+  edit.setAttribute('aria-label', 'この行をフォームに載せて直す');
+  edit.textContent = '✏️';
+  edit.addEventListener('click', () => startEditRecord(r));
   const del = document.createElement('button');
   del.type = 'button';
   del.className = 'rec-del';
@@ -1235,7 +1282,7 @@ function recItem(r) {
     // カレンダー側はアプリから消せない（読めない＝v26）。両方で入れた行は正直にそう言う
     toast(r.dest === 'both' ? 'リストから削除しました（カレンダー側には残っています）' : 'リストから削除しました');
   });
-  item.append(time, main, del);
+  item.append(time, main, edit, del);
   return item;
 }
 for (const el of [recShowPlan, recShowRecord]) {
@@ -2183,8 +2230,17 @@ document.getElementById('settingsReset').addEventListener('click', () => {
 renderSettings();
 
 // 保存ボタンは行き先を名乗る（v32）: 設定が「リスト」なのに「カレンダーに保存」では表示が嘘になる
+// v54: 直している最中の行（null＝通常の新規入力）。**ここで宣言する**＝下の startEditRecord の
+// 近くに置くと、この直後に走る updateSaveLabel() が TDZ（let の初期化前アクセス）で落ちる。
+let editingRec = null;
 function updateSaveLabel() {
   const dest = settings.get('recordDest');
+  // v54: 直している最中は行き先も動きも違う（新規を作らず既存の行を差し替える）＝ラベルもそう言う
+  if (editingRec) {
+    document.getElementById('save').textContent =
+      editingRec.dest === 'both' ? '更新して保存（カレンダーにも追加）' : '更新して保存';
+    return;
+  }
   document.getElementById('save').textContent =
     dest === 'list' ? 'リストに記録' : dest === 'both' ? 'カレンダーとリストに保存' : 'カレンダーに保存';
 }
@@ -2297,7 +2353,120 @@ async function doSave(opts) {
     if (r.toCal) refreshCalendarTarget(); // 初回保存で権限が付いた直後＝ここで初めて保存先が判明する
   }
 }
-document.getElementById('save').addEventListener('click', () => doSave());
+// ===== v54: 保存済みの行を後から直す（実機FB第33回・ユーザー要求） =====
+// 「フォームに載せて直す」＝新しい編集画面を作らない（背骨①: フォームが単一の真実）。
+// **声でも直せる**のがこの形の効き目＝「場所 丸の内」と言えば場所だけ直る（v17 がそのまま働く）。
+//
+// 🚨 カレンダー側は**直せない**（iOS17 write-only＝読めない＝書き換えも削除もできない・v23-v26）。
+//    だから「両方」で保存していた行を直すと、カレンダーには **改正vol{rev} を付けた別の予定**が増え、
+//    古い方は人が手で消す（ゆう決定）。**黙って部分成功にしない**＝toast で必ずそう言う（v16）。
+// ※ 状態 `editingRec` は updateSaveLabel の直前で宣言してある（TDZ 回避）。
+
+function recordToDraft(r) {
+  const p2 = (n) => String(n).padStart(2, '0');
+  const ymd = (ms) => { const d = new Date(ms); return `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}`; };
+  const hm = (ms) => { const d = new Date(ms); return `${p2(new Date(ms).getHours())}:${p2(new Date(ms).getMinutes())}`; };
+  return {
+    title: r.title || '',
+    startDate: ymd(r.startMs),
+    startTime: r.allDay ? '' : hm(r.startMs),   // 終日は時刻を持たない＝言っていない時刻を復元で創作しない
+    endDate: r.allDay ? '' : ymd(r.endMs),
+    endTime: r.allDay ? '' : hm(r.endMs),
+    allDay: !!r.allDay,
+    location: r.location || '',
+    note: r.note || '',
+  };
+}
+
+function startEditRecord(r) {
+  if (!window.VCBatch) { toast('フォームに載せる機能を読み込めていません（詳細は「診断」）'); return; }
+  // 🚨 復元の前にフォーカスを外す（v3/v18）: ロック中の欄は描画がスキップされ、
+  //    ストアと画面がズレたまま保存される事故になる
+  if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+  if (!store.restore(VCBatch.toSnapshot(recordToDraft(r)))) { toast('フォームに載せられませんでした'); return; }
+  editingRec = { id: r.id, dest: r.dest, rev: r.rev || 1, title: r.title };
+  // v44 の「辞書に登録して保存」がそのまま働くように、**読み込んだ時の値**を基準にする
+  // （restore は基準を捨てる＝ここで置き直す）。以後、手で直した欄が学習の候補になる。
+  voiceBaseline = { title: r.title || '', location: r.location || '', note: r.note || '' };
+  document.getElementById('editingRow').hidden = false;
+  document.getElementById('editingHint').textContent =
+    `保存済みの記録を直しています: 「${r.title || '（タイトルなし）'}」`
+    + (r.dest === 'both' ? '／保存するとカレンダーには「改正vol' + ((r.rev || 1) + 1) + '」として追加されます（古い予定は手で消してください）' : '');
+  if (r.location || r.note) document.getElementById('optional').open = true; // 直す対象が見えないまま保存させない
+  updateSaveLabel();
+  refreshLearnRow();
+  document.getElementById('f-title').scrollIntoView({ block: 'center' }); // 欄の id は f- 接頭辞
+  toast('フォームに載せました（声でも直せます）');
+}
+
+function endEditRecord() {
+  editingRec = null;
+  document.getElementById('editingRow').hidden = true;
+  updateSaveLabel();
+}
+
+async function saveEditedRecord() {
+  const target = editingRec;
+  if (!target) return;
+  const now = new Date();
+  const res = VCAdapter.materialize(store.get(), now, { defaultDurationMin: settings.get('defaultDurationMin') });
+  if (!res.ok) { toast(`直せませんでした: ${res.problems.join('・')}`); return; }
+  // 台帳の**現物**を読む（編集中に × で消された・別の版になった、を掴む）
+  const cur = VCRecords.list().find((x) => x.id === target.id);
+  if (!cur) {
+    toast('この行はもうリストにありません（先に削除されたようです）');
+    endEditRecord();
+    renderRecords();
+    return;
+  }
+  const nextRev = (cur.rev || 1) + 1;
+
+  // ① カレンダー側から（saveDraftCore と同じ順番＝**現実に失敗する方**を先に。
+  //    リスト先行だと、カレンダー失敗→やり直しで rev だけが増えていく）
+  let calMsg = '';
+  if (cur.dest === 'both') {
+    const marked = VCRecords.revTitle(res.event.title, nextRev);
+    const isRecord = res.event.start.getTime() <= now.getTime();
+    const calEvent = Object.assign({}, res.event, { title: isRecord ? `📝 ${marked}` : marked });
+    try {
+      await VCAdapter.pickAdapter().save(calEvent);
+      permBanner(false);
+      calMsg = `／カレンダーに「${marked}」を追加しました（古い予定はカレンダーアプリで消してください）`;
+    } catch (err) {
+      handleCalendarError(err, '修正した予定をカレンダーに入れられませんでした');
+      window.__vcNote('保存済みの修正', `カレンダーへの追加に失敗＝リストも変えずに戻ります: ${(err && err.message) || err}`);
+      return; // 何も書き換えずに戻る＝フォームの内容は残る（作業を捨てない）
+    }
+  }
+
+  // ② リスト（台帳）を差し替え＝ここが「今正しい状態」（ゆう決定: リストは1行のまま）
+  let updated = null;
+  try { updated = VCRecords.update(cur.id, res.event, now); }
+  catch (err) {
+    // カレンダーには入った後＝黙って成功にしない（v16）。人が何を直すべきか分かる形で言う
+    window.__vcNote('保存済みの修正', `リストの更新に失敗: ${(err && err.message) || err}`);
+    toast(`⚠ カレンダーには追加しましたが、リストを直せませんでした（${(err && err.message) || err}）`);
+    return;
+  }
+  toast(`✅ リストの記録を直しました（改正vol${updated.rev}）${calMsg}`);
+  endEditRecord();
+  store.reset();
+  transcriptEl.textContent = '';
+  notesEl.textContent = '';
+  document.getElementById('optional').open = false;
+  renderRecords();
+}
+
+document.getElementById('editCancel').addEventListener('click', () => {
+  endEditRecord();
+  store.reset();
+  transcriptEl.textContent = '';
+  notesEl.textContent = '';
+  document.getElementById('optional').open = false;
+  toast('直すのをやめました（リストはそのままです）');
+});
+
+document.getElementById('save').addEventListener('click', () => (editingRec ? saveEditedRecord() : doSave()));
 
 // ===== v44: 「辞書に登録して保存」（実機FB第26回・ユーザー設計） =====
 // 音声が書いたテキスト欄を人が直した時だけ、2つ目の保存ボタンを出す。
@@ -2372,6 +2541,7 @@ document.getElementById('saveLearn').addEventListener('click', () => {
 });
 
 document.getElementById('clear').addEventListener('click', () => {
+  if (editingRec) endEditRecord(); // v54: 直すのをやめる＝クリアは「今の入力を捨てる」＝同じ意味
   store.reset();
   transcriptEl.textContent = '';
   notesEl.textContent = '';
