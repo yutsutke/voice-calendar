@@ -6,7 +6,7 @@
   "type": "commonjs",
   "scripts": {
     "serve": "python -m http.server 5275",
-    "test": "node tests/parser.test.js && node tests/schema.test.js && node tests/settings.test.js && node tests/dictionary.test.js && node tests/batch.test.js && node tests/ai.test.js && node tests/transcriber.test.js && node tests/calendar.test.js && node tests/records.test.js && node tests/version.test.js",
+    "test": "node tests/parser.test.js && node tests/schema.test.js && node tests/settings.test.js && node tests/dictionary.test.js && node tests/batch.test.js && node tests/ai.test.js && node tests/transcriber.test.js && node tests/calendar.test.js && node tests/records.test.js && node tests/location.test.js && node tests/version.test.js",
     "sync:web": "node scripts/sync-web.mjs",
     "cap:copy": "npm run sync:web && cap copy",
     "cap:sync": "npm run sync:web && cap sync",
@@ -26,6 +26,7 @@
     "@capacitor/core": "^8.3.4",
     "@capacitor/ios": "^8.3.4",
     "calendar-events": "file:./local-plugins/calendar-events",
+    "device-location": "file:./local-plugins/device-location",
     "speech-recognition": "file:./local-plugins/speech-recognition"
   }
 }

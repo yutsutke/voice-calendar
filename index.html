@@ -568,19 +568,20 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
      理由: この版文字列は index.html にしかないが、ロジックは別ファイル＝別キャッシュ。
      付けないと「フッタは新しいのにパーサは古い」という嘘の状態が成立する（v9 で実際に踏んだ）。
      index.html が更新されれば src の URL も変わる → JS も必ず新しく取り直される。 -->
-<script src="engine/settings.js?v=51"></script>
-<script src="engine/schema.js?v=51"></script>
-<script src="engine/parser.js?v=51"></script>
-<script src="engine/dictionary.js?v=51"></script>
-<script src="engine/contract.js?v=51"></script>
-<script src="engine/batch.js?v=51"></script>
-<script src="engine/ai.js?v=51"></script>
-<script src="input/transcriber.js?v=51"></script>
-<script src="adapters/calendar.js?v=51"></script>
-<script src="adapters/records.js?v=51"></script>
+<script src="engine/settings.js?v=52"></script>
+<script src="engine/schema.js?v=52"></script>
+<script src="engine/parser.js?v=52"></script>
+<script src="engine/dictionary.js?v=52"></script>
+<script src="engine/contract.js?v=52"></script>
+<script src="engine/batch.js?v=52"></script>
+<script src="engine/ai.js?v=52"></script>
+<script src="input/transcriber.js?v=52"></script>
+<script src="adapters/calendar.js?v=52"></script>
+<script src="adapters/records.js?v=52"></script>
+<script src="adapters/location.js?v=52"></script>
 <script>
 'use strict';
-const BUILD = 'v51：AI 設定の場所とキーの必要を説明に明記（古い記述2つを訂正）｜v50：位置情報の60秒キャッシュ撤去｜v49：録音中の「やめる」 · 2026-07-22';
+const BUILD = 'v52：位置情報の許可を native（CLLocationManager）から読む＝OS 設定に即追従｜v51：AI 設定の説明を訂正｜v50：位置情報の60秒キャッシュ撤去 · 2026-07-22';
 console.log('BUILD:', BUILD);
 document.getElementById('build').textContent = BUILD;
 
@@ -1017,34 +1018,40 @@ renderHistory();
 // 台帳が読み込めなくても本体（フォーム・保存）は殺さない（v13: 補助機能の失敗が本体を殺さない）。
 // ===== 位置情報（v38・設定オン時のみ）=====
 // 保存時にいた場所を台帳の行に残す。失敗は診断に出す（補助機能＝toast で騒がないが黙って消えない v16）。
-// 🔴 **maximumAge は 0**（v50・実機で実証した defect の修正）: v38 は `maximumAge: 60000` にしていた
-//   ＝「1分前の位置で十分・取得が速く電池にも優しい」。しかしそれは **OS に聞きに行かずキャッシュを返す**
-//   ということで、**利用者が OS 設定で位置情報をオフにしても 60 秒間は位置が記録され続けた**
-//   （実機FB第32回で観測 → 「2分待てば付かない」で原因を確定＝許可判定そのものは効いていた）。
-//   v38 で決めた「位置は黙って取らない（既定オフ・opt-in）」という約束を 60 秒ぶん破っていた＝
-//   **速さと電池は、切ったのに記録される、と引き換えにしてよいものではない**。
-//   0 にしても保存はブロックしない（v38 の非同期設計）＝遅くなるのは「行に位置が付く瞬間」だけ。
-const GEO_OPTS = { enableHighAccuracy: false, timeout: 8000, maximumAge: 0 };
+//
+// 🔴 **取得も許可状態も adapters/location.js 経由**（v52・実機FB第33回）＝ native は
+//   CLLocationManager（Swift）・web は navigator.geolocation。native で web の geolocation を
+//   使うと、**WKWebView がプロセス内に握った古い許可状態**しか返らない
+//   ＝「OS 設定でオンに戻してもアプリを開き直すまで反映されない」（ゆう観察）。
+//   v49 は「戻った時に聞き直す」配線を足したが、**聞く相手が古かった**＝直らなかった。
+//   理由と設計の全文は adapters/location.js 冒頭。
+// ※ v50 の maximumAge:0（オフにしたら本当に取らない）はアダプタ側の GEO_OPTS に移した
+//   ＝「速さと電池は、切ったのに記録される、と引き換えにしてよいものではない」は不変。
+const VCLoc = (window.VCLocation && window.VCLocation.create) ? window.VCLocation.create() : null;
+window.__vcDebugNote(`📍 位置エンジン: ${VCLoc ? VCLoc.engine : 'なし'}`
+  + ((VCLoc && VCLoc.nativeFailure()) ? ` / native 失敗: ${VCLoc.nativeFailure()}` : ''));
 // 拒否バナーの文言は1か所に（保存時・設定オン時・復帰時の3経路が同じことを言う）
 const GEO_DENIED_MSG = '位置情報が許可されていません。「設定を開く」→ 位置情報 を許可してください。保存そのものは今までどおり動きます。';
+const geoUsable = () => !!(VCLoc && VCLoc.engine !== 'none');
 function captureGeoFor(recId) {
-  if (!navigator.geolocation) { window.__vcNote('位置情報', 'この環境では使えません（geolocation 非対応）'); return; }
-  navigator.geolocation.getCurrentPosition(
-    (pos) => {
+  if (!geoUsable()) { window.__vcNote('位置情報', 'この環境では使えません（geolocation 非対応）'); return; }
+  VCLoc.getCurrent().then(
+    (p) => {
       try {
-        geoBanner(false); // 取れた＝許可されている
-        const r = VCRecords.attachGeo(recId, pos.coords.latitude, pos.coords.longitude);
+        applyGeoPermState('granted', '取得成功'); // 取れた＝許可されている
+        const r = VCRecords.attachGeo(recId, p.lat, p.lng);
         if (r) { renderRecords(); window.__vcDebugNote(`📍 位置を記録 (${r.lat}, ${r.lng})`); }
         else window.__vcNote('位置情報', '行が見つからず記録できませんでした');
       } catch (e) { window.__vcNote('位置情報', (e && e.message) || String(e)); }
     },
     (err) => {
       window.__vcNote('位置情報', `取得できませんでした（code ${err && err.code}: ${err && err.message}）`);
-      // v47: 拒否（code 1）は診断に埋めない＝**設定はオンなのに位置が付かない理由**を画面に残す。
+      // v47: 拒否は診断に埋めない＝**設定はオンなのに位置が付かない理由**を画面に残す。
       // 一度拒否すると OS はダイアログを二度と出さない＝ここが唯一の復帰導線になる。
-      if (err && err.code === 1) geoBanner(true, GEO_DENIED_MSG);
-    },
-    GEO_OPTS
+      // v52: native は prompt（まだ答えていない）と denied を区別できる＝**拒否の時だけ**出す
+      //      ＝まだ聞いていない人を拒否扱いして脅かさない。
+      if (err && err.permission === 'denied') applyGeoPermState('denied', '取得失敗');
+    }
   );
 }
 // 設定をオンにした瞬間に一度だけ権限を確かめる＝原因と結果が目の前で繋がる
@@ -1052,56 +1059,63 @@ function captureGeoFor(recId) {
 settings.subscribe((k, v) => {
   if (k !== 'captureLocation') return;
   if (v !== true) { geoBanner(false); return; } // オフにした＝もう関係ない告知は消す（v47）
-  if (!navigator.geolocation) { toast('この環境では位置情報を使えません'); return; }
-  navigator.geolocation.getCurrentPosition(
-    () => { geoBanner(false); toast('📍 位置情報を使えます（リストに保存した行に付きます）'); },
-    (err) => {
-      const denied = !!(err && err.code === 1);
-      toast(denied
-        ? '⚠ 位置情報が許可されていません'
-        : '⚠ 位置情報を取得できませんでした（保存はそのまま動きます）');
+  if (!geoUsable()) { toast('この環境では位置情報を使えません'); return; }
+  VCLoc.requestPermission().then((state) => {
+    if (state === 'granted') {
+      applyGeoPermState('granted', '設定オン');
+      toast('📍 位置情報を使えます（リストに保存した行に付きます）');
+      return;
+    }
+    if (state === 'denied') {
+      toast('⚠ 位置情報が許可されていません');
       // v47: 拒否は toast で流さずバナーで残す（拒否後は OS がダイアログを出さない＝流れると行き止まり）
-      if (denied) geoBanner(true, GEO_DENIED_MSG);
-    },
-    GEO_OPTS
-  );
+      applyGeoPermState('denied', '設定オン');
+      return;
+    }
+    toast('⚠ 位置情報を取得できませんでした（保存はそのまま動きます）');
+  });
 });
 
-// v49（実機FB第31回）: 位置情報の許可を**アプリに戻った時に確かめ直す**。
-// 症状:「設定を開く」→ OS で許可 → アプリに戻ってもバナーが消えず位置も付かない（**アプリの開き直しが要った**）。
-// 原因: 許可の状態を「設定を切り替えた瞬間」と「保存時」にしか見ていなかった＝OS 側で変わっても誰も気づかない。
-// 🚫 注意書き（「戻ったら開き直してください」）で済ませない＝**直せる不具合を説明にすり替える**ことになる（v20）。
-// 🚨 確認に getCurrentPosition を無条件で使わない: まだ答えていない人に**不意に許可ダイアログを出す**
+// v49（実機FB第31回）→ **v52 で聞く相手を native へ替えた**（実機FB第33回）:
+// 位置情報の許可を**アプリに戻った時に確かめ直す**。
+// 症状:「設定を開く」→ OS で許可 → アプリに戻ってもバナーが消えず位置も付かない（**開き直しが要った**）。
+// 🚫 注意書き（「戻ったら開き直してください」）で済ませない＝**直せる不具合を説明にすり替える**（v20）。
+// 🚨 確認に位置取得を無条件で使わない: まだ答えていない人に**不意に許可ダイアログを出す**
 //    （v38 は「設定をオンにした瞬間に一度だけ聞く」と決めた＝原因と結果を繋げるため）。
-//    → 聞かずに状態だけ読める Permissions API を優先し、無い環境では**バナーが出ている時だけ**
-//      （＝既に拒否と分かっていてダイアログは出ない）実測で確かめる。
-let geoPermStatus = null;
-function applyGeoPermState(state) {
+//    → 聞かずに状態だけ読める経路を優先（native=CLLocationManager / web=Permissions API）し、
+//      どちらも読めない環境でだけ**バナーが出ている時に限って**実測する。
+let geoLastState = null;
+function applyGeoPermState(state, how) {
+  // 🔍 v49 にはこの痕跡が無く、実機で「どちらの経路がどう答えたか」を誰も見られなかった
+  //    ＝ 数字と経路を診断に出す（v16）。次に同じ疑いが出た時、推測でなく記録で判定できる。
+  if (state !== geoLastState) {
+    geoLastState = state;
+    window.__vcDebugNote(`📍 許可状態 ${state}（${how}／${(VCLoc && VCLoc.detail()) || '-'}）`);
+  }
   if (state === 'granted') geoBanner(false);
   else if (state === 'denied') geoBanner(true, GEO_DENIED_MSG);
-  // 'prompt'（まだ決めていない）は告知することが無い＝何もしない
+  // 'prompt'（まだ決めていない）・'unknown'（読めない）は告知することが無い＝何もしない
 }
 function probeGeoIfBannerShown() {
   const el = document.getElementById('geoBanner');
   if (!el || !el.classList.contains('show')) return;
-  navigator.geolocation.getCurrentPosition(
-    () => geoBanner(false),
-    (err) => { if (err && err.code === 1) geoBanner(true, GEO_DENIED_MSG); }, // 一時的な失敗では表示を変えない
-    // v50: ここも 0（v49 は 600000＝10分キャッシュ）。**拒否中にしか走らない**経路なので即エラーで返り
-    // GPS は起きない。逆にキャッシュを許すと「もう許可された」と誤判定してバナーを消しかねない
-    GEO_OPTS
+  VCLoc.getCurrent().then(
+    () => applyGeoPermState('granted', '実測'),
+    // 一時的な失敗では表示を変えない（拒否と分かった時だけ）
+    (err) => { if (err && err.permission === 'denied') applyGeoPermState('denied', '実測'); }
   );
 }
-function recheckGeoPermission() {
-  if (!settings.get('captureLocation') || !navigator.geolocation) return;
-  if (!(navigator.permissions && navigator.permissions.query)) { probeGeoIfBannerShown(); return; }
-  navigator.permissions.query({ name: 'geolocation' }).then((st) => {
-    applyGeoPermState(st.state);
-    if (!geoPermStatus) { geoPermStatus = st; st.onchange = () => applyGeoPermState(st.state); } // 変わった瞬間に反映
-  }).catch(() => probeGeoIfBannerShown()); // geolocation 名に未対応の環境（WKWebView 等）は実測へ
+function recheckGeoPermission(how) {
+  if (!settings.get('captureLocation') || !geoUsable()) return;
+  VCLoc.getPermission().then((state) => {
+    if (state === 'unknown') { probeGeoIfBannerShown(); return; } // 状態を読めない環境だけの保険
+    applyGeoPermState(state, how || '再確認');
+  });
 }
-document.addEventListener('visibilitychange', () => { if (!document.hidden) recheckGeoPermission(); });
-recheckGeoPermission(); // 起動時にも一度＝前回の拒否を引きずったまま黙っていない
+document.addEventListener('visibilitychange', () => { if (!document.hidden) recheckGeoPermission('復帰'); });
+// 変わった瞬間に反映（native=CLLocationManager の delegate / web=PermissionStatus.onchange）
+if (VCLoc) VCLoc.onPermissionChange((state) => applyGeoPermState(state, 'OS 側で変化'));
+recheckGeoPermission('起動'); // 起動時にも一度＝前回の拒否を引きずったまま黙っていない
 
 const REC_VIEW_KEY = 'vc_recview_v1';
 const recShowPlan = document.getElementById('recShowPlan');

@@ -1,0 +1,25 @@
+{
+  "name": "device-location",
+  "version": "0.0.1",
+  "description": "Local Capacitor plugin: CLLocationManager で許可状態と現在地を取る（iOS）。WKWebView の geolocation はプロセス内に古い許可状態を握るため native から読む。voice-calendar 用。",
+  "main": "index.js",
+  "files": [
+    "index.js",
+    "ios/Sources",
+    "Package.swift"
+  ],
+  "keywords": [
+    "capacitor",
+    "plugin",
+    "native",
+    "corelocation"
+  ],
+  "capacitor": {
+    "ios": {
+      "src": "ios"
+    }
+  },
+  "peerDependencies": {
+    "@capacitor/core": ">=8.0.0"
+  }
+}
