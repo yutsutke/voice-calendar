@@ -99,12 +99,13 @@
     return norm;
   }
 
-  // 戻り: { draft, ambiguities, problems } — draft=null はイベントごと除外（理由は problems）
+  // 戻り: { draft, ambiguities, problems, quotes } — draft=null はイベントごと除外（理由は problems）
   function validateEvent(raw) {
     const problems = [];
     let ambiguities = [];
+    let quotes = null; // v56: null = quotes を使っていない応答（従来の JSON）＝出所は不明のまま
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
-      return { draft: null, ambiguities, problems: ['オブジェクトでないため除外しました'] };
+      return { draft: null, ambiguities, problems: ['オブジェクトでないため除外しました'], quotes };
     }
     const draft = emptyDraft();
     for (const key of Object.keys(raw)) {
@@ -112,6 +113,21 @@
       if (key === 'ambiguities') {
         if (Array.isArray(v)) ambiguities = v.filter((s) => typeof s === 'string' && s.trim()).map((s) => s.trim());
         else if (v != null) problems.push('ambiguities が一覧でないため無視しました');
+        continue;
+      }
+      if (key === 'quotes') { // v56（スパン出所追跡 A''）: 出所の引用。壊れた形は明記して無視（黙って捨てない v16）
+        if (v && typeof v === 'object' && !Array.isArray(v)) {
+          quotes = {};
+          for (const qk of Object.keys(v)) {
+            if (!FIELDS.includes(qk)) { problems.push(`quotes の未知の項目「${qk}」を無視しました`); continue; }
+            const qv = v[qk];
+            if (typeof qv !== 'string') { problems.push(`quotes.${qk} が文字列でないため無視しました`); continue; }
+            const qt = qv.replace(INVISIBLE_RE, '').trim();
+            if (qt) quotes[qk] = qt; // 空の引用は「無い」のと同じ（申告として意味を持たない）
+          }
+        } else if (v != null) {
+          problems.push('quotes がオブジェクトでないため無視しました');
+        }
         continue;
       }
       if (key === 'sourceText') continue; // 封筒の欄がイベントに紛れても黙って無視はしない…が実害ゼロなので素通し
@@ -129,33 +145,77 @@
       }
     }
     const hasAny = FIELDS.some((f) => (f === 'allDay' ? draft.allDay === true : draft[f] !== ''));
-    if (!hasAny) return { draft: null, ambiguities, problems: ['内容が空のため除外しました'] };
-    return { draft, ambiguities, problems };
+    if (!hasAny) return { draft: null, ambiguities, problems: ['内容が空のため除外しました'], quotes };
+    return { draft, ambiguities, problems, quotes };
+  }
+
+  // ---------- v56: quote → 出所（スパン出所追跡 A''） ----------
+  // ルール経路（parser v55）と鏡: あちらは span から quote を作る（構造的に一致が保証される）、
+  // こちらは AI の quote を本文の indexOf で検証する（一致しなければ transcript と認めない）。
+  //   - quotes の無い応答 → prov = null ＝出所不明（従来の JSON もそのまま通る・出所を創作しない）
+  //   - quote があり本文で見つかる → transcript（span 付き）
+  //   - quote があるのに本文に無い → inferred に降格＋quoteMisses を数える（言い換えか幻覚＝黙って信じない）
+  //   - quote の無い項目 → inferred（契約の「本文に無い項目は載せない」＝AI 自身の推論申告）
+  //   - 本文（opts.sourceText）が無い時は検証不能: quote 付きは null（不明）・quote 無しは inferred
+  //     （自己申告は本文が無くても意味を持つ）
+  // 🚫 検証の錨は**アプリが自分で持っていた本文だけ**＝封筒の sourceText では検証しない
+  //    （AI 自身が書いた「本文」で AI の引用を検証するのは自己証明＝検証にならない）。
+  // 🚫 不一致は problems に入れない＝pickAutoSavable（v53）の挙動を変えない。quote の不一致が
+  //    実際どのくらい起き・訂正と相関するかは計測（スパン出所追跡 B）の数字を見てから決める
+  //    （v42→v48 と同じ「塞ぐ時は開ける条件を書く」）。
+  function resolveQuotes(quotes, draft, src, counters) {
+    if (!quotes) return null;
+    const prov = {};
+    for (const f of FIELDS) {
+      const filled = f === 'allDay' ? draft.allDay === true : draft[f] !== '' && draft[f] != null;
+      if (!filled) continue;
+      const q = quotes[f];
+      if (!q) {
+        prov[f] = { source: 'inferred', span: null, why: '本文からの引用が無い＝推測・文脈で補ったと申告された値' };
+        continue;
+      }
+      if (src == null) { prov[f] = null; continue; }
+      const i = src.indexOf(q);
+      if (i >= 0) {
+        prov[f] = { source: 'transcript', span: { a: i, b: i + q.length, quote: q } };
+      } else {
+        counters.quoteMisses++;
+        const short = q.length > 40 ? `${q.slice(0, 40)}…` : q;
+        prov[f] = { source: 'inferred', span: null, why: `引用「${short}」が本文に見つからない（言い換えか幻覚）` };
+      }
+    }
+    return prov;
   }
 
   // ---------- 封筒の検証 ----------
   // 入力: JSON 文字列（フェンス・散文・不可視文字に耐える） or パース済みオブジェクト。
-  // 戻り: { ok, events: [{draft, ambiguities, problems}], errors, warnings, dropped }
+  // opts.sourceText（v56・任意）: 解釈元の本文＝quote 検証の錨。アプリが自分で持っていた本文を渡す。
+  // 戻り: { ok, events: [{draft, ambiguities, problems, prov}], errors, warnings, dropped, quoteMisses }
   //   - errors   … 全体が取り込めない理由（ok:false のとき）
   //   - warnings … 取り込めたが知らせるべきこと（20件超の切り捨て・除外したイベントの理由）
-  function parseBatch(input) {
+  //   - quoteMisses … 本文に見つからなかった引用の数（幻覚率の観測点＝診断に出す）
+  function parseBatch(input, opts) {
     const warnings = [];
+    // 不可視文字は両辺から除いて突き合わせる（JSON 側は parseJsonLoose が除去済み＝錨も同じ扱いに）
+    const src = (opts && typeof opts.sourceText === 'string' && opts.sourceText)
+      ? opts.sourceText.replace(INVISIBLE_RE, '')
+      : null;
     let data = input;
     if (typeof input === 'string') {
       const p = parseJsonLoose(input);
-      if (!p.ok) return { ok: false, events: [], errors: [p.error], warnings: [], dropped: 0 };
+      if (!p.ok) return { ok: false, events: [], errors: [p.error], warnings: [], dropped: 0, quoteMisses: 0 };
       data = p.data;
     }
     if (data === null || typeof data !== 'object') {
-      return { ok: false, events: [], errors: ['JSON の中身がオブジェクトではありません'], warnings: [], dropped: 0 };
+      return { ok: false, events: [], errors: ['JSON の中身がオブジェクトではありません'], warnings: [], dropped: 0, quoteMisses: 0 };
     }
     // 封筒 {events:[…]} が正だが、素の配列 […] も受ける（チャット AI は封筒を省くことがある）
     let rawEvents = Array.isArray(data) ? data : data.events;
     if (!Array.isArray(rawEvents)) {
-      return { ok: false, events: [], errors: ['events（予定の一覧）が見つかりません。スキーマどおりの JSON か確認してください'], warnings: [], dropped: 0 };
+      return { ok: false, events: [], errors: ['events（予定の一覧）が見つかりません。スキーマどおりの JSON か確認してください'], warnings: [], dropped: 0, quoteMisses: 0 };
     }
     if (!rawEvents.length) {
-      return { ok: false, events: [], errors: ['予定が1件も入っていません'], warnings: [], dropped: 0 };
+      return { ok: false, events: [], errors: ['予定が1件も入っていません'], warnings: [], dropped: 0, quoteMisses: 0 };
     }
     let dropped = 0;
     if (rawEvents.length > MAX_EVENTS) {
@@ -163,31 +223,35 @@
       warnings.push(`${MAX_EVENTS + 1}件目以降の${dropped}件は取り込みません（一度に${MAX_EVENTS}件まで）`);
       rawEvents = rawEvents.slice(0, MAX_EVENTS);
     }
+    const counters = { quoteMisses: 0 };
     const events = [];
     rawEvents.forEach((raw, i) => {
       const v = validateEvent(raw);
       if (!v.draft) { warnings.push(`${i + 1}件目: ${v.problems.join('・')}`); return; } // カードが無い＝封筒側で知らせる
-      events.push({ draft: v.draft, ambiguities: v.ambiguities, problems: v.problems });
+      const prov = resolveQuotes(v.quotes, v.draft, src, counters);
+      events.push({ draft: v.draft, ambiguities: v.ambiguities, problems: v.problems, prov });
     });
     if (!events.length) {
-      return { ok: false, events: [], errors: ['取り込める予定がありませんでした'].concat(warnings), warnings: [], dropped };
+      return { ok: false, events: [], errors: ['取り込める予定がありませんでした'].concat(warnings), warnings: [], dropped, quoteMisses: counters.quoteMisses };
     }
-    return { ok: true, events, errors: [], warnings, dropped };
+    return { ok: true, events, errors: [], warnings, dropped, quoteMisses: counters.quoteMisses };
   }
 
   // ---------- store.restore へ渡すスナップショット ----------
   // 非空欄だけ confirmed / origin='voice'（音声で入れたのと同じ扱い＝次の素の発話で言い直し掃除(v6)が効く）。
   // ⚠️ allDay は `=== true` の時だけ「入っている」扱い（schema.js の isEmptyVal と鏡）。
   //    false に origin を付けると、次の発話が「前回の終日を空に」という無内容の掃除を来歴に出す。
-  function toSnapshot(draft) {
+  function toSnapshot(draft, provIn) {
     const d = Object.assign(emptyDraft(), draft || {});
-    const fieldState = {}, origin = {};
+    const fieldState = {}, origin = {}, prov = {};
     for (const f of FIELDS) {
       const filled = f === 'allDay' ? d.allDay === true : d[f] !== '' && d[f] != null;
       fieldState[f] = filled ? 'confirmed' : 'empty';
       origin[f] = filled ? 'voice' : null;
+      // v56: 出所も一緒にフォームへ運ぶ（無ければ null＝不明。出所を創作しない）
+      prov[f] = filled && provIn && provIn[f] ? provIn[f] : null;
     }
-    return { draft: d, fieldState, origin };
+    return { draft: d, fieldState, origin, prov };
   }
 
   // ---------- 音声AI経路（v42）: 1件の draft → applyVoicePatch の patch ----------
@@ -235,6 +299,7 @@
           draft: Object.assign(emptyDraft(), e.draft),
           ambiguities: Array.isArray(e.ambiguities) ? e.ambiguities.filter((s) => typeof s === 'string') : [],
           problems: Array.isArray(e.problems) ? e.problems.filter((s) => typeof s === 'string') : [],
+          prov: (e.prov && typeof e.prov === 'object' && !Array.isArray(e.prov)) ? e.prov : null, // v56: 無い行は不明
           addedAt: typeof e.addedAt === 'number' ? e.addedAt : 0,
         }));
     } catch { return []; }
@@ -254,6 +319,7 @@
       draft: Object.assign(emptyDraft(), e.draft),
       ambiguities: Array.isArray(e.ambiguities) ? e.ambiguities : [],
       problems: Array.isArray(e.problems) ? e.problems : [],
+      prov: (e.prov && typeof e.prov === 'object' && !Array.isArray(e.prov)) ? e.prov : null, // v56
       addedAt: t,
     }));
     persistStage(cur.concat(added));
@@ -301,6 +367,7 @@
       '- 本文に書かれていない項目は入れない（推測で補わない・創作しない）。',
       '- 相対的な日時（明日・来週金曜 など）は上の現在日時を基準に具体的な日付へ直す。',
       '- 読み取りに確信が持てない項目は、最も自然な解釈を入れた上で、その予定の ambiguities に理由を日本語で書く。',
+      '- 値を入れた各項目について、根拠になった本文の言葉を quotes に一字一句そのまま抜き出して入れる（本文に無い項目・推測で補った項目は quotes に載せない）。',
       `- 予定は本文に書かれた順に events に並べる（最大${MAX_EVENTS}件）。`,
       '',
       'スキーマ（JSON Schema）:',

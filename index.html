@@ -593,20 +593,20 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
      理由: この版文字列は index.html にしかないが、ロジックは別ファイル＝別キャッシュ。
      付けないと「フッタは新しいのにパーサは古い」という嘘の状態が成立する（v9 で実際に踏んだ）。
      index.html が更新されれば src の URL も変わる → JS も必ず新しく取り直される。 -->
-<script src="engine/settings.js?v=55"></script>
-<script src="engine/schema.js?v=55"></script>
-<script src="engine/parser.js?v=55"></script>
-<script src="engine/dictionary.js?v=55"></script>
-<script src="engine/contract.js?v=55"></script>
-<script src="engine/batch.js?v=55"></script>
-<script src="engine/ai.js?v=55"></script>
-<script src="input/transcriber.js?v=55"></script>
-<script src="adapters/calendar.js?v=55"></script>
-<script src="adapters/records.js?v=55"></script>
-<script src="adapters/location.js?v=55"></script>
+<script src="engine/settings.js?v=56"></script>
+<script src="engine/schema.js?v=56"></script>
+<script src="engine/parser.js?v=56"></script>
+<script src="engine/dictionary.js?v=56"></script>
+<script src="engine/contract.js?v=56"></script>
+<script src="engine/batch.js?v=56"></script>
+<script src="engine/ai.js?v=56"></script>
+<script src="input/transcriber.js?v=56"></script>
+<script src="adapters/calendar.js?v=56"></script>
+<script src="adapters/records.js?v=56"></script>
+<script src="adapters/location.js?v=56"></script>
 <script>
 'use strict';
-const BUILD = 'v55：欄の出所（発話のどの言葉から・確定か推論か）を記録＝スパン出所追跡｜v54：保存済みの行を後から直せる｜v53：まとめて入力の自動保存 · 2026-07-22';
+const BUILD = 'v56：AI の解釈にも出所（引用の検証＝本文に無い引用は幻覚として検出）｜v55：欄の出所（スパン）を記録｜v54：保存済みの行を後から直せる · 2026-07-22';
 console.log('BUILD:', BUILD);
 document.getElementById('build').textContent = BUILD;
 
@@ -744,6 +744,14 @@ function showNotes(notes, dictHits) {
   notesEl.textContent = parts.join(' ／ ');
 }
 
+// v55/v56: 出所の痕跡を診断へ（数字を診断に出す v16）。ルール経路と AI 経路で同じ見た目。
+// 画面での強調は計測（スパン出所追跡 B）の数字が出てから＝作らない。
+function noteProvDiag(patch, prov) {
+  const marks = Object.keys(patch).map((f) => { const p = prov && prov[f]; return `${f}=${!p ? '?' : p.source === 'inferred' ? '推' : '確'}`; });
+  const whys = Object.keys(patch).map((f) => prov && prov[f] && prov[f].why).filter(Boolean);
+  window.__vcDebugNote(`📎 出所 ${marks.join(' ')}${whys.length ? `｜${whys.join('／')}` : ''}`);
+}
+
 // 解釈結果（ルール）の適用＋来歴＋自動保存判定（v42 で onUtterance から分離＝AI 失敗時の受け皿と共用。
 // aiFbNote なしの経路は v41 までの挙動と同一）。
 // aiFbNote: AI 失敗→ルールで代替した印（v42）。notes に混ぜる＝**自動保存の門も自動的に閉まる**
@@ -764,10 +772,7 @@ function applyRuleResult({ rule, text, rawText, dictHits, meta, aiFbNote }) {
     const a = store.applyVoicePatch(patch, text, { targeted: targeted || !!editingRec, prov: rule.prov });
     skipped = a.skipped;
     cleared = a.cleared;
-    // v55: 出所の痕跡を診断へ（数字を診断に出す v16）。画面での強調は計測（スパン出所追跡 B）の数字が出てから
-    const marks = Object.keys(patch).map((f) => { const p = rule.prov && rule.prov[f]; return `${f}=${!p ? '?' : p.source === 'inferred' ? '推' : '確'}`; });
-    const whys = Object.keys(patch).map((f) => rule.prov && rule.prov[f] && rule.prov[f].why).filter(Boolean);
-    window.__vcDebugNote(`📎 出所 ${marks.join(' ')}${whys.length ? `｜${whys.join('／')}` : ''}`);
+    noteProvDiag(patch, rule.prov);
   }
   // 🔴 v20（実機FB）: 来歴に積むのは **この発話を適用した「後」の状態**。
   // v18 は「前」の状態を積んでいたため、行に「飲み会」と表示されているのに ↩ を押すと
@@ -794,9 +799,13 @@ async function interpretByAI({ text, rawText, dictHits, meta, rule, seq }) {
   try {
     const system = VCBatch.buildPrompt({ now: new Date(), schema: VCContract.SCHEMA });
     const resText = await VCAI.interpretLongText(text, { system, timeoutMs: 12000 });
-    const r = VCBatch.parseBatch(resText);
+    const r = VCBatch.parseBatch(resText, { sourceText: text }); // v56: 発話が quote 検証の錨
     if (!r.ok) aiErr = r.errors.join('／');
-    else { events = r.events; warnings = r.warnings; }
+    else {
+      events = r.events;
+      warnings = r.warnings;
+      if (r.quoteMisses) window.__vcDebugNote(`📎 引用の不一致 ${r.quoteMisses}件（AI の引用が本文に見つからない＝言い換えか幻覚）`);
+    }
   } catch (e) {
     aiErr = (e && e.message) || String(e);
   }
@@ -850,8 +859,9 @@ async function interpretByAI({ text, rawText, dictHits, meta, rule, seq }) {
     applyRuleResult({ rule, text, rawText, dictHits, meta, aiFbNote: '🤖AIが項目を返さず→ルール解釈' });
     return;
   }
-  const a = store.applyVoicePatch(patch, text, { targeted: false });
+  const a = store.applyVoicePatch(patch, text, { targeted: false, prov: ev.prov }); // v56: AI 経路の出所も store へ
   showNotes(notes, dictHits);
+  noteProvDiag(patch, ev.prov);
   const changed = a.skipped.length !== Object.keys(patch).length || a.cleared.length > 0;
   const isNew = !!settings.get('plainUtteranceIsNew');
   logHistory({ at: Date.now(), text: rawText, dict: dictHits, conf: meta && meta.confidence, fb: !!(meta && meta.fallback), tg: false, nw: isNew, ai: true, patch, notes, skipped: a.skipped, cleared: a.cleared, err: null, after: changed ? store.snapshot() : null });
@@ -1567,7 +1577,7 @@ async function batchSaveOne(entry) {
 function batchToForm(entry) {
   if (batchBusy) return;
   if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
-  if (!store.restore(VCBatch.toSnapshot(entry.draft))) { toast('フォームに載せられませんでした'); return; }
+  if (!store.restore(VCBatch.toSnapshot(entry.draft, entry.prov))) { toast('フォームに載せられませんでした'); return; } // v56: 出所も一緒に運ぶ
   try { VCBatch.stageRemove(entry.id); } catch (err) { window.__vcNote('取り込みリスト', `カードの削除に失敗: ${(err && err.message) || err}`); }
   renderBatch();
   transcriptEl.textContent = '';
@@ -1757,10 +1767,16 @@ document.getElementById('batchCopyPrompt').addEventListener('click', async () =>
     toast(`コピーできませんでした: ${(e && e.message) || e}`);
     return;
   }
+  lastCopiedBatchText = text; // v56: 貼り戻された JSON の quote 検証の錨（コピー往復では textarea が JSON に置き換わり本文が消えるため）
   document.getElementById('batchMsg').textContent =
     (hits.length ? `🔤 ${hits.map((h) => `「${h.k}」→「${h.v}」`).join('・')} を展開して含めました。` : '')
     + '📄 指示をコピーしました。チャットAIに貼り付け、返ってきた JSON を上の欄に貼って「JSONとして取り込み」を押してください。（コピーした文面は貼り付け先の AI に渡ります）';
 });
+
+// v56: 📄 でコピーした本文（辞書展開後）を覚えておく＝quote 検証の錨。コピーせず別所の JSON を
+// 貼った時は null＝検証しない（出所は不明のまま）。別の本文の JSON を貼れば引用は当たらず
+// 「引用の不一致」として数えられるだけ＝安全側に倒れる。
+let lastCopiedBatchText = null;
 
 // JSONとして取り込み: 検証ゲート（parseBatch）→ 取り込みリスト。失敗時は textarea を消さない（作業を捨てない）
 document.getElementById('batchImport').addEventListener('click', async () => {
@@ -1769,11 +1785,12 @@ document.getElementById('batchImport').addEventListener('click', async () => {
   const raw = ta.value.trim();
   if (!raw) { toast('取り込む JSON を上の欄に貼ってください'); return; }
   const msg = document.getElementById('batchMsg');
-  const r = VCBatch.parseBatch(raw);
+  const r = VCBatch.parseBatch(raw, { sourceText: lastCopiedBatchText });
   if (!r.ok) {
     msg.textContent = `⚠ ${r.errors.join('／')}`;
     return;
   }
+  if (r.quoteMisses) window.__vcDebugNote(`📎 引用の不一致 ${r.quoteMisses}件（AI の引用が本文に見つからない＝言い換えか幻覚）`);
   let added;
   try { added = VCBatch.stageAdd(r.events); } catch (e) {
     toast(`取り込みを保存できませんでした: ${(e && e.message) || e}`); // 「取り込んだつもり」を作らない
@@ -1890,13 +1907,14 @@ document.getElementById('batchAiRun').addEventListener('click', async () => {
   try {
     const system = VCBatch.buildPrompt({ now: new Date(), schema: VCContract.SCHEMA });
     const resText = await VCAI.interpretLongText(text, { system });
-    const r = VCBatch.parseBatch(resText);
+    const r = VCBatch.parseBatch(resText, { sourceText: text }); // v56: 送った本文が quote 検証の錨
     if (!r.ok) {
       // AI の応答が契約に合わない＝本文は残す（作業を捨てない）・応答の先頭を診断に残す
       msg.textContent = `⚠ AI の応答を取り込めませんでした: ${r.errors.join('／')}`;
       window.__vcNote('AI解釈', `応答の検証に失敗: ${r.errors.join('／')}｜応答先頭: ${String(resText).slice(0, 200)}`);
       return;
     }
+    if (r.quoteMisses) window.__vcDebugNote(`📎 引用の不一致 ${r.quoteMisses}件（AI の引用が本文に見つからない＝言い換えか幻覚）`);
     let added;
     try { added = VCBatch.stageAdd(r.events); } catch (e) { toast(`取り込みを保存できませんでした: ${(e && e.message) || e}`); return; }
     ta.value = '';

@@ -18,7 +18,7 @@
 (function (global) {
   'use strict';
 
-  const VERSION = '1.0.0';
+  const VERSION = '1.1.0'; // 1.1.0 = quotes（出所の引用・v56）を追加。省略可＝古い形の JSON もそのまま通る
 
   const DATE_DESC = '。「明日」「来週金曜」などの相対表現は、指示にある現在日時を基準に解決する。';
   const OMIT_DESC = '本文で言っていなければキーごと省略する（推測で補わない）。';
@@ -77,6 +77,23 @@
               type: 'array',
               items: { type: 'string' },
               description: '確信が持てなかった点を日本語で申告する（例:「17時か17時半か読み取れない」「来週=今週の可能性」）。曖昧なまま値を入れた項目は必ずここに書く。',
+            },
+            // v56（スパン出所追跡 A''）: 各項目の根拠の引用。アプリ側が本文の indexOf で検証する＝
+            // 本文に無い引用は幻覚として検出できる（LLM にオフセット数値を出させない＝数値は幻覚するため）。
+            quotes: {
+              type: 'object',
+              additionalProperties: false,
+              description: '各項目の根拠になった本文の抜粋（省略可）。値を入れた項目ごとに、根拠となる言葉を本文から一字一句そのままコピーして入れる（要約・言い換え・表記の変更をしない）。本文に無い項目＝推測や文脈から補った項目は、ここに載せない（載せないこと自体が「推論で埋めた」という申告になる）。',
+              properties: {
+                title: { type: 'string' },
+                startDate: { type: 'string' },
+                startTime: { type: 'string' },
+                endDate: { type: 'string' },
+                endTime: { type: 'string' },
+                location: { type: 'string' },
+                note: { type: 'string' },
+                allDay: { type: 'string' },
+              },
             },
           },
         },

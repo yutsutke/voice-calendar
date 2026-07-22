@@ -1,8 +1,8 @@
 // tests/batch.test.js — まとめて入力（v39: 契約＋検証ゲート＋取り込みリスト）の単体テスト
 //
 // 守る不変条件:
-//   1. **契約と実装の鏡合わせ**: contract.js の events.items.properties = schema.js の FIELDS + ambiguities、
-//      maxItems = MAX_EVENTS（契約だけ直して検証が古い、を機械的に禁止する＝version.test.js と同じ精神）
+//   1. **契約と実装の鏡合わせ**: contract.js の events.items.properties = schema.js の FIELDS + ambiguities + quotes、
+//      quotes.properties = FIELDS・maxItems = MAX_EVENTS（契約だけ直して検証が古い、を機械的に禁止する）
 //   2. **AI の出力を信用しない**: 不正値は落として problems に明記（黙って捨てない v16）・
 //      「それらしく直す」creation はしない（整形は値の意味を変えない範囲だけ・やったら明記）
 //   3. 過去日付を弾かない（過去も一級市民＝v5）
@@ -45,9 +45,11 @@ function eq(actual, expected, label) {
 function ok(cond, label) { if (!cond) throw new Error(label || 'false だった'); }
 
 // ===== 不変条件1: 契約と実装の鏡合わせ =====
-t('契約のイベント欄 = schema.js の FIELDS + ambiguities（鏡合わせ）', () => {
+t('契約のイベント欄 = schema.js の FIELDS + ambiguities + quotes（鏡合わせ）', () => {
   const props = Object.keys(C.SCHEMA.properties.events.items.properties);
-  eq([...props].sort(), [...FIELDS, 'ambiguities'].sort(), '欄を増やす時は contract.js と schema.js の両方を見る');
+  eq([...props].sort(), [...FIELDS, 'ambiguities', 'quotes'].sort(), '欄を増やす時は contract.js と schema.js の両方を見る');
+  // v56: quotes の中身も FIELDS と鏡合わせ＝欄を増やした時に「引用先だけ増やし忘れる」を機械的に禁止
+  eq(Object.keys(C.SCHEMA.properties.events.items.properties.quotes.properties).sort(), [...FIELDS].sort(), 'quotes.properties = FIELDS');
 });
 
 t('契約の maxItems = batch.js の MAX_EVENTS', () => {
@@ -471,6 +473,98 @@ t('v53: pickAutoSavable は staging を読まない（純関数＝渡された�
   const r = B.pickAutoSavable([entry({ id: '1' })], []);
   eq(r.save.map((e) => e.id), ['1'], '前から残っているカードを巻き込まない＝人が意図的に残したものに触らない');
   eq(B.stageList().length, 1, '台帳は変えない');
+});
+
+// ===== v56: quote → 出所（スパン出所追跡 A''）=====
+// ルール経路（parser v55）と鏡: あちらは span から quote を作る、こちらは quote を本文の indexOf で検証する。
+t('v56: quote が本文で見つかる → transcript（span は本文のオフセット・quote と一致）', () => {
+  const srcText = '明日の10時に会議、場所は本社ビル';
+  const r = B.parseBatch(JSON.stringify({
+    events: [{ title: '会議', startDate: '2026-07-23', startTime: '10:00', location: '本社ビル',
+      quotes: { title: '会議', startTime: '10時', location: '本社ビル' } }],
+  }), { sourceText: srcText });
+  eq(r.ok, true);
+  const p = r.events[0].prov;
+  eq(p.startTime.source, 'transcript');
+  eq(srcText.slice(p.startTime.span.a, p.startTime.span.b), '10時', 'span が本文の該当箇所を指す');
+  eq(p.location.span.quote, '本社ビル');
+  eq(p.startDate.source, 'inferred', 'quote の無い項目は「推論で埋めた」という申告');
+  eq(r.quoteMisses, 0);
+});
+
+t('v56: quote が本文に無い → inferred に降格＋quoteMisses を数える（幻覚の検出）', () => {
+  const r = B.parseBatch(JSON.stringify({
+    events: [{ title: '打ち合わせ', quotes: { title: 'ミーティング' } }],
+  }), { sourceText: '明日打ち合わせ' });
+  eq(r.ok, true);
+  eq(r.events[0].prov.title.source, 'inferred');
+  ok(r.events[0].prov.title.why.includes('見つからない'), 'why に理由が残る');
+  eq(r.quoteMisses, 1);
+  // 🚫 不一致は problems に入れない＝pickAutoSavable（v53）の挙動を変えない。
+  //    変えるかどうかは計測（スパン出所追跡 B）で不一致の頻度と訂正の相関を見てから（塞ぐ時は開ける条件を書く）
+  eq(r.events[0].problems, [], '不一致は problems に入れない');
+  const picked = B.pickAutoSavable(r.events, r.warnings);
+  eq(picked.save.length, 1, 'quote 不一致だけでは自動保存を止めない（意図した保留＝上のコメント参照）');
+});
+
+t('v56: quotes の無い応答 → prov は null（従来の JSON もそのまま通る・出所を創作しない）', () => {
+  const r = B.parseBatch(JSON.stringify({ events: [{ title: '会議' }] }), { sourceText: '会議' });
+  eq(r.ok, true);
+  eq(r.events[0].prov, null);
+  eq(r.quoteMisses, 0);
+});
+
+t('v56: 本文が無い（WebMCP 等）→ quote 付きは不明(null)・quote 無しは inferred（自己申告は残る）', () => {
+  const r = B.parseBatch(JSON.stringify({
+    events: [{ title: '会議', startDate: '2026-07-23', quotes: { title: '会議' } }],
+  }));
+  eq(r.ok, true);
+  const p = r.events[0].prov;
+  eq(p.title, null, '検証の錨が無い＝transcript とは認めない（自己証明にしない）');
+  eq(p.startDate.source, 'inferred', '「引用なし」の申告は本文が無くても意味を持つ');
+});
+
+t('v56: quotes の壊れた形は problems に明記して無視（黙って捨てない v16）', () => {
+  const r = B.parseBatch(JSON.stringify({
+    events: [{ title: '会議', quotes: { title: 42, 謎: 'x' } }],
+  }), { sourceText: '会議' });
+  eq(r.ok, true);
+  ok(r.events[0].problems.some((s) => s.includes('quotes.title')), '非文字列を明記');
+  ok(r.events[0].problems.some((s) => s.includes('謎')), '未知の項目を明記');
+  eq(r.events[0].prov.title.source, 'inferred', '生き残った quotes は空＝引用なしの申告として扱う');
+});
+
+t('v56: 不可視文字（v14）が本文と引用のどちらに混ざっても突き合わせられる', () => {
+  const zwsp = String.fromCharCode(0x200B);
+  const r = B.parseBatch(JSON.stringify({
+    events: [{ title: '会議', quotes: { title: '会' + zwsp + '議' } }],
+  }), { sourceText: '明日' + zwsp + '会議' });
+  eq(r.ok, true);
+  eq(r.events[0].prov.title.source, 'transcript', '両辺から除去して一致');
+});
+
+t('v56: staging が prov を往復させる・prov の無い古い行は null で読める', () => {
+  B.stageClear();
+  B.stageAdd([{ draft: { title: 'A' }, ambiguities: [], problems: [], prov: { title: { source: 'transcript', span: { a: 0, b: 1, quote: 'A' } } } }], new Date(1770000000000));
+  eq(B.stageList()[0].prov.title.source, 'transcript', '往復');
+  mem.set(B.KEY, JSON.stringify([{ id: 'old', draft: { title: 'x' }, addedAt: 1 }])); // v55 以前の行
+  eq(B.stageList()[0].prov, null, '古い行は不明として読める（後方互換）');
+  B.stageClear();
+});
+
+t('v56: toSnapshot が prov を運ぶ（カード→フォーム）・渡さなければ全欄 null', () => {
+  const prov = { title: { source: 'transcript', span: { a: 0, b: 2, quote: '会議' } } };
+  const s1 = B.toSnapshot({ title: '会議', startDate: '2026-07-23' }, prov);
+  eq(s1.prov.title.source, 'transcript', '出所が乗る');
+  eq(s1.prov.startDate, null, '出所の無い欄は不明');
+  const s2 = B.toSnapshot({ title: '会議' });
+  eq(s2.prov.title, null, '渡さなければ不明＝従来どおり');
+});
+
+t('v56: buildPrompt に quotes（一字一句の引用）の指示が入る', () => {
+  const p = B.buildPrompt({ now: new Date(2026, 6, 22, 12, 0), schema: C.SCHEMA });
+  ok(p.includes('quotes'), 'quotes の言及');
+  ok(p.includes('一字一句'), '一字一句そのまま');
 });
 
 console.log(`\nbatch.test: ${pass} passed, ${fail} failed`);
