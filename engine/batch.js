@@ -260,6 +260,22 @@
     return added;
   }
 
+  // v53: 自動保存してよい取り込みを選ぶ（純関数＝宿主も設定も localStorage も知らない）。
+  // **判定の単位は「取り込みの回」**: 封筒の warnings（落とした・切り捨てた）が1つでもあれば、
+  // 生き残った行も同じ応答から出ている＝その回はまるごと人が見る。
+  // 行ごとには ambiguities（AI が曖昧だと申告）と problems（検証ゲートが項目を無視・空にした）を見る。
+  // 迷ったら保存しない（v28: **保存は不可逆**＝カレンダーは読めない＝消せない。失うのは1タップ）。
+  function pickAutoSavable(entries, warnings) {
+    const all = (entries || []).filter(Boolean);
+    if ((warnings || []).length) return { save: [], hold: all };
+    const save = [], hold = [];
+    for (const e of all) {
+      const clean = !(e.ambiguities || []).length && !(e.problems || []).length;
+      (clean ? save : hold).push(e);
+    }
+    return { save, hold };
+  }
+
   function stageList() { return loadStage(); }
   function stageRemove(id) { persistStage(loadStage().filter((e) => e.id !== id)); }
   function stageClear() { try { global.localStorage.removeItem(KEY); } catch {} }
@@ -326,7 +342,7 @@
     }
   }
 
-  const api = { parseBatch, buildPrompt, toSnapshot, draftToPatch, ambiguityNote, stageAdd, stageList, stageRemove, stageClear, registerWebMcp, KEY, MAX_EVENTS };
+  const api = { parseBatch, buildPrompt, toSnapshot, draftToPatch, ambiguityNote, pickAutoSavable, stageAdd, stageList, stageRemove, stageClear, registerWebMcp, KEY, MAX_EVENTS };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else global.VCBatch = api;
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -568,20 +568,20 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
      理由: この版文字列は index.html にしかないが、ロジックは別ファイル＝別キャッシュ。
      付けないと「フッタは新しいのにパーサは古い」という嘘の状態が成立する（v9 で実際に踏んだ）。
      index.html が更新されれば src の URL も変わる → JS も必ず新しく取り直される。 -->
-<script src="engine/settings.js?v=52"></script>
-<script src="engine/schema.js?v=52"></script>
-<script src="engine/parser.js?v=52"></script>
-<script src="engine/dictionary.js?v=52"></script>
-<script src="engine/contract.js?v=52"></script>
-<script src="engine/batch.js?v=52"></script>
-<script src="engine/ai.js?v=52"></script>
-<script src="input/transcriber.js?v=52"></script>
-<script src="adapters/calendar.js?v=52"></script>
-<script src="adapters/records.js?v=52"></script>
-<script src="adapters/location.js?v=52"></script>
+<script src="engine/settings.js?v=53"></script>
+<script src="engine/schema.js?v=53"></script>
+<script src="engine/parser.js?v=53"></script>
+<script src="engine/dictionary.js?v=53"></script>
+<script src="engine/contract.js?v=53"></script>
+<script src="engine/batch.js?v=53"></script>
+<script src="engine/ai.js?v=53"></script>
+<script src="input/transcriber.js?v=53"></script>
+<script src="adapters/calendar.js?v=53"></script>
+<script src="adapters/records.js?v=53"></script>
+<script src="adapters/location.js?v=53"></script>
 <script>
 'use strict';
-const BUILD = 'v52：位置情報の許可を native（CLLocationManager）から読む＝OS 設定に即追従｜v51：AI 設定の説明を訂正｜v50：位置情報の60秒キャッシュ撤去 · 2026-07-22';
+const BUILD = 'v53：まとめて入力の取り込みを自動保存できる（設定・既定オフ）｜v52：位置情報の許可を native から読む｜v51：AI 設定の説明を訂正 · 2026-07-22';
 console.log('BUILD:', BUILD);
 document.getElementById('build').textContent = BUILD;
 
@@ -780,19 +780,31 @@ async function interpretByAI({ text, rawText, dictHits, meta, rule, seq }) {
   }
   if (events.length >= 2) {
     // 複数の予定＝フォーム（1件）には入れず「まとめて入力」へ（ユーザー決定・v39 の受け皿を再利用）
+    let added;
     try {
-      VCBatch.stageAdd(events);
+      added = VCBatch.stageAdd(events);
     } catch (e) {
       window.__vcNote('音声AI解釈', `取り込みリストへ保存できず→ルール解釈に戻します: ${(e && e.message) || e}`);
       applyRuleResult({ rule, text, rawText, dictHits, meta, aiFbNote: '🤖複数件の取り込みに失敗→ルール解釈' });
       return;
     }
     renderBatch();
-    document.getElementById('batchBox').open = true; // 黙って積まない（v16）＝開いて見せる
     const note = `🤖 複数の予定（${events.length}件）を読み取りました → 「まとめて入力」で確認して保存`;
     notesEl.textContent = note;
-    toast(`🎤→🤖 ${events.length}件を「まとめて入力」に取り込みました（確認して保存してください）`);
+    // 来歴は先に積む（💾 は「直前の行」に刻むため＝v33 と同じ順番）
     logHistory({ at: Date.now(), text: rawText, dict: dictHits, conf: meta && meta.confidence, fb: !!(meta && meta.fallback), tg: false, nw: false, ai: true, aiMulti: events.length, patch: {}, notes: [note].concat(warnings), skipped: [], cleared: [], err: null, after: null });
+    // v53: 設定オンなら確認を挟まずここで保存する（オフなら下の else ＝v42 の挙動そのまま）
+    const auto = await autoSaveStaged(added, warnings, '音声→AI（複数件）');
+    if (auto.ran) {
+      notesEl.textContent = `🤖 複数の予定（${events.length}件）を読み取り、${auto.savedCount}件を自動保存しました`
+        + (auto.holdCount ? `（${auto.holdCount}件は確認が要るのでカードに残しています）` : '');
+      markHistoryAutoSaved(`自動保存 ${auto.savedCount}件（まとめて入力）`);
+      document.getElementById('historyBox').open = true; // v33: 自動保存の内容がすぐ見える
+      if (auto.holdCount) document.getElementById('batchBox').open = true; // 残した分は見せる
+    } else {
+      document.getElementById('batchBox').open = true; // 黙って積まない（v16）＝開いて見せる
+      toast(`🎤→🤖 ${events.length}件を「まとめて入力」に取り込みました（確認して保存してください）`);
+    }
     return;
   }
   // 1件 → フォームへ（従来の体験）。言い直し掃除(v6)・欄ロック(v3)は共通経路 applyVoicePatch のまま
@@ -1521,18 +1533,19 @@ function batchToForm(entry) {
 // すべて保存＝**逐次 for + await**（native の初回は EventKit 権限ダイアログを待つ＝Promise.all 禁止）。
 // web で複数件かつカレンダーへ入れる時だけ .ics を1ファイルに束ねる（20連ダウンロードにしない）。
 // カレンダー側の失敗（権限など）は以降も全滅する＝中断して残りをカードに残し、正直に言う。
-document.getElementById('batchSaveAll').addEventListener('click', async () => {
-  if (batchBusy || !window.VCBatch) return;
-  const entries = VCBatch.stageList();
-  if (!entries.length) return;
+// v53: 取り込みリストの保存本体。**「すべて保存」ボタンと自動保存の両方がここを通る**
+// ＝入口で挙動が変わらない（v39 が「どの入口も同じ検証ゲート・同じ台帳」を通したのと同じ考えを、保存側にも）。
+// 戻り: { okCount, failCount, listDroppedTotal, aborted }
+async function saveBatchEntries(entries, onProgress) {
+  const out = { okCount: 0, failCount: 0, listDroppedTotal: 0, aborted: false };
+  if (!entries || !entries.length) return out;
   batchBusy = true;
-  const btn = document.getElementById('batchSaveAll');
-  const orig = btn.textContent;
   renderBatch(); // ボタン類を無効化（進捗はこの後ラベルで見せる）
   const now = new Date(); // 全件で1つの now ＝「日時なし→今」が件ごとにズレない
   const dest = settings.get('recordDest'); // ループ中の設定変更に揺らがない
   const adapter = VCAdapter.pickAdapter();
   const bundleIcs = dest !== 'list' && entries.length > 1 && typeof adapter.saveMany === 'function';
+  const progress = (i, n) => { if (onProgress) onProgress(i, n); };
   let okCount = 0, failCount = 0, listDroppedTotal = 0, aborted = false;
   try {
     if (bundleIcs) {
@@ -1558,7 +1571,7 @@ document.getElementById('batchSaveAll').addEventListener('click', async () => {
         }
         if (!aborted) {
           for (let i = 0; i < valid.length; i++) {
-            btn.textContent = `${i + 1}/${valid.length}…`;
+            progress(i + 1, valid.length);
             const { entry } = valid[i];
             const r = await saveDraftCore(entry.draft, now, { skipCalendar: true });
             if (r.ok && !(r.toList && !r.listOk)) {
@@ -1577,7 +1590,7 @@ document.getElementById('batchSaveAll').addEventListener('click', async () => {
     } else {
       // native / 1件だけ / 保存先がリストのみ: 1件ずつ順に
       for (let i = 0; i < entries.length; i++) {
-        btn.textContent = `${i + 1}/${entries.length}…`;
+        progress(i + 1, entries.length);
         const e = entries[i];
         const r = await saveDraftCore(e.draft, now);
         if (!r.ok) {
@@ -1603,20 +1616,55 @@ document.getElementById('batchSaveAll').addEventListener('click', async () => {
     }
   } finally {
     batchBusy = false;
-    btn.textContent = orig;
     renderBatch();
     renderRecords();
     if (dest !== 'list' && okCount && !aborted) refreshCalendarTarget();
   }
-  // 1件も入らず中断した時は集計 toast を出さない＝handleCalendarError の理由（toast/バナー）を上書きして消さない
-  if (!(aborted && !okCount)) {
-    let msg = okCount ? `✅ ${okCount}件を保存しました` : '保存できた予定がありません';
-    if (failCount) msg += `／⚠ ${failCount}件は保存できませんでした（カードに残っています）`;
-    if (aborted) msg += '（カレンダー側の失敗で中断）';
-    if (listDroppedTotal) msg += `（古い記録${listDroppedTotal}件を上限${VCRecords.CAP}件で削除）`;
-    toast(msg);
-  }
+  Object.assign(out, { okCount, failCount, listDroppedTotal, aborted });
+  return out;
+}
+
+// 集計の文言は1か所に（ボタンと自動保存が同じ言い方をする）。
+// 1件も入らず中断した時は集計 toast を出さない＝handleCalendarError の理由（toast/バナー）を上書きして消さない
+function batchResultToast(r, head, tail) {
+  if (r.aborted && !r.okCount) return;
+  let msg = r.okCount ? `${head} ${r.okCount}件を保存しました` : '保存できた予定がありません';
+  if (tail) msg += tail;
+  if (r.failCount) msg += `／⚠ ${r.failCount}件は保存できませんでした（カードに残っています）`;
+  if (r.aborted) msg += '（カレンダー側の失敗で中断）';
+  if (r.listDroppedTotal) msg += `（古い記録${r.listDroppedTotal}件を上限${VCRecords.CAP}件で削除）`;
+  toast(msg);
+}
+
+document.getElementById('batchSaveAll').addEventListener('click', async () => {
+  if (batchBusy || !window.VCBatch) return;
+  const entries = VCBatch.stageList();
+  if (!entries.length) return;
+  const btn = document.getElementById('batchSaveAll');
+  const orig = btn.textContent;
+  const r = await saveBatchEntries(entries, (i, n) => { btn.textContent = `${i}/${n}…`; });
+  btn.textContent = orig;
+  batchResultToast(r, '✅');
 });
+
+// v53: 取り込んだ直後の自動保存（設定オン時だけ）。ユーザー明示要求（実機FB第33回）。
+// 🚫 **WebMCP からの取り込みはここを通さない**＝外部エージェントが人の確認を素通りできてはいけない
+//    （v41 で引いた線・背骨②はエージェント相手では破れない）。呼ぶのは人が起こした3経路だけ。
+// 🚨 **黙って保存しない**（v28）＝何件入って何件残したかを必ず言う。判定は engine の純関数。
+// 戻り: { ran, savedCount, holdCount }（呼び出し側が自分のメッセージを直せるように）
+async function autoSaveStaged(added, warnings, how) {
+  const none = { ran: false, savedCount: 0, holdCount: 0 };
+  if (!settings.get('autoSaveBatch') || !window.VCBatch) return none;
+  const { save, hold } = VCBatch.pickAutoSavable(added, warnings);
+  if (!save.length) {
+    if (hold.length) window.__vcDebugNote(`🤖 自動保存を見送り（確認が要る ${hold.length}件）: ${how}`);
+    return { ran: false, savedCount: 0, holdCount: hold.length };
+  }
+  const r = await saveBatchEntries(save, null);
+  batchResultToast(r, '🤖 自動で', hold.length ? `／⚠ ${hold.length}件は確認が要るのでカードに残しています` : '');
+  window.__vcDebugNote(`🤖 まとめて入力の自動保存（${how}）: 保存${r.okCount} 失敗${r.failCount} 保留${hold.length}`);
+  return { ran: true, savedCount: r.okCount, holdCount: hold.length };
+}
 
 // すべて削除は2度押し（リストの全消しと同じ流儀＝確認ダイアログは出さない・背骨②）
 let batchClearArmedAt = 0;
@@ -1664,7 +1712,7 @@ document.getElementById('batchCopyPrompt').addEventListener('click', async () =>
 });
 
 // JSONとして取り込み: 検証ゲート（parseBatch）→ 取り込みリスト。失敗時は textarea を消さない（作業を捨てない）
-document.getElementById('batchImport').addEventListener('click', () => {
+document.getElementById('batchImport').addEventListener('click', async () => {
   if (!window.VCBatch) { toast('まとめて入力の機能を読み込めていません（詳細は「診断」）'); return; }
   const ta = document.getElementById('batchText');
   const raw = ta.value.trim();
@@ -1675,14 +1723,24 @@ document.getElementById('batchImport').addEventListener('click', () => {
     msg.textContent = `⚠ ${r.errors.join('／')}`;
     return;
   }
-  try { VCBatch.stageAdd(r.events); } catch (e) {
+  let added;
+  try { added = VCBatch.stageAdd(r.events); } catch (e) {
     toast(`取り込みを保存できませんでした: ${(e && e.message) || e}`); // 「取り込んだつもり」を作らない
     return;
   }
   ta.value = '';
-  msg.textContent = [`✅ ${r.events.length}件を取り込みました（確認して保存してください）`].concat(r.warnings).join('／');
   renderBatch();
+  const auto = await autoSaveStaged(added, r.warnings, 'JSON 貼り付け');
+  msg.textContent = [batchImportMsg(r.events.length, auto)].concat(r.warnings).join('／');
 });
+
+// 取り込み直後の一行（自動保存が走ったかで言うことが変わる）。ボタン経路と AI 経路で同じ言い方をする
+function batchImportMsg(n, auto, head) {
+  const lead = `✅ ${head || ''}${n}件を取り込み`;
+  if (!auto.ran) return `${lead}ました（確認して保存してください）`;
+  return `${lead}、${auto.savedCount}件を自動保存しました`
+    + (auto.holdCount ? `（${auto.holdCount}件は確認が要るのでカードに残しています）` : '');
+}
 
 // ===== AI 設定と「🤖 AIで解釈して取り込み」（v40・BYOK） =====
 // キーは端末の localStorage のみ（engine/ai.js）。キー未設定なら AI ボタンは出ない＝
@@ -1788,13 +1846,15 @@ document.getElementById('batchAiRun').addEventListener('click', async () => {
       window.__vcNote('AI解釈', `応答の検証に失敗: ${r.errors.join('／')}｜応答先頭: ${String(resText).slice(0, 200)}`);
       return;
     }
-    try { VCBatch.stageAdd(r.events); } catch (e) { toast(`取り込みを保存できませんでした: ${(e && e.message) || e}`); return; }
+    let added;
+    try { added = VCBatch.stageAdd(r.events); } catch (e) { toast(`取り込みを保存できませんでした: ${(e && e.message) || e}`); return; }
     ta.value = '';
+    renderBatch();
+    const auto = await autoSaveStaged(added, r.warnings, 'AIで解釈して取り込み');
     msg.textContent = [
-      `✅ AI が読み取った ${r.events.length}件を取り込みました（確認して保存してください）`,
+      batchImportMsg(r.events.length, auto, 'AI が読み取った '),
       hits.length ? `🔤 ${hits.map((h) => `「${h.k}」→「${h.v}」`).join('・')} を展開して送信しました` : '',
     ].concat(r.warnings).filter(Boolean).join('／');
-    renderBatch();
   } catch (e) {
     msg.textContent = `⚠ ${(e && e.message) || e}`;
     window.__vcNote('AI解釈', (e && e.message) || String(e));
@@ -1821,6 +1881,9 @@ window.__vcRegisterWebMcp = function () {
     onEvents: (events) => {
       const added = VCBatch.stageAdd(events); // 書き込み失敗は throw ＝ execute が isError で返す
       renderBatch();
+      // 🚫 **ここでは autoSaveStaged を呼ばない**（v53）＝「まとめて入力の自動保存」をオンにしても
+      //    外部エージェントからの取り込みは必ず人の確認を通る。設定は**自分が起こした取り込み**への
+      //    委任であって、外から呼ばれた時の委任ではない（v41 で引いた線・背骨②はエージェント相手では破れない）。
       // 外から届いたものを黙って積まない（v16）＝パネルを開いて toast で名乗る
       document.getElementById('batchBox').open = true;
       toast(`🔌 ブラウザの AI から ${added.length}件を取り込みました（確認して保存してください）`);

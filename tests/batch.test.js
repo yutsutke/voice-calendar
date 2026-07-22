@@ -422,5 +422,56 @@ t('WebMCP: onEvents 未指定なら既定で staging に積む', () => {
   eq(B.stageList()[0].draft.title, 'そのまま staging へ');
 });
 
+// ===== v53: 自動保存してよい取り込みを選ぶ（pickAutoSavable）=====
+// 「まとめて入力の自動保存」をオンにした時、**どれを人の目に残すか**の判断はここだけが持つ。
+// 保存は不可逆（カレンダーは読めない＝消せない）＝迷ったら保存しない（v28）。
+const entry = (over) => Object.assign({ id: 'x', draft: { title: 'a' }, ambiguities: [], problems: [] }, over || {});
+
+t('v53: 申告も問題も無い取り込みは自動保存の対象', () => {
+  const r = B.pickAutoSavable([entry({ id: '1' }), entry({ id: '2' })], []);
+  eq(r.save.map((e) => e.id), ['1', '2']);
+  eq(r.hold.length, 0);
+});
+
+t('v53: AI が曖昧だと申告したカードは残す（v43/v48 の安全弁と同じ門）', () => {
+  const r = B.pickAutoSavable([entry({ id: '1' }), entry({ id: '2', ambiguities: ['夕方あたり'] })], []);
+  eq(r.save.map((e) => e.id), ['1'], '曖昧でないものは保存してよい（全部止めない）');
+  eq(r.hold.map((e) => e.id), ['2']);
+});
+
+t('v53: 検証ゲートが項目を無視したカード（problems）も残す', () => {
+  const r = B.pickAutoSavable([entry({ id: '1', problems: ['未知の項目「foo」を無視しました'] })], []);
+  eq(r.save.length, 0);
+  eq(r.hold.map((e) => e.id), ['1']);
+});
+
+t('🚨 v53: 封筒に warnings がある回は**まるごと**人が見る（信用の単位は「回」）', () => {
+  // 落とした行があるということは、その応答自体が契約から外れている＝生き残った行も同じ応答から出ている
+  const r = B.pickAutoSavable([entry({ id: '1' }), entry({ id: '2' })], ['3件目: 内容が空のため除外しました']);
+  eq(r.save.length, 0, '1件も自動保存しない');
+  eq(r.hold.map((e) => e.id), ['1', '2']);
+});
+
+t('v53: 20件超の切り捨ても warnings ＝まるごと保留（parseBatch と繋がっていることの確認）', () => {
+  const many = { events: Array.from({ length: 25 }, (_, i) => ({ title: `件${i}` })) };
+  const p = B.parseBatch(many);
+  ok(p.ok && p.warnings.length, '切り捨ての warning が出ている');
+  eq(B.pickAutoSavable(p.events, p.warnings).save.length, 0);
+});
+
+t('v53: 空・null・壊れた入力でも throw しない（黙って落ちない）', () => {
+  eq(B.pickAutoSavable([], []).save.length, 0);
+  eq(B.pickAutoSavable(null, null).save.length, 0);
+  eq(B.pickAutoSavable([null, undefined, entry({ id: '1' })], undefined).save.map((e) => e.id), ['1']);
+  eq(B.pickAutoSavable([{ id: '2' }], []).save.map((e) => e.id), ['2'], 'ambiguities/problems が無い形も素通しできる');
+});
+
+t('v53: pickAutoSavable は staging を読まない（純関数＝渡されたものだけ見る）', () => {
+  B.stageAdd([{ title: '台帳に居る予定' }]);
+  const r = B.pickAutoSavable([entry({ id: '1' })], []);
+  eq(r.save.map((e) => e.id), ['1'], '前から残っているカードを巻き込まない＝人が意図的に残したものに触らない');
+  eq(B.stageList().length, 1, '台帳は変えない');
+});
+
 console.log(`\nbatch.test: ${pass} passed, ${fail} failed`);
 if (failures.length) { console.log('\n' + failures.join('\n\n')); process.exit(1); }

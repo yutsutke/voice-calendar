@@ -44,6 +44,7 @@ t('既定値がこれまでの実挙動と一致する（触らない人の体�
   eq(s.get('captureLocation'), false, '🔴 位置情報はオフ＝黙って取らない（v38・プライバシーの opt-in）');
   eq(s.get('voiceAI'), false, '🔴 音声のAI解釈はオフ＝音声の核経路はオフライン・決定的のまま（v42・外部送信とコストの opt-in）');
   eq(s.get('autoSaveAI'), false, '🔴 AI 経路の自動保存はオフ＝v42-v46 の挙動（AI で解釈した発話はフォームに残る）。v47 で opt-in にした');
+  eq(s.get('autoSaveBatch'), false, '🔴 まとめて入力の自動保存はオフ＝v39-v52 の挙動（取り込みリストで人が確認してから保存）。v53 で opt-in にした');
   eq(s.get('targetCalendarId'), undefined, '🚫 保存先の選択は v26 で撤去（write-only では効かない＝復活させない）');
 });
 
