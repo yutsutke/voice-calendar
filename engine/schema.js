@@ -39,6 +39,10 @@
     // 形は parser の prov と同じ: { source:'transcript'|'inferred'|'human', span?, why? } | null（不明）。
     // null の意味＝「出所情報の無い書き込み」（prov を渡さない旧呼び出し・AI 経路 v56 前）＝創作しない。
     let prov = Object.fromEntries(FIELDS.map((f) => [f, null]));
+    // v57（スパン出所追跡 B）: 人が音声の値を**変えた**欄 → 直される前の出所（'transcript'|'inferred'|null=不明）。
+    // 「訂正は推論箇所に集中するか」＝出所追跡の設計が正しいかを測る材料（保存時に台帳へ焼く）。
+    // 判定は origin（音声の値だったか）＝掃除(v6)と同じ正から導出＝二重管理しない。
+    let corrections = {};
     const locks = new Set();
     let lockSource = null; // (field) => boolean : 宿主に「今この欄を人が編集中か」を聞く述語
     const transcripts = []; // 来歴（SPEC §5-①）: note には流し込まない。端末内に留める
@@ -68,6 +72,7 @@
       getFieldState: (f) => (isLocked(f) ? 'locked' : fieldState[f]),
       getFieldOrigin: (f) => origin[f],
       getFieldProv: (f) => prov[f],
+      getCorrections: () => ({ ...corrections }),
       isLocked,
       getTranscripts: () => transcripts.slice(),
       subscribe(fn) { listeners.add(fn); return () => listeners.delete(fn); },
@@ -80,6 +85,10 @@
       // 入口A: 人間の直接操作
       setByHuman(field, value) {
         if (!FIELDS.includes(field)) return;
+        // v57: 音声の値を実際に変えた時だけ「訂正」として記録（同じ値の再確定・人の値の再編集は訂正ではない）
+        if (origin[field] === 'voice' && draft[field] !== value) {
+          corrections[field] = prov[field] ? prov[field].source : null;
+        }
         draft[field] = value;
         const empty = isEmptyVal(field, value);
         fieldState[field] = empty ? 'empty' : 'confirmed';
@@ -116,12 +125,14 @@
             fieldState[f] = 'confirmed';
             origin[f] = 'voice';
             prov[f] = (provIn && provIn[f]) || null; // 出所が無ければ null＝不明（transcript を創作しない）
+            delete corrections[f]; // 音声が書き直した＝最終値は音声のもの＝人の訂正ではなくなった
             written.push(f);
           } else if (!targeted && policy('plainUtteranceIsNew') && shouldClear(f) && !isLocked(f)) {
             draft[f] = f === 'allDay' ? false : '';
             fieldState[f] = 'empty';
             origin[f] = null;
             prov[f] = null;
+            delete corrections[f]; // 掃除された欄に「訂正した」記録だけ残さない
             cleared.push(f);
           }
         }
@@ -134,7 +145,7 @@
       // 古い発話を再解釈すると now が変わって日付がズレる（「明日」は明日には別の日）＝
       // 来歴に積むのは「解釈結果」ではなく「状態のスナップショット」でなければならない。
       // origin/fieldState も一緒に戻す＝復元後の言い直し掃除（v6）が正しく効き続ける。
-      snapshot: () => ({ draft: { ...draft }, fieldState: { ...fieldState }, origin: { ...origin }, prov: { ...prov } }),
+      snapshot: () => ({ draft: { ...draft }, fieldState: { ...fieldState }, origin: { ...origin }, prov: { ...prov }, corrections: { ...corrections } }),
       restore(snap) {
         if (!snap || !snap.draft) return false;
         draft = { ...emptyDraft(), ...snap.draft };
@@ -142,6 +153,7 @@
         origin = { ...Object.fromEntries(FIELDS.map((f) => [f, null])), ...(snap.origin || {}) };
         // prov の無い古い snapshot（v54 以前の来歴）でも動く＝欠けは「不明」に戻すだけ
         prov = { ...Object.fromEntries(FIELDS.map((f) => [f, null])), ...(snap.prov || {}) };
+        corrections = { ...(snap.corrections || {}) };
         emit({ type: 'restore', fields: FIELDS.slice() });
         return true;
       },
@@ -151,6 +163,7 @@
         fieldState = Object.fromEntries(FIELDS.map((f) => [f, 'empty']));
         origin = Object.fromEntries(FIELDS.map((f) => [f, null]));
         prov = Object.fromEntries(FIELDS.map((f) => [f, null]));
+        corrections = {};
         locks.clear();
         emit({ type: 'reset', fields: FIELDS.slice() });
       },

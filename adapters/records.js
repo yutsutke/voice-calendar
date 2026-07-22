@@ -29,6 +29,18 @@
   // 台帳の上限。来歴（30件）と違い「消えると困る記録」なので緩め。超過時のみ最古（savedAt 昇順）を落とす。
   const CAP = 500;
 
+  // v57（スパン出所追跡 B）: 出所・訂正の値の掃除。知らない形は捨てて読める分だけ残す（黙って壊れない）。
+  //   prov = { 欄: 'transcript'|'inferred'|'human'|'?' } … 保存時点の各欄の出所（'?' = 出所情報なし）
+  //   fix  = { 欄: 'transcript'|'inferred'|'?' }         … 人が直した欄 → 直される前の音声側出所
+  // 計測はこの台帳と CSV だけ＝**外に送らない**（ローカル完結 SPEC §2・privacy「データを収集していません」のまま）。
+  const SRC_VALUES = ['transcript', 'inferred', 'human', '?'];
+  function cleanSrcMap(x) {
+    if (!x || typeof x !== 'object' || Array.isArray(x)) return null;
+    const out = {};
+    for (const k of Object.keys(x)) if (SRC_VALUES.includes(x[k])) out[k] = x[k];
+    return Object.keys(out).length ? out : null;
+  }
+
   function loadRaw() {
     try {
       const v = JSON.parse(global.localStorage.getItem(KEY));
@@ -64,6 +76,11 @@
       out.lat = Number(r.lat);
       out.lng = Number(r.lng);
     }
+    // v57: 出所内訳と訂正（無い行・壊れた形は持たない＝旧レコードもそのまま読める）
+    const pv = cleanSrcMap(r.prov);
+    if (pv) out.prov = pv;
+    const fx = cleanSrcMap(r.fix);
+    if (fx) out.fix = fx;
     return out;
   }
 
@@ -80,7 +97,8 @@
   // dest  = 'list' | 'both'（呼び出し側 doSave が list/both の時だけ呼ぶ）
   // now   = new Date()（保存時刻＝savedAt と id の種。テストは固定 Date を渡す＝決定的。
   //         渡し忘れは現在時刻＝旧実装は 0(1970) に化け、savedAt 最古扱い→CAP 淘汰で真っ先に消える罠だった）
-  function add(event, dest, now) {
+  // info  = v57（任意）: { prov: {欄→出所}, fix: {欄→直される前の出所} }。無ければ何も焼かない（出所を創作しない）
+  function add(event, dest, now, info) {
     const t = (now && now.getTime) ? now.getTime() : (Number.isFinite(now) ? now : Date.now());
     const startMs = (event && event.start && event.start.getTime) ? event.start.getTime() : t;
     const endMs = (event && event.end && event.end.getTime) ? event.end.getTime() : startMs;
@@ -105,6 +123,11 @@
       dest: dest === 'both' ? 'both' : 'list',
       rev: 1, // v54: 初回保存＝第1版。直すたびに update() が +1 する
     };
+    // v57: 出所内訳（欄→出所）と訂正（欄→直される前の出所）を焼き込む
+    const pv = cleanSrcMap(info && info.prov);
+    if (pv) rec.prov = pv;
+    const fx = cleanSrcMap(info && info.fix);
+    if (fx) rec.fix = fx;
     all.push(rec);
     all.sort((a, b) => a.savedAt - b.savedAt); // 上限で落とすのは「最も古く保存したもの」
     const dropped = Math.max(0, all.length - CAP);
@@ -123,7 +146,7 @@
   // 引き継ぐもの: id（リスト上の同一性）／dest（**元がカレンダーにも入ったか**＝更新後の宛先を決める。
   //    「今の設定」ではない＝設定を変えた後に古い行を直しても宛先が化けない）／位置情報（保存した時にいた場所）。
   // 付け直すもの: kind（開始を直したら予定/記録も変わる＝add と同じ規則）・savedAt（いつの版か）。
-  function update(id, event, now) {
+  function update(id, event, now, info) {
     const t = (now && now.getTime) ? now.getTime() : (Number.isFinite(now) ? now : Date.now());
     const all = loadAll();
     const i = all.findIndex((r) => r.id === String(id));
@@ -145,6 +168,11 @@
       rev: (cur.rev || 1) + 1,
     };
     if (Number.isFinite(cur.lat) && Number.isFinite(cur.lng)) { next.lat = cur.lat; next.lng = cur.lng; }
+    // v57: 出所と訂正は**この版**の保存時点のもの（古い版から引き継がない＝昔の出所を今の値の出所と偽らない）
+    const pv = cleanSrcMap(info && info.prov);
+    if (pv) next.prov = pv;
+    const fx = cleanSrcMap(info && info.fix);
+    if (fx) next.fix = fx;
     all[i] = next;
     persist(all);
     return next;
@@ -193,8 +221,12 @@
       const v = String(s == null ? '' : s);
       return /[",\r\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
     };
-    // v54 の「改訂」は**末尾に足す**＝既存の列位置を動かさない（前に出した CSV と並べて読める）
-    const header = ['種類', 'タイトル', '開始日', '開始時刻', '終了日', '終了時刻', '終日', '場所', 'メモ', '保存先', '保存日時', '緯度', '経度', '改訂'];
+    // v57: 出所の列。確=発話どおり(transcript)/推=推論(inferred)/手=手入力(human)/?=出所情報なし。
+    // 「訂正」は 欄=直される前の出所（訂正率と「訂正のうち推論由来率」がこの2列から集計できる）
+    const MARK = { transcript: '確', inferred: '推', human: '手' };
+    const srcCell = (m) => (m ? Object.keys(m).map((f) => `${f}=${MARK[m[f]] || '?'}`).join(' ') : '');
+    // v54 の「改訂」・v57 の「出所」「訂正」は**末尾に足す**＝既存の列位置を動かさない（前に出した CSV と並べて読める）
+    const header = ['種類', 'タイトル', '開始日', '開始時刻', '終了日', '終了時刻', '終日', '場所', 'メモ', '保存先', '保存日時', '緯度', '経度', '改訂', '出所', '訂正'];
     const lines = [header.map(cell).join(',')];
     for (const r of rows || []) {
       lines.push([
@@ -212,6 +244,8 @@
         Number.isFinite(r.lat) ? r.lat : '', // 位置情報（v38）: 無い行は空＝創作しない
         Number.isFinite(r.lng) ? r.lng : '',
         r.rev > 1 ? r.rev : '', // 直していない行は空＝「1」で埋めない（無かったことを列でも創作しない）
+        srcCell(r.prov), // v57: 無い行は空＝創作しない
+        srcCell(r.fix),
       ].map(cell).join(','));
     }
     // BOM: Excel が UTF-8 と認識するため（無いと日本語が化ける）。改行は CRLF（RFC4180）。

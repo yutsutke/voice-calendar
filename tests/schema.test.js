@@ -372,5 +372,64 @@ t('reset で prov も初期化される', () => {
   eq(s.getFieldProv('title'), null, 'reset 後は null');
 });
 
+// ===== v57: 訂正の記録（スパン出所追跡 B） =====
+t('音声の値を人が変えると訂正として記録される（直される前の出所つき）', () => {
+  const s = createDraftStore();
+  s.applyVoicePatch({ startDate: '2026-07-20', title: '会議' }, 'x', {
+    prov: { startDate: { source: 'inferred', span: null }, title: { source: 'transcript', span: null } },
+  });
+  s.setByHuman('startDate', '2026-07-21');
+  eq(s.getCorrections(), { startDate: 'inferred' }, '推論由来の訂正');
+  s.setByHuman('title', '打ち合わせ');
+  eq(s.getCorrections().title, 'transcript', '発話どおり由来の訂正');
+});
+
+t('同じ値の再確定は訂正ではない（※既存仕様どおり origin は human に移る＝以後は人の欄）', () => {
+  const s = createDraftStore();
+  s.applyVoicePatch({ title: '会議' }, 'x', { prov: { title: { source: 'transcript', span: null } } });
+  s.setByHuman('title', '会議'); // 同じ値＝変えていない
+  eq(s.getCorrections(), {}, '同値は訂正ではない');
+  eq(s.getFieldOrigin('title'), 'human', '触った欄が human になるのは v1 からの既存仕様（掃除からの保護）');
+});
+
+t('人の値の再編集は二重に数えない（最初の訂正の出所を保つ）', () => {
+  const s = createDraftStore();
+  s.applyVoicePatch({ title: '会議' }, 'x', { prov: { title: { source: 'transcript', span: null } } });
+  s.setByHuman('title', 'A'); // 訂正（voice → human）
+  s.setByHuman('title', 'B'); // 人の値の再編集
+  eq(s.getCorrections(), { title: 'transcript' }, '最初の訂正の出所だけを保つ');
+});
+
+t('出所情報の無い音声値の訂正は null（不明を transcript に化けさせない）', () => {
+  const s = createDraftStore();
+  s.applyVoicePatch({ title: '会議' }, 'x'); // prov なし
+  s.setByHuman('title', 'A');
+  eq(s.getCorrections(), { title: null });
+});
+
+t('音声が書き直した欄の訂正は消える・手入力保護で残った欄の訂正は残る', () => {
+  const s = createDraftStore();
+  s.applyVoicePatch({ title: '会議', startDate: '2026-07-20' }, 'x', {
+    prov: { title: { source: 'transcript', span: null }, startDate: { source: 'inferred', span: null } },
+  });
+  s.setByHuman('title', 'A');
+  s.setByHuman('startDate', '2026-07-21');
+  s.applyVoicePatch({ title: '飲み会' }, 'y'); // title は音声が書き直し・startDate は手入力保護（既定）で残る
+  eq(s.getCorrections(), { startDate: 'inferred' }, '最終値が音声のもの＝訂正から消える／人の値が残る欄＝訂正のまま');
+});
+
+t('snapshot/restore/reset が訂正も往復・初期化する', () => {
+  const s = createDraftStore();
+  s.applyVoicePatch({ title: '会議' }, 'x', { prov: { title: { source: 'inferred', span: null } } });
+  s.setByHuman('title', 'A');
+  const snap = s.snapshot();
+  s.reset();
+  eq(s.getCorrections(), {}, 'reset で空');
+  s.restore(snap);
+  eq(s.getCorrections(), { title: 'inferred' }, 'restore で戻る');
+  s.restore({ draft: { title: 'C' } }); // 旧形式（corrections 無し）
+  eq(s.getCorrections(), {}, '欠けた snapshot は空に戻す（後方互換）');
+});
+
 console.log(`\nschema.test: ${pass} passed, ${fail} failed`);
 if (failures.length) { console.log('\n' + failures.join('\n\n')); process.exit(1); }

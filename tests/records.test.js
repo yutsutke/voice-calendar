@@ -187,7 +187,7 @@ t('toCsv: BOM で始まり CRLF 区切り・ヘッダ行がある', () => {
   const csv = R.toCsv([]);
   eq(csv.charCodeAt(0), 0xFEFF, '先頭が BOM（無いと Excel で日本語が化ける）');
   const lines = csv.slice(1).split(CRLF);
-  eq(lines[0], '種類,タイトル,開始日,開始時刻,終了日,終了時刻,終日,場所,メモ,保存先,保存日時,緯度,経度,改訂');
+  eq(lines[0], '種類,タイトル,開始日,開始時刻,終了日,終了時刻,終日,場所,メモ,保存先,保存日時,緯度,経度,改訂,出所,訂正');
   eq(lines[1], '', '末尾は CRLF で終わる（RFC4180）');
 });
 
@@ -197,7 +197,7 @@ t('toCsv: 1行の全列（予定・時刻あり・リスト・位置なし＝末
     allDay: false, location: '駅前', note: '保険証', dest: 'list', savedAt: MS(2026, 7, 19, 9, 5),
   }]);
   eq(csv.slice(1).split(CRLF)[1],
-    '予定,歯医者,2026-07-20,15:00,2026-07-20,16:30,,駅前,保険証,リスト,2026-07-19 09:05,,,');
+    '予定,歯医者,2026-07-20,15:00,2026-07-20,16:30,,駅前,保険証,リスト,2026-07-19 09:05,,,,,');
 });
 
 t('toCsv: 終日は時刻列が空・終日列に○（言っていない時刻を列でも創作しない）', () => {
@@ -206,7 +206,7 @@ t('toCsv: 終日は時刻列が空・終日列に○（言っていない時刻�
     allDay: true, location: '', note: '', dest: 'both', savedAt: MS(2026, 7, 19, 8, 0),
   }]);
   eq(csv.slice(1).split(CRLF)[1],
-    '記録,休み,2026-07-19,,2026-07-19,,○,,,両方,2026-07-19 08:00,,,');
+    '記録,休み,2026-07-19,,2026-07-19,,○,,,両方,2026-07-19 08:00,,,,,');
 });
 
 t('toCsv: 位置情報のある行は緯度・経度列に出る（v38）', () => {
@@ -243,7 +243,7 @@ t('toCsv: list() の実データがそのまま書ける（add → list → toCs
   const line = csv.slice(1).split(CRLF)[1];
   ok(line.startsWith('予定,会議,2026-07-20,10:00,'), `list() の行が出る（実際: ${line}）`);
   ok(line.includes(',丸の内,'), '場所が出る');
-  ok(line.endsWith(',両方,2026-07-19 09:00,,,'), '保存先と保存日時が出る（位置なし＝末尾空）');
+  ok(line.endsWith(',両方,2026-07-19 09:00,,,,,'), '保存先と保存日時が出る（位置なし＝末尾空・出所/訂正も空）');
 });
 
 // ===== 位置情報（v38）=====
@@ -362,11 +362,66 @@ t('v54: CSV の「改訂」列は直した行だけ数字が入る', () => {
   R.update(a.id, ev('直した', 20000), D(15000));
   const rows = R.list();
   const lines = R.toCsv(rows).replace(/^﻿/, '').trim().split('\r\n');
-  eq(lines[0].split(',').pop(), '改訂');
+  const revIdx = lines[0].split(',').indexOf('改訂'); // v57 で末尾に「出所」「訂正」が足された＝位置でなく見出しで探す
+  ok(revIdx >= 0, '改訂列がある');
   const byTitle = {};
-  for (const l of lines.slice(1)) { const c = l.split(','); byTitle[c[1]] = c[c.length - 1]; }
+  for (const l of lines.slice(1)) { const c = l.split(','); byTitle[c[1]] = c[revIdx]; }
   eq(byTitle['直した'], '2');
   eq(byTitle['直してない'], '', '直していない行は空＝1 で埋めない');
+});
+
+// ===== v57: 出所内訳と訂正の焼き込み（スパン出所追跡 B） =====
+t('v57: add が info の prov/fix を焼き・list で読める', () => {
+  R.add(ev('会議', 20000), 'list', D(10000), { prov: { title: 'transcript', startDate: 'inferred' }, fix: { startDate: 'inferred' } });
+  const r = R.list()[0];
+  eq(r.prov, { title: 'transcript', startDate: 'inferred' });
+  eq(r.fix, { startDate: 'inferred' });
+});
+
+t('v57: info 無し・空の info は何も焼かない（出所を創作しない＝旧挙動のまま）', () => {
+  R.add(ev('a', 20000), 'list', D(10000));
+  R.add(ev('b', 21000), 'list', D(10001), { prov: {}, fix: {} });
+  const rows = R.list();
+  ok(!('prov' in rows[0]) && !('fix' in rows[0]), 'info なし');
+  ok(!('prov' in rows[1]) && !('fix' in rows[1]), '空 info');
+});
+
+t('v57: 壊れた出所値は読める分だけ残す（黙って壊れない）', () => {
+  R.add(ev('a', 20000), 'list', D(10000), { prov: { title: 'transcript', startDate: '謎', startTime: 42 }, fix: '文字列' });
+  const r = R.list()[0];
+  eq(r.prov, { title: 'transcript' }, '知らない値は捨てる');
+  ok(!('fix' in r), 'オブジェクトでない fix は持たない');
+});
+
+t('v57: update はこの版の info を焼く・古い版の出所を引き継がない（昔の出所で今の値を偽らない）', () => {
+  const a = R.add(ev('会議', 20000), 'list', D(10000), { prov: { title: 'transcript' } });
+  R.update(a.id, ev('会議2', 20000), D(15000)); // info なし
+  ok(!('prov' in R.list()[0]), '引き継がない＝不明は不明のまま');
+  R.update(a.id, ev('会議3', 20000), D(16000), { prov: { title: 'human' }, fix: { title: 'transcript' } });
+  eq(R.list()[0].prov, { title: 'human' });
+  eq(R.list()[0].fix, { title: 'transcript' });
+});
+
+t('v57: CSV に「出所」「訂正」列（末尾・無い行は空・確/推/手の記法）', () => {
+  R.add(ev('あり', 20000), 'list', D(10000), { prov: { title: 'transcript', startDate: 'inferred', startTime: 'human' }, fix: { startDate: 'inferred' } });
+  R.add(ev('なし', 21000), 'list', D(10001));
+  const lines = R.toCsv(R.list()).replace(/^﻿/, '').trim().split('\r\n');
+  const heads = lines[0].split(',');
+  eq(heads.slice(-2), ['出所', '訂正']);
+  const provIdx = heads.indexOf('出所');
+  const byTitle = {};
+  for (const l of lines.slice(1)) { const c = l.split(','); byTitle[c[1]] = { p: c[provIdx], f: c[provIdx + 1] }; }
+  eq(byTitle['あり'].p, 'title=確 startDate=推 startTime=手');
+  eq(byTitle['あり'].f, 'startDate=推');
+  eq(byTitle['なし'].p, '', '無い行は空＝創作しない');
+  eq(byTitle['なし'].f, '');
+});
+
+t('v57: 「?」（出所情報なし）も保てる＝不明を不明のまま数えられる', () => {
+  R.add(ev('a', 20000), 'list', D(10000), { prov: { title: '?' } });
+  eq(R.list()[0].prov, { title: '?' });
+  const lines = R.toCsv(R.list()).replace(/^﻿/, '').trim().split('\r\n');
+  ok(lines[1].includes('title=?'), 'CSV でも ? のまま');
 });
 
 console.log(`\nrecords.test: ${pass} passed, ${fail} failed`);

@@ -593,20 +593,20 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
      理由: この版文字列は index.html にしかないが、ロジックは別ファイル＝別キャッシュ。
      付けないと「フッタは新しいのにパーサは古い」という嘘の状態が成立する（v9 で実際に踏んだ）。
      index.html が更新されれば src の URL も変わる → JS も必ず新しく取り直される。 -->
-<script src="engine/settings.js?v=56"></script>
-<script src="engine/schema.js?v=56"></script>
-<script src="engine/parser.js?v=56"></script>
-<script src="engine/dictionary.js?v=56"></script>
-<script src="engine/contract.js?v=56"></script>
-<script src="engine/batch.js?v=56"></script>
-<script src="engine/ai.js?v=56"></script>
-<script src="input/transcriber.js?v=56"></script>
-<script src="adapters/calendar.js?v=56"></script>
-<script src="adapters/records.js?v=56"></script>
-<script src="adapters/location.js?v=56"></script>
+<script src="engine/settings.js?v=57"></script>
+<script src="engine/schema.js?v=57"></script>
+<script src="engine/parser.js?v=57"></script>
+<script src="engine/dictionary.js?v=57"></script>
+<script src="engine/contract.js?v=57"></script>
+<script src="engine/batch.js?v=57"></script>
+<script src="engine/ai.js?v=57"></script>
+<script src="input/transcriber.js?v=57"></script>
+<script src="adapters/calendar.js?v=57"></script>
+<script src="adapters/records.js?v=57"></script>
+<script src="adapters/location.js?v=57"></script>
 <script>
 'use strict';
-const BUILD = 'v56：AI の解釈にも出所（引用の検証＝本文に無い引用は幻覚として検出）｜v55：欄の出所（スパン）を記録｜v54：保存済みの行を後から直せる · 2026-07-22';
+const BUILD = 'v57：保存した行に出所内訳と訂正を記録（リスト/CSV＝完全ローカル計測）｜v56：AI の解釈にも出所（引用の検証）｜v55：欄の出所（スパン）を記録 · 2026-07-22';
 console.log('BUILD:', BUILD);
 document.getElementById('build').textContent = BUILD;
 
@@ -1546,7 +1546,7 @@ async function batchSaveOne(entry) {
   renderBatch();
   try {
     const now = new Date();
-    const r = await saveDraftCore(entry.draft, now);
+    const r = await saveDraftCore(entry.draft, now, { info: provInfoFromEntry(entry) });
     if (!r.ok) {
       if (r.calError) handleCalendarError(r.calError, '保存に失敗');
       else toast(`⚠ ${r.problems.join(' / ')}`);
@@ -1634,7 +1634,7 @@ async function saveBatchEntries(entries, onProgress) {
           for (let i = 0; i < valid.length; i++) {
             progress(i + 1, valid.length);
             const { entry } = valid[i];
-            const r = await saveDraftCore(entry.draft, now, { skipCalendar: true });
+            const r = await saveDraftCore(entry.draft, now, { skipCalendar: true, info: provInfoFromEntry(entry) });
             if (r.ok && !(r.toList && !r.listOk)) {
               okCount++;
               listDroppedTotal += r.listDropped || 0;
@@ -1653,7 +1653,7 @@ async function saveBatchEntries(entries, onProgress) {
       for (let i = 0; i < entries.length; i++) {
         progress(i + 1, entries.length);
         const e = entries[i];
-        const r = await saveDraftCore(e.draft, now);
+        const r = await saveDraftCore(e.draft, now, { info: provInfoFromEntry(e) });
         if (!r.ok) {
           if (r.calError) {
             handleCalendarError(r.calError, `${i + 1}件目の保存に失敗`);
@@ -2269,6 +2269,40 @@ function updateSaveLabel() {
 settings.subscribe((k) => { if (k === 'recordDest' || k === null) updateSaveLabel(); }); // null = resetAll
 updateSaveLabel();
 
+// ===== v57（スパン出所追跡 B）: 保存する行に「出所内訳」と「訂正」を焼く＝完全ローカルの計測 =====
+// 見る数字は2つ（SPEC §10 ノールック完走率の内訳になる）:
+//   ① 訂正率 = 訂正した欄 / 埋まっていた欄
+//   ② 訂正のうち「推論(inferred)由来」だった率 — ②が高い＝直しは推論箇所に集中＝出所追跡の設計が正しい証拠。
+//   逆に transcript 由来が頻繁に直されるなら、認識か quote 解決が壊れている（切り分けがこの2列でできる）。
+// 保存先はリストの台帳と CSV だけ＝**外に送らない**（privacy「データを収集していません」のまま）。
+function provInfoFromStore() {
+  const draft = store.get();
+  const prov = {};
+  for (const f of VCStore.FIELDS) {
+    const filled = f === 'allDay' ? draft[f] === true : draft[f] !== '' && draft[f] != null;
+    if (!filled) continue;
+    const p = store.getFieldProv(f);
+    prov[f] = (p && p.source) || '?'; // '?' = 出所情報の無い書き込み（不明は不明のまま透明に）
+  }
+  const cor = store.getCorrections();
+  const fix = {};
+  for (const f of Object.keys(cor)) fix[f] = cor[f] || '?';
+  return { prov, fix };
+}
+// まとめて入力のカードから保存する時（staging には人の訂正が無い＝prov だけ）
+function provInfoFromEntry(entry) {
+  if (!entry || !entry.prov) return null;
+  const d = entry.draft || {};
+  const prov = {};
+  for (const f of VCStore.FIELDS) {
+    const filled = f === 'allDay' ? d.allDay === true : d[f] !== '' && d[f] != null;
+    if (!filled) continue;
+    const p = entry.prov[f];
+    prov[f] = (p && p.source) || '?';
+  }
+  return Object.keys(prov).length ? { prov } : null;
+}
+
 // ===== 保存コア（v39 で doSave から切り出し） =====
 // draft を受けて materialize → カレンダー → リスト（台帳）→ 位置情報 まで行う共有部。
 // フォーム（doSave）からも「まとめて入力」（バッチ）からも**同じ経路**で保存する＝挙動は v38 と同一。
@@ -2312,7 +2346,7 @@ async function saveDraftCore(draft, now, opts) {
   let listRec = null;  // v38: 位置情報を後から付ける相手（行 id）
   if (toList) {
     try {
-      const added = VCRecords.add(res.event, dest, now);
+      const added = VCRecords.add(res.event, dest, now, (opts && opts.info) || null); // v57: 出所内訳と訂正も焼く
       listRec = added;
       listDropped = (added && added.dropped) || 0;
       listOk = true;
@@ -2341,7 +2375,7 @@ function saveDestLabels(r) {
 async function doSave(opts) {
   const auto = !!(opts && opts.auto);
   const now = new Date();
-  const r = await saveDraftCore(store.get(), now);
+  const r = await saveDraftCore(store.get(), now, { info: provInfoFromStore() });
   if (!r.ok) {
     if (r.calError) handleCalendarError(r.calError, auto ? '自動保存に失敗' : '保存に失敗');
     else toast(`⚠ ${r.problems.join(' / ')}`);
@@ -2405,7 +2439,13 @@ function startEditRecord(r) {
   // 🚨 復元の前にフォーカスを外す（v3/v18）: ロック中の欄は描画がスキップされ、
   //    ストアと画面がズレたまま保存される事故になる
   if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
-  if (!store.restore(VCBatch.toSnapshot(recordToDraft(r)))) { toast('フォームに載せられませんでした'); return; }
+  // v57: 台帳に焼いた出所（欄→source）をフォームへ戻す（span は台帳に無い＝source だけ復元。'?' は不明＝null のまま）
+  const priorProv = r.prov
+    ? Object.fromEntries(Object.entries(r.prov)
+        .filter(([, s]) => s === 'transcript' || s === 'inferred' || s === 'human')
+        .map(([f, s]) => [f, { source: s }]))
+    : null;
+  if (!store.restore(VCBatch.toSnapshot(recordToDraft(r), priorProv))) { toast('フォームに載せられませんでした'); return; }
   editingRec = { id: r.id, dest: r.dest, rev: r.rev || 1, title: r.title };
   // v44 の「辞書に登録して保存」がそのまま働くように、**読み込んだ時の値**を基準にする
   // （restore は基準を捨てる＝ここで置き直す）。以後、手で直した欄が学習の候補になる。
@@ -2463,7 +2503,7 @@ async function saveEditedRecord() {
 
   // ② リスト（台帳）を差し替え＝ここが「今正しい状態」（ゆう決定: リストは1行のまま）
   let updated = null;
-  try { updated = VCRecords.update(cur.id, res.event, now); }
+  try { updated = VCRecords.update(cur.id, res.event, now, provInfoFromStore()); } // v57: この版の出所と訂正を焼く
   catch (err) {
     // カレンダーには入った後＝黙って成功にしない（v16）。人が何を直すべきか分かる形で言う
     window.__vcNote('保存済みの修正', `リストの更新に失敗: ${(err && err.message) || err}`);
