@@ -315,5 +315,62 @@ t('subscribe に written / skipped が通知される', () => {
   eq(got.skipped, ['title'], 'skipped');
 });
 
+// ===== v55: 出所（prov）の配管（スパン出所追跡 A'） =====
+t('applyVoicePatch が prov を欄ごとに保持し、言い直し掃除で消える', () => {
+  const s = createDraftStore();
+  const prov = {
+    title: { source: 'transcript', span: null },
+    startDate: { source: 'inferred', span: { a: 0, b: 3, quote: '20日' }, why: '月は言っていない' },
+  };
+  s.applyVoicePatch({ title: '美容院', startDate: '2026-07-20' }, '20日に美容院', { prov });
+  eq(s.getFieldProv('title'), { source: 'transcript', span: null }, 'title');
+  eq(s.getFieldProv('startDate').source, 'inferred', 'startDate は推論');
+  s.applyVoicePatch({ title: '会議' }, '会議', { prov: { title: { source: 'transcript', span: null } } });
+  eq(s.getFieldProv('startDate'), null, '掃除された欄の prov は消える');
+  eq(s.getFieldProv('title'), { source: 'transcript', span: null }, '新しい発話の prov に置き換わる');
+});
+
+t('prov を渡さない呼び出しは従来どおり動き、出所は不明(null)＝transcript を創作しない', () => {
+  const s = createDraftStore();
+  const r = s.applyVoicePatch({ title: 'A', startTime: '15:00' }, 'x');
+  eq(r.written, ['title', 'startTime'], '書き込みは従来どおり');
+  eq(s.getFieldProv('title'), null, 'title の出所は不明');
+  eq(s.getFieldProv('startTime'), null, 'startTime の出所は不明');
+});
+
+t('手入力の prov は human・空にすると null', () => {
+  const s = createDraftStore();
+  s.setByHuman('location', '駅前');
+  eq(s.getFieldProv('location'), { source: 'human' }, '手入力');
+  s.setByHuman('location', '');
+  eq(s.getFieldProv('location'), null, '空にしたら null');
+});
+
+t('snapshot/restore が prov も往復する（↩ で出所が現在値のまま残らない）', () => {
+  const s = createDraftStore();
+  s.applyVoicePatch({ title: 'A' }, 'x', { prov: { title: { source: 'transcript', span: null } } });
+  const snap = s.snapshot();
+  s.applyVoicePatch({ title: 'B' }, 'y'); // 出所不明の上書き
+  eq(s.getFieldProv('title'), null, '上書き後は不明');
+  s.restore(snap);
+  eq(s.getFieldProv('title'), { source: 'transcript', span: null }, '復元で出所も戻る');
+});
+
+t('prov の無い古い snapshot でも restore できる（後方互換・v54 以前の来歴）', () => {
+  const s = createDraftStore();
+  s.applyVoicePatch({ title: 'A' }, 'x', { prov: { title: { source: 'transcript', span: null } } });
+  const ok = s.restore({ draft: { title: 'C' } });
+  eq(ok, true, 'restore は成功する');
+  eq(s.get().title, 'C', '値は戻る');
+  eq(s.getFieldProv('title'), null, '欠けた prov は不明(null)に戻る＝古い出所を残さない');
+});
+
+t('reset で prov も初期化される', () => {
+  const s = createDraftStore();
+  s.applyVoicePatch({ title: 'A' }, 'x', { prov: { title: { source: 'transcript', span: null } } });
+  s.reset();
+  eq(s.getFieldProv('title'), null, 'reset 後は null');
+});
+
 console.log(`\nschema.test: ${pass} passed, ${fail} failed`);
 if (failures.length) { console.log('\n' + failures.join('\n\n')); process.exit(1); }

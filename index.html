@@ -593,20 +593,20 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
      理由: この版文字列は index.html にしかないが、ロジックは別ファイル＝別キャッシュ。
      付けないと「フッタは新しいのにパーサは古い」という嘘の状態が成立する（v9 で実際に踏んだ）。
      index.html が更新されれば src の URL も変わる → JS も必ず新しく取り直される。 -->
-<script src="engine/settings.js?v=54"></script>
-<script src="engine/schema.js?v=54"></script>
-<script src="engine/parser.js?v=54"></script>
-<script src="engine/dictionary.js?v=54"></script>
-<script src="engine/contract.js?v=54"></script>
-<script src="engine/batch.js?v=54"></script>
-<script src="engine/ai.js?v=54"></script>
-<script src="input/transcriber.js?v=54"></script>
-<script src="adapters/calendar.js?v=54"></script>
-<script src="adapters/records.js?v=54"></script>
-<script src="adapters/location.js?v=54"></script>
+<script src="engine/settings.js?v=55"></script>
+<script src="engine/schema.js?v=55"></script>
+<script src="engine/parser.js?v=55"></script>
+<script src="engine/dictionary.js?v=55"></script>
+<script src="engine/contract.js?v=55"></script>
+<script src="engine/batch.js?v=55"></script>
+<script src="engine/ai.js?v=55"></script>
+<script src="input/transcriber.js?v=55"></script>
+<script src="adapters/calendar.js?v=55"></script>
+<script src="adapters/records.js?v=55"></script>
+<script src="adapters/location.js?v=55"></script>
 <script>
 'use strict';
-const BUILD = 'v54：保存済みの行を後から直せる（リストの ✏️ → フォーム → 更新して保存）｜v53：まとめて入力の自動保存｜v52：位置情報の許可を native から読む · 2026-07-22';
+const BUILD = 'v55：欄の出所（発話のどの言葉から・確定か推論か）を記録＝スパン出所追跡｜v54：保存済みの行を後から直せる｜v53：まとめて入力の自動保存 · 2026-07-22';
 console.log('BUILD:', BUILD);
 document.getElementById('build').textContent = BUILD;
 
@@ -761,9 +761,13 @@ function applyRuleResult({ rule, text, rawText, dictHits, meta, aiFbNote }) {
     // 🚨 v54: **直している最中は掃除しない**（v6 の言い直しセマンティクスを止める）。
     // 「直している」は言い直し（＝新規に入れ直す）ではなく差分修正＝v17 の欄指定と同じ論理。
     // ここで掃除すると「場所 丸の内」と言い足しただけで元の予定のタイトルやメモが消える。
-    const a = store.applyVoicePatch(patch, text, { targeted: targeted || !!editingRec });
+    const a = store.applyVoicePatch(patch, text, { targeted: targeted || !!editingRec, prov: rule.prov });
     skipped = a.skipped;
     cleared = a.cleared;
+    // v55: 出所の痕跡を診断へ（数字を診断に出す v16）。画面での強調は計測（スパン出所追跡 B）の数字が出てから
+    const marks = Object.keys(patch).map((f) => { const p = rule.prov && rule.prov[f]; return `${f}=${!p ? '?' : p.source === 'inferred' ? '推' : '確'}`; });
+    const whys = Object.keys(patch).map((f) => rule.prov && rule.prov[f] && rule.prov[f].why).filter(Boolean);
+    window.__vcDebugNote(`📎 出所 ${marks.join(' ')}${whys.length ? `｜${whys.join('／')}` : ''}`);
   }
   // 🔴 v20（実機FB）: 来歴に積むのは **この発話を適用した「後」の状態**。
   // v18 は「前」の状態を積んでいたため、行に「飲み会」と表示されているのに ↩ を押すと

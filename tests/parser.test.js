@@ -258,6 +258,86 @@ filler('明日15時に歯医者', false);
 filler('えーっと 明日15時 歯医者', false, '言い淀んでから本題を言った発話は通す');
 filler('会議', false);
 
+// ===== v55: 出所（prov・スパン出所追跡 A'） =====
+// 境界の仕様: nearestBy（年・月の最近接補完 v8）や now 比較（時刻だけ→今日/明日・日またぎ）で
+// **実在する複数候補から1つを選んだら inferred**。定義的に1つへ解決する語は transcript。
+// span がある prov は必ず quote === normalizedText.slice(a,b)（AI 経路 v56 の quote 検証と鏡の不変条件）。
+function checkProv(text, field, expected, opts = {}) {
+  const r = interpret(text, opts.now || NOW);
+  const p = (r.prov || {})[field];
+  const problems = [];
+  if (!expected) {
+    if (p) problems.push(`prov.${field}: 無いはずが ${JSON.stringify(p)}`);
+  } else if (!p) {
+    problems.push(`prov.${field}: 期待 ${JSON.stringify(expected)} / 実際 なし`);
+  } else {
+    if (p.source !== expected.source) problems.push(`source: 期待 ${expected.source} / 実際 ${p.source}`);
+    if ('quote' in expected) {
+      const q = p.span && p.span.quote;
+      if (q !== expected.quote) problems.push(`quote: 期待 ${JSON.stringify(expected.quote)} / 実際 ${JSON.stringify(q)}`);
+    }
+    if ('whyIncludes' in expected && (!p.why || !p.why.includes(expected.whyIncludes))) {
+      problems.push(`why: 「${expected.whyIncludes}」を含まない / 実際 ${JSON.stringify(p.why)}`);
+    }
+    if (p.span && r.normalizedText.slice(p.span.a, p.span.b) !== p.span.quote) {
+      problems.push(`span/quote 不一致: slice=${JSON.stringify(r.normalizedText.slice(p.span.a, p.span.b))} / quote=${JSON.stringify(p.span.quote)}`);
+    }
+  }
+  if (problems.length) {
+    fail++;
+    failures.push(`✗ prov 「${text}」.${field}\n    ${problems.join('\n    ')}`);
+  } else {
+    pass++;
+  }
+}
+
+// 定義的に1つへ解決する語 = transcript（span がその言葉を指す）
+checkProv('明日15時に歯医者', 'startDate', { source: 'transcript', quote: '明日' });
+checkProv('明日15時に歯医者', 'startTime', { source: 'transcript', quote: '15時' });
+checkProv('明日15時に歯医者', 'title', { source: 'transcript' }); // title は素通しの寄せ集め＝span なし
+checkProv('来週火曜の10時から11時までチームミーティング', 'startDate', { source: 'transcript', quote: '来週火曜' });
+checkProv('来週火曜の10時から11時までチームミーティング', 'endTime', { source: 'transcript', quote: '11時' });
+checkProv('来週火曜の10時から11時までチームミーティング', 'endDate', { source: 'transcript', quote: '来週火曜' }); // 終了日は開始日の出所を引き継ぐ
+checkProv('明後日の午後3時 美容院', 'startTime', { source: 'transcript', quote: '午後3時' });
+
+// 年を言っていない絶対日付 = 最近接の年を「選んだ」（v8）→ inferred・why に理由
+checkProv('6月30日 面談', 'startDate', { source: 'inferred', quote: '6月30日', whyIncludes: '年は言っていない' });
+// 年を言ったら transcript（v9: 明示指定を推測扱いしない）
+checkProv('2027年11月5日 手術', 'startDate', { source: 'transcript', quote: '2027年11月5日' });
+checkProv('来年の3月1日 契約', 'startDate', { source: 'transcript', quote: '来年の3月1日' });
+// 月を言っていない「N日」= 最近接の月 → inferred
+checkProv('20日に美容院', 'startDate', { source: 'inferred', quote: '20日', whyIncludes: '月は言っていない' });
+
+// 時刻だけ（日付なし）→ 今日/明日を now 比較で選択 = inferred（span は根拠になった時刻の言葉を指す）
+checkProv('15時 買い物', 'startDate', { source: 'inferred', quote: '15時', whyIncludes: '日付は言っていない' });
+checkProv('15時 買い物', 'startTime', { source: 'transcript', quote: '15時' });
+
+// 日またぎ（22時から2時）: 終了日は「翌日」を選択 = inferred。終了時刻そのものは発話どおり = transcript
+checkProv('明日22時から2時まで 飲み会', 'endTime', { source: 'transcript', quote: '2時' });
+checkProv('明日22時から2時まで 飲み会', 'endDate', { source: 'inferred', whyIncludes: '翌日' });
+
+// 継続時間: 終了時刻は「2時間」の断片から定義的に計算 = transcript
+checkProv('明日13時から2時間 ワークショップ', 'endTime', { source: 'transcript', quote: '2時間' });
+// 相対時刻（30分後）= 今からの定義的計算 = transcript（日付・時刻とも）
+checkProv('30分後に会議', 'startTime', { source: 'transcript', quote: '30分後' });
+checkProv('30分後に会議', 'startDate', { source: 'transcript', quote: '30分後' });
+// 「今」「現在」（v27）= 現在時刻へ定義的に解決 = transcript
+checkProv('現在 東京駅についた', 'startTime', { source: 'transcript', quote: '現在' });
+checkProv('現在 東京駅についた', 'startDate', { source: 'transcript', quote: '現在' });
+// 同じ日を2つの言い方で言った時は選択の無かった方（transcript）が代表（「今日」と「16日」）
+checkProv('今日16日 打ち合わせ', 'startDate', { source: 'transcript', quote: '今日' });
+
+// 終日
+checkProv('明日は終日 出張', 'allDay', { source: 'transcript', quote: '終日' });
+
+// 欄指定発話（v17）にも出所が付く（値は発話にそのまま在る＝transcript）
+checkProv('場所 立川', 'location', { source: 'transcript', quote: '立川' });
+checkProv('終了 22時', 'endTime', { source: 'transcript', quote: '22時' });
+
+// 曖昧で埋めなかった欄には prov も付かない（素通し＝従来どおり・創作しない）
+checkProv('明日3時 打ち合わせ', 'startTime', null);
+checkProv('2月30日 テスト', 'startDate', null);
+
 // ===== 結果 =====
 console.log(`\nparser.test: ${pass} passed, ${fail} failed`);
 if (failures.length) {

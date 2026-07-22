@@ -33,6 +33,12 @@
     let fieldState = Object.fromEntries(FIELDS.map((f) => [f, 'empty']));
     // 誰が書いたか: 'voice' | 'human' | null。音声の再描画（下記）で「音声の残りだけ掃除」に使う
     let origin = Object.fromEntries(FIELDS.map((f) => [f, null]));
+    // v55（スパン出所追跡 A'）: 値の出所の**記録**。origin が「言い直し掃除の正」(v6) なのに対し、
+    // こちらは「この値が発話のどこから来たか・確定か推論か」を保持するだけで**判定には使わない**＝
+    // v3 の二重管理にはならない（origin と同じ分岐で必ず一緒に更新し、読むのは getFieldProv だけ）。
+    // 形は parser の prov と同じ: { source:'transcript'|'inferred'|'human', span?, why? } | null（不明）。
+    // null の意味＝「出所情報の無い書き込み」（prov を渡さない旧呼び出し・AI 経路 v56 前）＝創作しない。
+    let prov = Object.fromEntries(FIELDS.map((f) => [f, null]));
     const locks = new Set();
     let lockSource = null; // (field) => boolean : 宿主に「今この欄を人が編集中か」を聞く述語
     const transcripts = []; // 来歴（SPEC §5-①）: note には流し込まない。端末内に留める
@@ -61,6 +67,7 @@
       get: () => ({ ...draft }),
       getFieldState: (f) => (isLocked(f) ? 'locked' : fieldState[f]),
       getFieldOrigin: (f) => origin[f],
+      getFieldProv: (f) => prov[f],
       isLocked,
       getTranscripts: () => transcripts.slice(),
       subscribe(fn) { listeners.add(fn); return () => listeners.delete(fn); },
@@ -77,6 +84,7 @@
         const empty = isEmptyVal(field, value);
         fieldState[field] = empty ? 'empty' : 'confirmed';
         origin[field] = empty ? null : 'human';
+        prov[field] = empty ? null : { source: 'human' };
         emit({ type: 'human', fields: [field] });
       },
 
@@ -96,6 +104,7 @@
       // （SPEC §0「任意項目は声か手で足す」の声版。自由文の差分パッチは v1 の主戦場のまま）。
       applyVoicePatch(patch, transcriptText, opts) {
         const targeted = !!(opts && opts.targeted);
+        const provIn = (opts && opts.prov) || null; // v55: 解釈層の出所。渡さない呼び出しは従来どおり（出所は不明のまま）
         const transcript = { id: 't' + Date.now() + '-' + transcripts.length, text: transcriptText, createdAt: new Date() };
         transcripts.push(transcript);
         const written = [], skipped = [], cleared = [];
@@ -106,11 +115,13 @@
             draft[f] = patch[f];
             fieldState[f] = 'confirmed';
             origin[f] = 'voice';
+            prov[f] = (provIn && provIn[f]) || null; // 出所が無ければ null＝不明（transcript を創作しない）
             written.push(f);
           } else if (!targeted && policy('plainUtteranceIsNew') && shouldClear(f) && !isLocked(f)) {
             draft[f] = f === 'allDay' ? false : '';
             fieldState[f] = 'empty';
             origin[f] = null;
+            prov[f] = null;
             cleared.push(f);
           }
         }
@@ -123,12 +134,14 @@
       // 古い発話を再解釈すると now が変わって日付がズレる（「明日」は明日には別の日）＝
       // 来歴に積むのは「解釈結果」ではなく「状態のスナップショット」でなければならない。
       // origin/fieldState も一緒に戻す＝復元後の言い直し掃除（v6）が正しく効き続ける。
-      snapshot: () => ({ draft: { ...draft }, fieldState: { ...fieldState }, origin: { ...origin } }),
+      snapshot: () => ({ draft: { ...draft }, fieldState: { ...fieldState }, origin: { ...origin }, prov: { ...prov } }),
       restore(snap) {
         if (!snap || !snap.draft) return false;
         draft = { ...emptyDraft(), ...snap.draft };
         fieldState = { ...Object.fromEntries(FIELDS.map((f) => [f, 'empty'])), ...(snap.fieldState || {}) };
         origin = { ...Object.fromEntries(FIELDS.map((f) => [f, null])), ...(snap.origin || {}) };
+        // prov の無い古い snapshot（v54 以前の来歴）でも動く＝欠けは「不明」に戻すだけ
+        prov = { ...Object.fromEntries(FIELDS.map((f) => [f, null])), ...(snap.prov || {}) };
         emit({ type: 'restore', fields: FIELDS.slice() });
         return true;
       },
@@ -137,6 +150,7 @@
         draft = emptyDraft();
         fieldState = Object.fromEntries(FIELDS.map((f) => [f, 'empty']));
         origin = Object.fromEntries(FIELDS.map((f) => [f, null]));
+        prov = Object.fromEntries(FIELDS.map((f) => [f, null]));
         locks.clear();
         emit({ type: 'reset', fields: FIELDS.slice() });
       },

@@ -30,6 +30,16 @@
 //
 // patch のキーは共有状態層（schema.js）の粒度に合わせる:
 //   { title?, startDate?('YYYY-MM-DD'), startTime?('HH:mm'), endDate?, endTime?, allDay? }
+//
+// v55（スパン出所追跡 A'）: 返り値に prov（欄ごとの出所）を追加。
+//   prov[欄] = { source: 'transcript' | 'inferred', span: { a, b, quote } | null, why? }
+//   - span は normalizedText（正規化後に解釈へかけた文字列）へのオフセット。
+//     **quote === normalizedText.slice(a, b) をテストが強制**（AI 経路 v56 の quote 検証と鏡）。
+//   - 境界は機械的: nearestBy（年・月の最近接補完 v8）や now 比較（時刻だけ→今日/明日・日またぎ）で
+//     **実在する複数候補から1つを選んだら inferred**（why に理由＝notes と同じ言葉遣い）。
+//     定義的に1つへ解決する語（明日・来週火曜・2027年11月5日・30分後）は transcript。
+//     曖昧（修飾なし1〜6時）は従来どおり埋めない＝prov も付かない（素通し）。
+//     title は「消費されなかった断片の寄せ集め」＝複数スパンの合成なので span を持たない（source のみ）。
 (function (global) {
   'use strict';
 
@@ -162,12 +172,15 @@
     const field = FIELD_KEYS[m[1]];
     const value = m[2].replace(/^[はがをに:、。\s]+/, '').replace(/[。．\s]+$/, '');
     if (!value) return null;
+    // v55: 欄指定の値は発話にそのまま在る＝transcript。span は最初の出現（値と同一文字列なので quote は常に一致）
+    const spanOf = (q) => { const i = text.indexOf(q); return i >= 0 ? { a: i, b: i + q.length, quote: q } : null; };
     if (field === 'startTime' || field === 'endTime') {
       const t = timeFromValue(value);
       if (!t || t.ambiguous) return null; // 時刻なし/曖昧（3時）→ 通常解釈へ（曖昧の理由はそちらが出す）
-      return { [field]: fmtTime(t.h, t.min) };
+      return { patch: { [field]: fmtTime(t.h, t.min) }, prov: { [field]: { source: 'transcript', span: spanOf(t.raw) } } };
     }
-    return { [field]: value }; // title / location / note は自由文をそのまま
+    // title / location / note は自由文をそのまま
+    return { patch: { [field]: value }, prov: { [field]: { source: 'transcript', span: spanOf(value) } } };
   }
 
   // ---------- 本体 ----------
@@ -178,9 +191,9 @@
     const notes = []; // 素通しの理由（UI で見せる／将来の仮置き v1 の種）
 
     // 欄指定発話なら、その欄だけの差分を返す（通常解釈は走らせない）
-    const targetedPatch = tryTargeted(text);
-    if (targetedPatch) {
-      return { patch: targetedPatch, notes, targeted: true, normalizedText: text };
+    const targetedHit = tryTargeted(text);
+    if (targetedHit) {
+      return { patch: targetedHit.patch, notes, targeted: true, normalizedText: text, prov: targetedHit.prov };
     }
 
     const isFree = (a, b) => {
@@ -200,12 +213,20 @@
       }
       return out;
     };
+    // v55: 出所レコードを作る。quote は必ず text.slice(a,b) ＝「span の指す場所に quote が実在する」を
+    // 構造的に保証する（AI 経路 v56 では逆向きに quote→indexOf で検証する＝鏡）。
+    const provOf = (meta, a, b) => {
+      const p = { source: (meta && meta.source) || 'transcript', span: a != null ? { a, b, quote: text.slice(a, b) } : null };
+      if (meta && meta.why) p.why = meta.why;
+      return p;
+    };
 
     // ===== 終日 =====
-    let allDay = false;
+    let allDay = false, allDaySpan = null;
     for (const { m, a, b } of findAll(/終日|一日中|丸一日|まる一日/g)) {
       if (!isFree(a, b)) continue;
       allDay = true;
+      if (!allDaySpan) allDaySpan = { a, b };
       consume(a, b);
     }
 
@@ -223,9 +244,11 @@
       if (rel) return today.getFullYear() + REL_YEAR[rel];
       return null;
     };
-    const pushCand = (date, a, b) => {
+    // meta（v55・省略可）: 出所。省略＝transcript（発話が定義的に1つへ解決する語）。
+    // nearestBy 等で複数候補から選んだ呼び出し元だけが { source:'inferred', why } を渡す。
+    const pushCand = (date, a, b, meta) => {
       if (!date || !isFree(a, b) || overlaps(dateCands, a, b) || overlaps(blocked, a, b)) return;
-      dateCands.push({ date, a, b });
+      dateCands.push({ date, a, b, meta: meta || { source: 'transcript' } });
     };
     // 「今」系を言ったか（v27）。日付は下で今日として積み、時刻は時刻確定の後に補完する
     let nowSpan = null;
@@ -247,7 +270,7 @@
         d = nearestBy(today, (k) => new Date(today.getFullYear() + k, mo - 1, da), valid);
       }
       if (!d) { blocked.push({ a, b }); notes.push(`「${m[0]}」は存在しない日付なので入れていません`); continue; }
-      pushCand(d, a, b);
+      pushCand(d, a, b, y != null ? null : { source: 'inferred', why: `年は言っていないため、今日に最も近い${d.getFullYear()}年として解釈` });
     }
     // 2) 来月N日 / 今月N日
     for (const { m, a, b } of findAll(/(来月|今月)(\d{1,2})日/g)) {
@@ -264,7 +287,7 @@
       const d = y != null
         ? new Date(y, mo, 0)
         : nearestBy(today, (k) => new Date(today.getFullYear() + k, mo, 0), () => true);
-      pushCand(d, a, b);
+      pushCand(d, a, b, (y != null || !d) ? null : { source: 'inferred', why: `年は言っていないため、今日に最も近い${d.getFullYear()}年として解釈` });
     }
     // 3.5) 月末（来月の末 / 今月の末 / 来月末 / 今月末 / 月末。「の」を許す＝実発話FB。
     //      素の「末」は拾わない＝「週末」を月末と誤読しないため）
@@ -305,7 +328,7 @@
       if (delta == null || delta <= 0) continue;
       const target = new Date(now.getTime() + delta * 60000);
       pushCand(startOfDay(target), a, b);
-      relTime = { h: target.getHours(), min: target.getMinutes(), day: fmtDate(startOfDay(target)) };
+      relTime = { h: target.getHours(), min: target.getMinutes(), day: fmtDate(startOfDay(target)), a, b };
     }
     // 5) 相対日（長いものから。一昨日は昨日を、明々後日は明後日/明日を含むので順序が大事）
     //    過去（昨日/一昨日）も埋める＝実績の記録という用途が実在（実発話FB）
@@ -352,19 +375,23 @@
     for (const { m, a, b } of findAll(/(\d{1,2})日(?![間時分月])/g)) {
       const da = +m[1];
       if (da < 1 || da > 31) continue;
-      pushCand(nearestBy(
+      const d = nearestBy(
         today,
         (k) => new Date(today.getFullYear(), today.getMonth() + k, da),
         (c) => c.getDate() === da
-      ), a, b);
+      );
+      pushCand(d, a, b, d ? { source: 'inferred', why: `月は言っていないため、今日に最も近い${d.getMonth() + 1}月として解釈` } : null);
     }
 
     // 日付の確定判定：ユニークな日が1つだけなら採用（同じ日を2回言うのは OK）
-    let dateStr = null;
+    let dateStr = null, dateProv = null;
     const uniqueDays = [...new Set(dateCands.map((c) => fmtDate(c.date)))];
     if (uniqueDays.length === 1) {
       dateStr = uniqueDays[0];
       for (const c of dateCands) consume(c.a, c.b);
+      // v55: 出所。同じ日を複数の言い方で言った時（「今日20日」）は、選択の無かった方（transcript）を代表に
+      const pick = dateCands.find((c) => c.meta.source === 'transcript') || dateCands[0];
+      dateProv = provOf(pick.meta, pick.a, pick.b);
     } else if (uniqueDays.length > 1) {
       notes.push(`日付らしき言葉が複数あるため（${uniqueDays.join(' / ')}）日付は入れていません`);
       // consume しない＝全部タイトルに残る
@@ -454,13 +481,13 @@
     // 相対時刻の補完（v34）: 「30分後」等は、その日が日付として採用された時だけ時刻を入れる（「今」と同じ流儀）。
     // 明示の時刻が別にあればそちらが勝つ＝人の指定を上書きしない（v9）。
     if (relTime && !startT && dateStr === relTime.day) {
-      startT = { h: relTime.h, min: relTime.min, ambiguous: false, raw: '相対時刻' };
+      startT = { h: relTime.h, min: relTime.min, ambiguous: false, raw: '相対時刻', a: relTime.a, b: relTime.b };
     }
     // 「今」の時刻補完（v27）: 日付は既に今日として確定・消費済み。時刻を言っていなければ現在時刻を入れる。
     // 時刻を別に言っていればそちらが勝つ（「今から15時まで」＝開始15時ではなく…は範囲側で処理される）。
     // 「今」が日付として採用されなかった時（他の日付と衝突＝素通し）は時刻も入れない＝創作しない。
     if (nowSpan && !startT && dateStr === fmtDate(today)) {
-      startT = { h: now.getHours(), min: now.getMinutes(), ambiguous: false, raw: '今' };
+      startT = { h: now.getHours(), min: now.getMinutes(), ambiguous: false, raw: '今', a: nowSpan.a, b: nowSpan.b };
     }
 
     // 継続時間：「(から)N時間(半)」があれば end = start + N時間（数は漢数字も可 v34。
@@ -472,7 +499,7 @@
         if (nH == null) continue;
         const durMin = nH * 60 + (m[2] ? 30 : 0);
         const total = startT.h * 60 + startT.min + durMin;
-        endT = { h: Math.floor(total / 60) % 24, min: total % 60 };
+        endT = { h: Math.floor(total / 60) % 24, min: total % 60, a, b };
         if (total >= 24 * 60) dayCross = true;
         consume(a, b);
         if (a >= 2 && text.slice(a - 2, a) === 'から' && isFree(a - 2, a)) consume(a - 2, a);
@@ -482,24 +509,48 @@
 
     // ===== patch 合成 =====
     const patch = {};
+    const prov = {}; // v55: 欄ごとの出所（patch に入れた欄だけキーを持つ）
+    // 時刻の出所: 明示時刻・「30分後」・「今」いずれも定義的に1つへ解決する＝transcript（span は根拠の言葉）
+    const timeProv = (t) => (t && t.a != null ? provOf(null, t.a, t.b) : { source: 'transcript', span: null });
     if (allDay) {
       if (startT) notes.push('「終日」と時刻が両方あるため、時刻を優先しています');
-      else patch.allDay = true;
+      else {
+        patch.allDay = true;
+        prov.allDay = allDaySpan ? provOf(null, allDaySpan.a, allDaySpan.b) : { source: 'transcript', span: null };
+      }
     }
     // 時刻だけで日付がない → まだ来ていなければ今日、過ぎていれば明日（決め打ちルール）
-    let effDateStr = dateStr;
+    let effDateStr = dateStr, effDateProv = dateProv;
     if (!effDateStr && startT) {
       const nowMin = now.getHours() * 60 + now.getMinutes();
       const tMin = startT.h * 60 + startT.min;
-      effDateStr = fmtDate(tMin > nowMin ? today : addDays(today, 1));
+      const isToday = tMin > nowMin;
+      effDateStr = fmtDate(isToday ? today : addDays(today, 1));
+      // 今日/明日の2候補から now 比較で選んだ＝inferred（span は根拠になった時刻の言葉を指す）
+      effDateProv = {
+        source: 'inferred',
+        span: startT.a != null ? { a: startT.a, b: startT.b, quote: text.slice(startT.a, startT.b) } : null,
+        why: isToday ? '日付は言っていないため、この時刻がまだ来ていない今日として解釈' : '日付は言っていないため、この時刻が過ぎているので明日として解釈',
+      };
     }
-    if (effDateStr) patch.startDate = effDateStr;
-    if (startT) patch.startTime = fmtTime(startT.h, startT.min);
+    if (effDateStr) {
+      patch.startDate = effDateStr;
+      if (effDateProv) prov.startDate = effDateProv;
+    }
+    if (startT) {
+      patch.startTime = fmtTime(startT.h, startT.min);
+      prov.startTime = timeProv(startT);
+    }
     if (endT) {
       patch.endTime = fmtTime(endT.h, endT.min);
+      prov.endTime = timeProv(endT);
       if (effDateStr) {
         const [y, mo, da] = effDateStr.split('-').map(Number);
         patch.endDate = fmtDate(addDays(new Date(y, mo - 1, da), dayCross ? 1 : 0));
+        // 終了日は言っていない: 日またぎは「翌日」を選んだ推論・それ以外は開始日の出所をそのまま引き継ぐ
+        prov.endDate = dayCross
+          ? { source: 'inferred', span: prov.endTime.span, why: '終了時刻が開始より前のため、翌日に終わる予定として解釈' }
+          : (effDateProv ? { ...effDateProv } : { source: 'inferred', span: null, why: '終了日は言っていないため開始と同じ日として解釈' });
       }
     }
 
@@ -511,9 +562,13 @@
     // 端に残った助詞・句読点を落とす（内部の「と」「の」は保持）
     leftover = leftover.replace(/^[にへでをはがのとかも、。．\s]+/u, '').replace(/[にへでをはがの、。．\s]+$/u, '');
     leftover = leftover.replace(/\s+/g, ' ').trim();
-    if (leftover) patch.title = leftover;
+    if (leftover) {
+      patch.title = leftover;
+      // title は消費されなかった断片の寄せ集め＝全て発話由来（素通し）。複数スパンの合成なので span は持たない
+      prov.title = { source: 'transcript', span: null };
+    }
 
-    return { patch, notes, normalizedText: text };
+    return { patch, notes, normalizedText: text, prov };
   }
 
   const api = { interpret, normalize, isFillerOnly };
