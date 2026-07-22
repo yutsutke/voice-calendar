@@ -88,6 +88,41 @@
     return FILLER_ONLY.has(t);
   }
 
+  // ---------- 長い発話の分割（v58・実機FB第34回） ----------
+  // ゆうの観察: 「いまの気分を2行くらい話すと、削られたりタイトルになる」
+  //   → 「**タイトルは簡素に書いて、話したすべての気分をメモに入れるのが正解では**」（ゆう決定）。
+  //
+  // 🚨 **要約はしない**（SPEC §7 創作しない・LLM なし）＝**前の方を切り出すだけ**。
+  //    メモには全文が入る＝**何も失わない**（タイトルの言葉もメモに含まれる＝話したまま残る）。
+  // 発動は**長い時だけ**＝「歯医者」「新宿駅に着いた」は今までどおりタイトルだけ（既定の体験を変えない v19）。
+  // 🚨 切り出した頭が言い淀みだけ（「えーっと、」）なら次の区切りまで伸ばす＝タイトルが「えーっと」に
+  //    化ける事故を防ぐ（判定は isFillerOnly を再利用＝完全一致だけ・v47。新しい語彙を作らない）。
+  // 🚨 **区切り（、。）の有無で判定を分ける**: 日本語は語境界が無く、区切りの無い文を文字数で切ると
+  //    語の途中で切れる（「…ミーティングの準」）。区切りがある時＝話者自身が切った所で切れる＝安全。
+  //    区切りが無い長文は HARD を超えた時だけ文字数で切る（保険。全文はメモに残るので損はしない）。
+  const TITLE_MAX = 20;  // これを超え、かつ区切りがあれば分割する
+  const TITLE_HARD = 40; // 区切りが無くてもここを超えたら文字数で切る
+  function splitLongUtterance(text) {
+    if (text.length <= TITLE_MAX) return { title: text, note: '' };
+    let title = '';
+    const re = /[、。]/g;
+    let m;
+    while ((m = re.exec(text))) {
+      const cand = text.slice(0, m.index).trim();
+      if (!cand || isFillerOnly(cand)) continue; // 頭が言い淀みだけ → 次の区切りまで伸ばす
+      title = cand;
+      break;
+    }
+    if (title.length > TITLE_HARD) title = text.slice(0, TITLE_MAX).trim(); // 最初の区切りが遠すぎる
+    if (!title) {
+      // 区切りが無い（or 全部言い淀み）。極端に長くなければ**そのままタイトル**＝変な位置で切らない
+      if (text.length <= TITLE_HARD) return { title: text, note: '' };
+      title = text.slice(0, TITLE_MAX).trim();
+    }
+    title = title.replace(/[にへでをはがの、。．\s]+$/u, '').trim(); // 端の助詞・句読点（本文と同じ処理）
+    return { title: title || text.slice(0, TITLE_MAX), note: text };
+  }
+
   // ---------- 日付ヘルパ（すべて端末ローカル時刻） ----------
   const pad2 = (n) => String(n).padStart(2, '0');
   const fmtDate = (d) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
@@ -563,9 +598,15 @@
     leftover = leftover.replace(/^[にへでをはがのとかも、。．\s]+/u, '').replace(/[にへでをはがの、。．\s]+$/u, '');
     leftover = leftover.replace(/\s+/g, ' ').trim();
     if (leftover) {
-      patch.title = leftover;
+      // v58: 長い発話は「タイトル＝簡素・メモ＝話した全文」に分ける（上の splitLongUtterance 参照）
+      const split = splitLongUtterance(leftover);
+      patch.title = split.title;
       // title は消費されなかった断片の寄せ集め＝全て発話由来（素通し）。複数スパンの合成なので span は持たない
       prov.title = { source: 'transcript', span: null };
+      if (split.note) {
+        patch.note = split.note;
+        prov.note = { source: 'transcript', span: null };
+      }
     }
 
     return { patch, notes, normalizedText: text, prov };

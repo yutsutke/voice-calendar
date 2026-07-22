@@ -593,20 +593,20 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
      理由: この版文字列は index.html にしかないが、ロジックは別ファイル＝別キャッシュ。
      付けないと「フッタは新しいのにパーサは古い」という嘘の状態が成立する（v9 で実際に踏んだ）。
      index.html が更新されれば src の URL も変わる → JS も必ず新しく取り直される。 -->
-<script src="engine/settings.js?v=57"></script>
-<script src="engine/schema.js?v=57"></script>
-<script src="engine/parser.js?v=57"></script>
-<script src="engine/dictionary.js?v=57"></script>
-<script src="engine/contract.js?v=57"></script>
-<script src="engine/batch.js?v=57"></script>
-<script src="engine/ai.js?v=57"></script>
-<script src="input/transcriber.js?v=57"></script>
-<script src="adapters/calendar.js?v=57"></script>
-<script src="adapters/records.js?v=57"></script>
-<script src="adapters/location.js?v=57"></script>
+<script src="engine/settings.js?v=58"></script>
+<script src="engine/schema.js?v=58"></script>
+<script src="engine/parser.js?v=58"></script>
+<script src="engine/dictionary.js?v=58"></script>
+<script src="engine/contract.js?v=58"></script>
+<script src="engine/batch.js?v=58"></script>
+<script src="engine/ai.js?v=58"></script>
+<script src="input/transcriber.js?v=58"></script>
+<script src="adapters/calendar.js?v=58"></script>
+<script src="adapters/records.js?v=58"></script>
+<script src="adapters/location.js?v=58"></script>
 <script>
 'use strict';
-const BUILD = 'v57：保存した行に出所内訳と訂正を記録（リスト/CSV＝完全ローカル計測）｜v56：AI の解釈にも出所（引用の検証）｜v55：欄の出所（スパン）を記録 · 2026-07-22';
+const BUILD = 'v58：長い発話はタイトル簡素＋メモに全文／AI でも日時なし発話は自動保存される（経路差の解消）· 2026-07-22';
 console.log('BUILD:', BUILD);
 document.getElementById('build').textContent = BUILD;
 
@@ -758,7 +758,14 @@ function noteProvDiag(patch, prov) {
 // （notes 非空なら v28 の門は通らない＝選んだエンジンが失敗した発話を黙って保存しない）。
 function applyRuleResult({ rule, text, rawText, dictHits, meta, aiFbNote }) {
   const targeted = !!rule.targeted; // 欄指定発話（「終了22時」等）= その欄だけの差分・掃除しない（v17）
-  const patch = rule.patch;
+  let patch = rule.patch;
+  // 🚨 v58: **機械が書くメモが人の文章を潰さない**（v43 で AI の ⚠ に対して立てたのと同じ不変条件）。
+  // 長い発話の全文メモ（parser の splitLongUtterance）より、人が手で書いたメモを優先する。
+  // 捨てたわけではない＝全文は 🗣 と来歴に残る（黙って消さない v16）。
+  if (patch.note && store.getFieldOrigin('note') === 'human' && store.get().note) {
+    patch = { ...patch };
+    delete patch.note;
+  }
   const notes = aiFbNote ? [aiFbNote].concat(rule.notes) : rule.notes;
   let skipped = [], cleared = [];
   showNotes(notes, dictHits);
@@ -869,16 +876,22 @@ async function interpretByAI({ text, rawText, dictHits, meta, rule, seq }) {
   // v42 で塞いだ理由＝「ルールパーサは決定的＝patch に日時が在る＝実際に言った、が保証されるが、
   // AI は創作し得る。保存は不可逆（読めない＝消せない）」。**その時に「精度を実機で見てから再検討」と
   // 条件を書いていた** → 実機FB第25回「あいまいなものを確定させてないのはいい」で条件が揃った（v47）。
-  // 🔒 安全弁は shouldAutoSave の `notes` の門: notes = AI の ambiguities + problems + warnings ＝
-  //    **AI が少しでも曖昧だと申告した発話は自動保存されない**（v43 でメモ欄に ⚠ が残るケースがまさにそれ）。
-  if (settings.get('autoSaveAI') && shouldAutoSave({ changed, targeted: false, notes, patch, text })) doSave({ auto: true });
+  // 🔒 安全弁（v58 で2つに分けた）: **検証ゲートの problems / warnings は必ず止める**（notes）。
+  //    **AI 自身の ambiguities は soft**＝「日時を1つも入れていない＋モードがいつでも」の時だけ通す
+  //    （理由は shouldAutoSave の門のコメント＝ルール経路と挙動を揃える）。表示・来歴は今までどおり全部出す。
+  if (settings.get('autoSaveAI') && shouldAutoSave({
+    changed, targeted: false, patch, text,
+    notes: ev.problems.concat(warnings),
+    softNotes: ev.ambiguities,
+  })) doSave({ auto: true });
 }
 
 /// 自動保存の条件（v28・実機FB「記録後、保存を自動にできる設定」）。
 /// **SPEC §2-4「ノールックの条件＝曖昧さゼロで黙って1個に確定できる時だけ」をそのまま条件にする。**
 /// 保存は不可逆（アプリに読み取り権限が無い＝入った予定はカレンダー側で手で消すしかない）＝
 /// 迷ったら保存しない（人がフォームを見て押せばいい＝失うのは1タップだけ）。
-function shouldAutoSave({ changed, targeted, notes, patch, text }) {
+/// softNotes（v58）= AI の ambiguities だけ。notes（必ず止める）と分けて受ける。理由は下の門を参照。
+function shouldAutoSave({ changed, targeted, notes, patch, text, softNotes }) {
   const mode = settings.get('autoSaveAfterUtterance'); // v47: 'off' | 'datetime' | 'always'（v46 まで boolean）
   if (mode === 'off') return false; // 既定
   // 🚨 v54: **保存済みの行を直している最中は自動保存しない**。ここで走ると (a) 直しかけの中間状態が
@@ -888,6 +901,19 @@ function shouldAutoSave({ changed, targeted, notes, patch, text }) {
   if (!changed) return false;      // フォームが変わっていない＝空の予定を作らない
   if (targeted) return false;      // 欄指定は**まだ組み立て中**（「場所 立川」で保存したら場所だけの予定が入る）
   if (notes.length) return false;  // 解釈できなかった断片がある＝曖昧＝人に見せる（SPEC §7）
+  // 🔴 v58（実機FB第34回）: 「日時を言わずに話すと、ルールベースなら素直に自動登録されるのに、
+  //    AI を入れると『時間が曖昧』を理由に手動になる。競合するよな」＝**経路差だけの不便**。
+  //    真因は契約の書き方で、AI の ambiguities に2種類が同じ籠で入っていたこと（v58 で締めた）:
+  //      (a) 聞いたが1つに決められない（「夕方あたり」）… ルール経路も notes に出して**止める**
+  //      (b) そもそも言っていないので省いた（日時なし）… ルール経路は**黙る**（v27「日時なし→今」）
+  //    → (b) に当たる形＝**AI が日時を1つも入れていない**発話に限り、申告では止めない。
+  //      ただし「いつでも」を選んだ人だけ＝**日時が無くても保存する**と自分で決めた人（v47）。
+  //    🔒 「夕方あたり」型は AI が**時刻を入れる**＝日時が埋まる＝従来どおり止まる
+  //      （実機FB第31回「曖昧を申告した発話はフォームに残る＝設計どおり」を壊さない）。
+  //    🔒 検証ゲートの problems / warnings は soft ではない＝呼び出し側が notes として渡す＝必ず止まる。
+  const soft = softNotes || [];
+  const noDateTime = !patch.startDate && !patch.startTime && !patch.endDate && !patch.endTime;
+  if (soft.length && !(mode === 'always' && noDateTime)) return false;
   // 🔴 **言い淀みだけの発話は、どのモードでも自動保存しない**（v47）:
   // パーサは意味を判定しない＝「えーっと」もタイトルになる。v28 では「日時を言った発話だけ」に
   // 限ることでこれを塞いでいたが、v47 の 'always' はその門を開ける＝ここで受け直す。

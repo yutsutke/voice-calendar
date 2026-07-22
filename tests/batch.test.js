@@ -61,6 +61,13 @@ t('契約に日本語の「創作しない」制約が書いてある（descript
   const s = JSON.stringify(C.SCHEMA);
   ok(s.includes('推測で補わない'), '省略の指示');
   ok(s.includes('ambiguities'), '曖昧の申告先');
+  // 🔴 v58（実機FB第34回）: ambiguities は「**値についての不確かさ**」だけの籠。
+  // 「言っていないので省いた」まで申告させると、日時を言わない発話で AI だけが申告し、
+  // ルール経路は黙る場面で自動保存が止まる＝経路差だけの不便が生まれる（index.html の門と対）。
+  const amb = C.SCHEMA.properties.events.items.properties.ambiguities.description;
+  ok(amb.includes('省略した項目については書かない'), '省略は申告事項ではない、と契約に書いてある');
+  ok(B.buildPrompt({ now: new Date(2026, 6, 22, 12, 0), schema: C.SCHEMA }).includes('省略したこと自体を ambiguities に書かない'),
+    'プロンプト側にも同じ指示がある');
   ok(typeof C.VERSION === 'string' && C.VERSION.length > 0, 'VERSION がある');
 });
 

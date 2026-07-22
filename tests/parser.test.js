@@ -258,6 +258,35 @@ filler('明日15時に歯医者', false);
 filler('えーっと 明日15時 歯医者', false, '言い淀んでから本題を言った発話は通す');
 filler('会議', false);
 
+// ===== v58: 長い発話はタイトル簡素＋メモに全文（実機FB第34回・ゆう決定） =====
+// 「いまの気分を2行くらい話すと、削られたりタイトルになる」→「タイトルは簡素に、話したすべてをメモに」。
+// **要約はしない**（創作しない）＝前の方を切り出すだけ・メモには全文＝何も失わない。
+{
+  const mood = 'なんか最近ずっと疲れてて、でも新しい企画は楽しみ'; // 24文字・区切りあり
+  check(`今、${mood}`, {
+    title: 'なんか最近ずっと疲れてて', // 最初の一区切り
+    note: mood,                        // 話した全文（タイトルの言葉も含む）
+    startDate: '2026-07-16', startTime: '13:43',
+  });
+  // 🚨 短い発話は今までどおり（既定の体験を変えない v19）＝メモに書かない
+  check('明日15時に歯医者', { title: '歯医者', startDate: '2026-07-17', startTime: '15:00' });
+  check('歯医者、保険証持参', { title: '歯医者、保険証持参' }); // 区切りがあっても短ければ分割しない
+  // 頭が言い淀みだけなら次の区切りまで伸ばす（タイトルが「えーっと」に化けない・isFillerOnly を再利用）
+  check(`えーっと、${mood}`, {
+    title: 'えーっと、なんか最近ずっと疲れてて',
+    note: `えーっと、${mood}`,
+    startDate: undefined, startTime: undefined,
+  });
+  // 区切りが無い長文は**そのままタイトル**＝語の途中で切らない（日本語は語境界が無い）
+  const noSep = 'プロジェクトのキックオフミーティングの準備'; // 21文字・区切りなし
+  check(noSep, { title: noSep });
+  // 区切りが無くても極端に長ければ文字数で切る（保険。全文はメモに残る）
+  const veryLong = 'プロジェクトのキックオフミーティングの準備と資料作成と関係者への連絡をまとめてやる'; // 41文字
+  check(veryLong, { title: veryLong.slice(0, 20), note: veryLong });
+  // 欄指定発話（v17）は分割しない＝「メモ ◯◯」はその欄だけの差分（1発話1欄・v22）
+  check(`メモ ${mood}`, { note: mood });
+}
+
 // ===== v55: 出所（prov・スパン出所追跡 A'） =====
 // 境界の仕様: nearestBy（年・月の最近接補完 v8）や now 比較（時刻だけ→今日/明日・日またぎ）で
 // **実在する複数候補から1つを選んだら inferred**。定義的に1つへ解決する語は transcript。
@@ -329,6 +358,9 @@ checkProv('今日16日 打ち合わせ', 'startDate', { source: 'transcript', qu
 
 // 終日
 checkProv('明日は終日 出張', 'allDay', { source: 'transcript', quote: '終日' });
+
+// v58: 分割で入れたメモも発話由来（素通しの全文）＝transcript・寄せ集めなので span なし
+checkProv('今、なんか最近ずっと疲れてて、でも新しい企画は楽しみ', 'note', { source: 'transcript' });
 
 // 欄指定発話（v17）にも出所が付く（値は発話にそのまま在る＝transcript）
 checkProv('場所 立川', 'location', { source: 'transcript', quote: '立川' });
