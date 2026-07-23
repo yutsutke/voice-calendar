@@ -1,5 +1,14 @@
 apply plugin: 'com.android.application'
 
+// Play アップロード鍵（v65）: リポ外 ~/Documents/voice-calendar-signing/ に keystore と
+// properties を置く（iOS の cert_key と同じ場所＝コミットしない）。ファイルが無ければ
+// 署名設定ごとスキップ＝debug ビルドや他マシン・CI では従来どおり動く（黙って壊れない）。
+def uploadProps = new Properties()
+def uploadPropsFile = new File(System.properties['user.home'] as String, 'Documents/voice-calendar-signing/upload-keystore.properties')
+if (uploadPropsFile.exists()) {
+    uploadPropsFile.withInputStream { uploadProps.load(it) }
+}
+
 android {
     namespace = "io.github.yutsutke.voicecalendar"
     compileSdk = rootProject.ext.compileSdkVersion
@@ -16,10 +25,23 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    signingConfigs {
+        if (uploadPropsFile.exists()) {
+            release {
+                storeFile file(uploadProps['storeFile'])
+                storePassword uploadProps['storePassword']
+                keyAlias uploadProps['keyAlias']
+                keyPassword uploadProps['keyPassword']
+            }
+        }
+    }
     buildTypes {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            if (uploadPropsFile.exists()) {
+                signingConfig signingConfigs.release
+            }
         }
     }
 }
