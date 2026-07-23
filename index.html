@@ -613,20 +613,20 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
      理由: この版文字列は index.html にしかないが、ロジックは別ファイル＝別キャッシュ。
      付けないと「フッタは新しいのにパーサは古い」という嘘の状態が成立する（v9 で実際に踏んだ）。
      index.html が更新されれば src の URL も変わる → JS も必ず新しく取り直される。 -->
-<script src="engine/settings.js?v=63"></script>
-<script src="engine/schema.js?v=63"></script>
-<script src="engine/parser.js?v=63"></script>
-<script src="engine/dictionary.js?v=63"></script>
-<script src="engine/contract.js?v=63"></script>
-<script src="engine/batch.js?v=63"></script>
-<script src="engine/ai.js?v=63"></script>
-<script src="input/transcriber.js?v=63"></script>
-<script src="adapters/calendar.js?v=63"></script>
-<script src="adapters/records.js?v=63"></script>
-<script src="adapters/location.js?v=63"></script>
+<script src="engine/settings.js?v=64"></script>
+<script src="engine/schema.js?v=64"></script>
+<script src="engine/parser.js?v=64"></script>
+<script src="engine/dictionary.js?v=64"></script>
+<script src="engine/contract.js?v=64"></script>
+<script src="engine/batch.js?v=64"></script>
+<script src="engine/ai.js?v=64"></script>
+<script src="input/transcriber.js?v=64"></script>
+<script src="adapters/calendar.js?v=64"></script>
+<script src="adapters/records.js?v=64"></script>
+<script src="adapters/location.js?v=64"></script>
 <script>
 'use strict';
-const BUILD = 'v63：録音中の一時オーバーライド（自動登録OFF／AI）のボタンを「やめる」と同じ大きさに（色は据え置き）· 2026-07-23';
+const BUILD = 'v64：ホーム画面の長押し（Quick Action）でリストを開く（native・Info.plist＋AppDelegate・web は openRecordsPanel）· 2026-07-23';
 console.log('BUILD:', BUILD);
 document.getElementById('build').textContent = BUILD;
 
@@ -1407,6 +1407,29 @@ document.getElementById('recordsBox').addEventListener('toggle', () => {
   const mk = sc.querySelector('.rec-now');
   if (mk) sc.scrollTop = Math.max(0, mk.offsetTop - sc.clientHeight / 2);
 });
+// v64: リストを開く共通関数（summary タップの通常操作とは別に、native から確実に開く道）。
+// 開く＋最新描画＋「今」の線へスクロール＋パネルを画面上部へ。details を開くだけだと描画は前回のまま
+// （toggle はスクロール専任・renderRecords は保存/削除/トグルで走る）なので、ここで明示的に撮り直す。
+function openRecordsPanel(){
+  const box = document.getElementById('recordsBox');
+  box.open = true;                                            // 表示（レイアウトされる）
+  if (typeof renderRecords === 'function') renderRecords();   // 最新を描画（.rec-now マーカーを作る）
+  const sc = document.getElementById('recScroll');
+  const mk = sc && sc.querySelector('.rec-now');
+  if (mk) sc.scrollTop = Math.max(0, mk.offsetTop - sc.clientHeight / 2);  // 「今」の線へ
+  box.scrollIntoView({ block: 'start' });                     // パネル自体を画面上部へ
+}
+// v64: ホーム画面の長押し（iOS Home Screen Quick Action）の唯一の入口。native（AppDelegate）が
+// WebView に window.__vcQuickAction('list') を届ける（cold/warm 両対応・届くまでリトライ）。
+// web では誰も呼ばない＝無害（機能追加のみ・既定の体験は不変）。補助機能は本体を殺さない（v13）＝try/catch し痕跡は診断へ（v15）。
+window.__vcQuickAction = function(type){
+  try {
+    if (window.__vcDebugNote) window.__vcDebugNote('🔖 QuickAction 受信: ' + type);
+    if (type === 'list') openRecordsPanel();
+  } catch(e){
+    if (window.__vcDebugNote) window.__vcDebugNote('🔖 QuickAction 失敗: ' + ((e && e.message) || e));
+  }
+};
 // 全消しは2度押し（誤タップで台帳が丸ごと飛ぶのを防ぐ。確認ダイアログは出さない流儀のまま）
 let recClearArmedAt = 0;
 document.getElementById('recordsClear').addEventListener('click', () => {

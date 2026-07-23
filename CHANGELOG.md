@@ -1,5 +1,29 @@
 # voice-calendar — CHANGELOG（build log・最新が上）
 
+## v64 — ホーム画面の長押し（Quick Action）でリストを開く (2026-07-23)
+
+**背景（ゆう要求）**
+- 「アプリ長押しでリストが開くようにしたい」＝ iOS のホーム画面でアイコンを長押しした時のクイックアクション。
+
+**設計判断（plugin を新設しない）**
+- 「リストを開く」1つのためだけに local-plugin を新設するのは重い（Package.swift / package.json / cap sync のバックスラッシュ問題を巻き込む）→ **AppDelegate から WebView へ直接届ける方式**。触るのは `Info.plist` と `AppDelegate.swift` の2つだけ（native の依存構成は不変）。
+- **静的ショートカット**（Info.plist `UIApplicationShortcutItems`）＝インストール時から出る・アプリ状態に依存しない。type 末尾 `.list` を AppDelegate が判定（bundle id を Swift に書かない＝照合が緩く堅牢）。
+- **cold/warm 両対応**: warm は `performActionFor`・cold は `didFinishLaunchingWithOptions` の `launchOptions[.shortcutItem]` → `applicationDidBecomeActive` で配信。どちらも `pendingShortcut` に載せ `deliverPendingShortcut` が1本で処理。
+- 🔑 **届くまでリトライ**（v31 の起動リトライと同じ発想）: cold start では WebView が index.html を実行し終える前に配信を試みるので、`window.__vcQuickAction` が定義され受理（true）を返すまで 0.3s×最大15回（≒4.5s）。永久ループにしない（諦めて捨てる＝黙って固まらない）。
+- **web は openRecordsPanel を関数化**: summary タップの通常操作とは別に、native から確実に開く道（開く＋最新描画＋「今」の線へスクロール＋パネルを画面上部へ）。details を開くだけでは描画が前回のまま（toggle はスクロール専任）なので明示的に撮り直す。
+- **補助機能は本体を殺さない（v13）**: `__vcQuickAction` は try/catch し、受信・失敗を診断（🔖）へ＝実機で「長押ししたのに開かない」時、🔖 が診断に出ていれば「JS までは届いた／openRecordsPanel が問題」、出ていなければ「native→JS 配信が問題」と切り分く（native 検証の目・v15）。web では誰も呼ばない＝無害（機能追加のみ・既定の体験は不変）。
+
+**結果**
+- テスト 474/474（version.test が BUILD=v64 と全 `?v=64` の一致を確認）。実ブラウザ検証（`localhost:5275`・v64）: `window.__vcQuickAction('list')` → `recordsBox.open` が false→**true**・`openRecordsPanel` 関数存在・診断ログに「🔖 QuickAction 受信: list」・console 0。**web の既存挙動は1ミリも変えていない**。
+- **native は次の Codemagic ビルドで検証**（Windows で Swift をコンパイルできない）＝Info.plist の静的ショートカットが出るか・AppDelegate の evaluateJavaScript 配信が cold/warm で届くか。
+
+**教訓**
+- **「1機能のために plugin を新設」を疑う**: AppDelegate から webView へ evaluateJavaScript するだけで足りるなら、Package.swift / package.json を触らない方がビルドリスクが小さい（cap sync のバックスラッシュ問題・SPM 再生成を避けられる）。plugin が要るのは native の継続的な状態（CLLocationManager の権限変化など）を push する時。単発の「開いて」には過剰。
+- **cold start は「WebView がまだ無い」前提で配線する**: 起動直後に JS へ届けるものは、必ず「定義されるまでリトライ」か「JS 側から pull」のどちらか＝ push 一発は cold で取りこぼす。
+
+**残課題（ゆうが実行＝外向き操作）**
+- Codemagic で新ビルド（v62 の位置情報無効化 ＋ v63/v64 が載る）→ 実機で長押し → 「リスト」が出るか・タップでリストが開くか。1.1 が審査通過した後の 1.2 に向けた native 変更（1.1(20) は提出済みでフリーズ）。
+
 ## v63 — 録音中の一時オーバーライドのボタンを「やめる」と同じ大きさに (2026-07-23)
 
 **背景（ゆう要求）**

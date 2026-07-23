@@ -79,5 +79,21 @@
 	</array>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<true/>
+	<!-- v64: ホーム画面でアイコンを長押しした時のクイックアクション（実機FBの要求「アプリ長押しでリストが開くように」）。
+	     静的定義＝インストール時から出る・アプリ状態に依存しない。type 末尾 .list を AppDelegate が見て
+	     WebView の window.__vcQuickAction('list') を起こす（リスト＝保存した記録📝と予定📅の一覧）。 -->
+	<key>UIApplicationShortcutItems</key>
+	<array>
+		<dict>
+			<key>UIApplicationShortcutItemType</key>
+			<string>io.github.yutsutke.voicecalendar.list</string>
+			<key>UIApplicationShortcutItemTitle</key>
+			<string>リスト</string>
+			<key>UIApplicationShortcutItemSubtitle</key>
+			<string>記録と予定の一覧</string>
+			<key>UIApplicationShortcutItemIconType</key>
+			<string>UIApplicationShortcutIconTypeTaskList</string>
+		</dict>
+	</array>
 </dict>
 </plist>
