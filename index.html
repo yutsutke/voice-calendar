@@ -133,6 +133,9 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
   .row input[type="text"], .row textarea { flex: 1; border: none; background: transparent; font-size: 16px; color: var(--ink); outline: none; min-width: 0; }
   .row input[type="date"], .row input[type="time"] { border: none; background: transparent; font-size: 16px; color: var(--ink); outline: none; font-family: inherit; }
   .row textarea { resize: vertical; min-height: 24px; }
+  /* v60: メモは4行既定（話した気分を全文で残す用途 v58①）。多行なのでラベルは上揃え。 */
+  .row[data-field="note"] { align-items: flex-start; }
+  .row[data-field="note"] label.name { padding-top: 3px; }
   .row .lockmark { position: absolute; right: 0; top: 6px; font-size: 11px; color: var(--warn); opacity: 0; transition: opacity .15s; pointer-events: none; }
   .row.locked { background: var(--lock); border-radius: 8px; }
   .row.locked .lockmark { opacity: 1; }
@@ -388,7 +391,7 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
       </div>
       <div class="row" data-field="note">
         <label class="name" for="f-note">メモ</label>
-        <textarea id="f-note" rows="1" placeholder="自由メモ（スキーマ外の受け皿）"></textarea>
+        <textarea id="f-note" rows="4" placeholder="自由メモ（スキーマ外の受け皿）"></textarea>
         <span class="lockmark">✋ 編集中 — 音声は書き込みません</span>
       </div>
     </div>
@@ -593,20 +596,20 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
      理由: この版文字列は index.html にしかないが、ロジックは別ファイル＝別キャッシュ。
      付けないと「フッタは新しいのにパーサは古い」という嘘の状態が成立する（v9 で実際に踏んだ）。
      index.html が更新されれば src の URL も変わる → JS も必ず新しく取り直される。 -->
-<script src="engine/settings.js?v=59"></script>
-<script src="engine/schema.js?v=59"></script>
-<script src="engine/parser.js?v=59"></script>
-<script src="engine/dictionary.js?v=59"></script>
-<script src="engine/contract.js?v=59"></script>
-<script src="engine/batch.js?v=59"></script>
-<script src="engine/ai.js?v=59"></script>
-<script src="input/transcriber.js?v=59"></script>
-<script src="adapters/calendar.js?v=59"></script>
-<script src="adapters/records.js?v=59"></script>
-<script src="adapters/location.js?v=59"></script>
+<script src="engine/settings.js?v=60"></script>
+<script src="engine/schema.js?v=60"></script>
+<script src="engine/parser.js?v=60"></script>
+<script src="engine/dictionary.js?v=60"></script>
+<script src="engine/contract.js?v=60"></script>
+<script src="engine/batch.js?v=60"></script>
+<script src="engine/ai.js?v=60"></script>
+<script src="input/transcriber.js?v=60"></script>
+<script src="adapters/calendar.js?v=60"></script>
+<script src="adapters/records.js?v=60"></script>
+<script src="adapters/location.js?v=60"></script>
 <script>
 'use strict';
-const BUILD = 'v59：計測 CSV に検証スキーマ（来歴の全データ＝生テキスト/認識信頼度/経路/扱い/保存操作/辞書/補完確定/解釈注記/解釈エラー）· 2026-07-23';
+const BUILD = 'v60：メモ欄を4行に拡張（話した気分を全文で残す用途 v58①）· 2026-07-23';
 console.log('BUILD:', BUILD);
 document.getElementById('build').textContent = BUILD;
 
