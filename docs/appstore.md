@@ -82,6 +82,32 @@ Google カレンダーに入れたい時は、iOS の「設定 → カレンダ�
 ```
 > ※ 2回目以降は各 vNN の CHANGELOG から要点を日本語で。
 
+### リリースノート（What's New・v1.1＝公開 1.0 → v32-v62）
+> 公開版 1.0(12)≈v31 からの差分。**位置情報は公開版に無かった**ので「削除」とは書かない（公開ユーザーには存在しない機能）。AI は任意・既定オフを明記＝ポリシー/審査メモと揃える。
+```
+バージョン1.1では、日常使いの機能を大きく増やしました。
+
+■ 記録を残す・見返す
+・保存した予定／記録を時系列リストで表示。CSV で書き出せます。
+・話した履歴からワンタップで前の状態に戻せます。
+
+■ もっと自由に入力
+・「まとめて入力」＝メールや議事録などの長文から、複数の予定をまとめて取り込み。
+・辞書＝よく使う言い回しや、認識を間違えやすい固有名詞を覚えさせられます。
+
+■ 自分の AI で解釈（任意・既定オフ）
+・自分の API キー（Anthropic / Google）を入れると、あいまいな長文も AI で下書きにできます。
+・キーが無ければ一切通信しません。キーはこの端末内にのみ保存され、開発者は受け取りません。取り込む前に必ず内容を確認できます。
+
+■ 使い勝手
+・自動保存を「オフ／日時がある時だけ／いつでも」から選べます。
+・保存した予定を、あとからフォームで編集できます。
+・録音中に「やめる」「この録音だけ自動登録しない」を選べます。
+・メモ欄を広げ、話した内容を全文で残せます。
+
+引き続き、声だけ・画面を見ずに予定を入れられます。ご要望をお待ちしています。
+```
+
 ## 6. URL 類
 | フィールド | 値 |
 |---|---|
@@ -131,6 +157,46 @@ How to test WITHOUT speaking Japanese:
 The app is designed for iPhone (on-the-go voice input).
 ```
 - **デモアカウント: 不要**（No sign-in required にチェック）。
+
+### 8-b. App Review メモ（v1.1・AI 入り＋位置削除）＝ 今回の提出はこちらを貼る
+
+> v1.0 との違い: ① **任意の AI 機能（BYOK）が実際に入った**（前回は「将来入る」と説明した機能）→ 先回りで開示＋**上限付きテストキーを添える** ② **位置情報はこの版で削除**（Info.plist の位置キー・CoreLocation を外した）＝審査面を減らした。
+> 🔑 **キーの貼り場所は2つ**: (A) 下の `[PASTE ...]` に実キー → この英文まるごとを ASC「App Review Information → Notes（メモ）」へ。(B) 審査官はアプリ内 **詳細設定 →「AI 設定」→「API キー」** に貼る（下の手順が案内する）。
+
+```
+This app adds calendar events from Japanese voice input. No account or login is required. The developer has no server and collects no data by default.
+
+CORE FEATURE (works with NO API key):
+- Tap the mic (the app may also auto-start recording on launch) and speak a schedule in Japanese, e.g. "明日15時に歯医者" (= dentist tomorrow at 3pm). On-device Japanese speech recognition (SFSpeechRecognizer) fills a form. Tap Save to add the event to the device's default calendar via EventKit.
+
+HOW TO TEST WITHOUT SPEAKING JAPANESE:
+1. Launch the app; grant Microphone, Speech Recognition, and Calendar (write-only) when prompted.
+2. At the bottom of the screen there is a text field that simulates an utterance. Type: 明日15時に歯医者  and press send.
+3. The form fills (date/time/title). Tap Save. The event is added to the default calendar.
+(If you can speak Japanese, tap the microphone button and say the same phrase.)
+
+PERMISSIONS:
+- Microphone + Speech Recognition: to capture and transcribe the spoken schedule (on-device where supported).
+- Calendars (write-only, iOS 17 write-only access): to ADD events only. The app does NOT read existing calendar data.
+- Location: NOT used. This version does not request or use location.
+
+SIRI: "Hey Siri, ボイカレ開いて" simply opens the app (standard launch via INAlternativeAppNames). There is no custom Siri intent.
+
+OPTIONAL AI FEATURE (off by default, "bring your own key"):
+This version adds an optional feature that parses long free text into draft events using a third-party AI service (Anthropic Claude or Google Gemini). It is OFF by default and does nothing unless the user enters their OWN API key in the app's settings. Without a key, no AI request is ever made and nothing the user types or speaks leaves the device (aside from Apple's own OS speech service and EventKit, described above). The developer operates no server and receives nothing; the API key is stored only on the device. The AI result is always shown to the user for review before anything is saved. We disclose this in the App Privacy answers and here, as promised in our response to the previous review (Submission ID 12b4cfec-5349-4508-83f9-2536402ddc86).
+
+HOW TO TEST THE OPTIONAL AI (a spend-capped test key is provided below):
+1. Scroll to the "詳細設定" (Settings) section at the bottom and expand it; find "AI 設定".
+2. プロバイダ (Provider): select "Anthropic（Claude）".
+3. API キー (API key): paste the test key below, then tap 保存 (Save), then テスト送信 (Test send). It should report a successful connection.
+4. Open the "まとめて入力" (Batch input) panel, paste any text containing a schedule, and tap the AI interpret button. Draft events appear for you to review before saving.
+
+TEST API KEY (Anthropic, monthly spend limited to about US$1 - please do not share):
+[PASTE YOUR sk-ant-... KEY HERE]
+
+This key is capped for review use only and will be revoked after review.
+```
+- **デモアカウント: 不要**（Sign-in は OFF のまま・キーは Notes に書く）。
 
 ---
 
@@ -265,3 +331,34 @@ Yusuke Tanaka
 **教訓**
 - **公開ページ（プライバシーポリシー）は審査対象の一部**。バイナリに無い機能を先回りで書くと、審査官には「申告漏れ」に見える。ポリシーを先出しするなら、**審査メモにも同じことを書いておく**べきだった。
 - 返信の前に**バイナリに何が入っているかを git で確定させた**（ai.js の初出日・grep でネットワーク0）。「たぶん入っていない」で答えると嘘になる。
+
+---
+
+### 11-2. 1.1 提出（AI 入り・位置削除）＝準備（2026-07-23・v62）
+
+**この版で審査に効く2つの手当て**
+1. **位置情報を削除**（v62）＝ Info.plist の `NSLocationWhenInUseUsageDescription`・package.json の `device-location`・Package.swift の `DeviceLocation` を外した。App のプライバシーで**位置の申告は不要**に。
+2. **AI（BYOK）は実際に入った**＝前回「将来入る」と約束した機能。**先回りで開示**（What's New・§8-b 審査メモ・App プライバシー）＋**上限付きテストキーを添える**（審査官が実際に試せる＝「見せてから通す」）。
+
+**🔑 上限 US$1 の Anthropic テストキーの作り方**（[console.anthropic.com](https://console.anthropic.com)）
+> 目的＝万一メモのキーが漏れても損失を $1 に閉じ込める。既定モデルは `claude-haiku-4-5`（1リクエスト ≈ 0.1円以下）＝$1 で数百回テストできる＝審査には十分。
+1. Console にサインイン。**課金（Billing）が有効**なこと（プリペイドのクレジット or カード）。無ければ少額（$5 など）だけ入れる。※ ゆうは BYOK を実機で使えている＝既に有効なはず。
+2. **専用の Workspace を作り、そこに上限をかける**（自分の普段使いと分ける）:
+   - Settings → **Workspaces** → Create workspace → 名前「App Review」。
+   - その Workspace の設定で **Spend limit（支出上限・月）= $1**（または少額）に設定。
+3. **その Workspace の中で API キーを発行**:
+   - Settings → **API keys** → Create key → **Workspace = 「App Review」**を選ぶ → 名前「app-review」→ 作成。
+   - 表示された `sk-ant-...` を**その場でコピー**（後から見えない）。
+4. （代替＝Workspace を作らないなら）組織全体の月次上限を下げる手もあるが、**自分の普段使いも止まる**ので Workspace 分離を推奨。
+5. **審査に通ったらこのキーを削除/無効化**（Settings → API keys → 該当キー → Delete）。Workspace ごと消してもよい。
+
+**🔑 キーをどこに貼るか（2箇所）**
+- **(A) ASC の審査メモ**: App Store Connect → 対象アプリ → **1.1 バージョン** → 「App Review Information（審査に関する情報）」→ **Notes（メモ）** 欄に、**§8-b の英文まるごと**（`[PASTE ...]` を実キーに置換して）貼る。「Sign-in required（サインイン必須）」は**OFF のまま**。
+- **(B) アプリ内（審査官が貼る先）**: **詳細設定 →「AI 設定」→「API キー」** に貼る → **保存 → テスト送信**。§8-b の手順がこれを案内する。
+
+**提出前チェックリスト**（§11-1 の宿題を今回で回収）
+- [ ] App プライバシー＝AI（BYOK）を反映。**開発者はデータを受け取らない**（キーは端末内・開発者サーバ無し・利用者が選んだ AI 社へ端末から直接）。位置は**申告不要**（削除済み）。※「Data Not Collected」を維持できるか、BYOK の送信を「収集」と数えるべきかは ASC の設問に沿って判断（開発者は収集しない＝No のはずだが、設問文言に合わせる）。
+- [ ] §8-b の審査メモ（実キー入り）を Notes へ。
+- [ ] What's New（§5 の v1.1）を貼る。
+- [ ] Codemagic で 1.1(N) をビルド → TestFlight で**位置がもう出ない**ことと**AI がキーで動く**ことを実機確認 → ASC で 1.1 に添付 → 提出。
+- [ ] 前回 Apple に「次で開示する」と**約束済み**＝この開示で果たす。
