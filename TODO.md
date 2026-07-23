@@ -249,7 +249,7 @@
 >
 > **🔴 v62（同日・ゆう判断）＝審査に出す前に位置情報を丸ごと無効化（可逆）**: v32-v61 を公開版（1.0(12)≈v31）へ載せる新バージョン提出の前段。位置は審査で厳しそう（Guideline 2.1 前例）→ **審査面を減らす**。本丸＝**package.json から `device-location` を外す**（`cap sync` が Package.swift を package.json から再生成する＝ここが native の正）＋ Package.swift 2行 ＋ Info.plist の位置キー ＋ privacy.html の位置記述を除去。JS は `LOCATION_ENABLED=false`（`VCLoc=null`→`geoUsable()` false で取得/warm-up/復帰が全部止まる・設定行/🗺/保存経路も gate・**stale な captureLocation=true でも取らない**）。**コードは休眠で残す＝可逆**（`local-plugins/device-location`・`adapters/location.js`・設定定義・test・CSV 列）。**テスト 474/474**・実ブラウザ検証✓（設定行なし/座標付きでも🗺なし/バナー非表示/console 0）・BUILD=v62。**native は次の Codemagic ビルドで初検証**（DeviceLocation を外した Package.swift・位置キー無し Info.plist）。
 >
-> **▶▶ いまここ＝App Store 新バージョン提出（v32-v62 を公開へ・ゆうが実行）**: ① Codemagic「ios-testflight」を **Start new build**（1.1(N)・marketing version は既に 1.1）→ **DeviceLocation 除去で通るか確認**（Package.swift の初コンパイル差分はここだけ） ② TestFlight で位置が**もう出ない**ことを実機確認（設定に位置行が無い・保存しても位置が付かない） ③ App Store Connect で 1.1 バージョン作成 → ビルド添付 → **App のプライバシーで位置情報の申告を外す**（この版の狙い）→ What's New（v32-v62 の要約）→ 審査提出。素材は [docs/appstore.md](docs/appstore.md)。
+> **🟡 App Store 1.1(20) 審査提出済み＝審査待ち（2026-07-23 12:45・提出ID `7b9b7dc3-d7b3-4450-9e65-52f6059d637c`）**: v32-v62 を公開版（1.0(12)≈v31）へ載せる新バージョン。位置情報は v62 で削除（実機で「出ない」確認済み）・AI（BYOK）は**先回り開示＋$1上限テストキーを審査メモに添付**・App プライバシー=収集なし・Sign-in OFF・年齢 4+ 据え置き。Codemagic 1.1(20) は **DeviceLocation を外した Package.swift が通った**（native 除去の初検証 OK）。**次＝Apple の審査結果待ち**（最大48h・メール通知）。2.1 が再来したら審査メモの AI 開示＋テストキーで返信（素材 [docs/appstore.md](docs/appstore.md) §8-b/§11）。⚠ 見張り＝Guideline 5.1.2（AI 送信前の同意）＝却下されたら送信前確認の小改修で対応。
 >
 > **▶▶ 次＝Pages で v59 を触る（実機ビルド不要）＋溜まったら次へ**:
 > 0. 🆕 **v59 の CSV**＝数日使って書き出し、**経路列でルール行 vs AI 行の訂正率**・**生テキスト×タイトル**（v58①）・**信頼度で認識/解釈の切り分け**が読めるか。読めれば v58② を「数」で判断できる。

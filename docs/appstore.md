@@ -334,7 +334,9 @@ Yusuke Tanaka
 
 ---
 
-### 11-2. 1.1 提出（AI 入り・位置削除）＝準備（2026-07-23・v62）
+### 11-2. 1.1 提出（AI 入り・位置削除）＝✅ 提出済み・審査待ち（2026-07-23・v62）
+
+> **🟡 2026-07-23 12:45 提出完了＝審査待ち（Waiting for Review）**。バージョン **1.1(20)**・提出ID `7b9b7dc3-d7b3-4450-9e65-52f6059d637c`・提出者 tanaka yusuke。Codemagic の 1.1(20) ビルドは **DeviceLocation を外した Package.swift が通過**（native 除去の初検証 OK）。TestFlight で位置がもう出ないこと・AI がキーで動くことを実機確認済み。App プライバシー=「データを収集していません」／Sign-in OFF／年齢 4+ 据え置き。**次＝Apple の審査結果待ち**（最大48h）。
 
 **この版で審査に効く2つの手当て**
 1. **位置情報を削除**（v62）＝ Info.plist の `NSLocationWhenInUseUsageDescription`・package.json の `device-location`・Package.swift の `DeviceLocation` を外した。App のプライバシーで**位置の申告は不要**に。
