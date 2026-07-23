@@ -559,6 +559,18 @@ t('v56: staging が prov を往復させる・prov の無い古い行は null �
   B.stageClear();
 });
 
+t('v59: staging が src（経路・生テキスト）を往復させる・渡さなければ持たない（後方互換）', () => {
+  B.stageClear();
+  B.stageAdd([{ draft: { title: 'A' } }], new Date(1770000000000), { path: 'ai-multi', text: '来週会議', conf: 0.9 });
+  const e = B.stageList()[0];
+  eq(e.src.path, 'ai-multi', '往復（再読込で落ちない＝prov と同じ扱い）');
+  eq(e.src.text, '来週会議');
+  B.stageClear();
+  B.stageAdd([{ draft: { title: 'B' } }], new Date(1770000000000)); // src 無し
+  ok(!('src' in B.stageList()[0]), 'src を渡さなければ持たない（旧エントリと同じ形）');
+  B.stageClear();
+});
+
 t('v56: toSnapshot が prov を運ぶ（カード→フォーム）・渡さなければ全欄 null', () => {
   const prov = { title: { source: 'transcript', span: { a: 0, b: 2, quote: '会議' } } };
   const s1 = B.toSnapshot({ title: '会議', startDate: '2026-07-23' }, prov);

@@ -593,20 +593,20 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
      理由: この版文字列は index.html にしかないが、ロジックは別ファイル＝別キャッシュ。
      付けないと「フッタは新しいのにパーサは古い」という嘘の状態が成立する（v9 で実際に踏んだ）。
      index.html が更新されれば src の URL も変わる → JS も必ず新しく取り直される。 -->
-<script src="engine/settings.js?v=58"></script>
-<script src="engine/schema.js?v=58"></script>
-<script src="engine/parser.js?v=58"></script>
-<script src="engine/dictionary.js?v=58"></script>
-<script src="engine/contract.js?v=58"></script>
-<script src="engine/batch.js?v=58"></script>
-<script src="engine/ai.js?v=58"></script>
-<script src="input/transcriber.js?v=58"></script>
-<script src="adapters/calendar.js?v=58"></script>
-<script src="adapters/records.js?v=58"></script>
-<script src="adapters/location.js?v=58"></script>
+<script src="engine/settings.js?v=59"></script>
+<script src="engine/schema.js?v=59"></script>
+<script src="engine/parser.js?v=59"></script>
+<script src="engine/dictionary.js?v=59"></script>
+<script src="engine/contract.js?v=59"></script>
+<script src="engine/batch.js?v=59"></script>
+<script src="engine/ai.js?v=59"></script>
+<script src="input/transcriber.js?v=59"></script>
+<script src="adapters/calendar.js?v=59"></script>
+<script src="adapters/records.js?v=59"></script>
+<script src="adapters/location.js?v=59"></script>
 <script>
 'use strict';
-const BUILD = 'v58：長い発話はタイトル簡素＋メモに全文／AI でも日時なし発話は自動保存される（経路差の解消）· 2026-07-22';
+const BUILD = 'v59：計測 CSV に検証スキーマ（来歴の全データ＝生テキスト/認識信頼度/経路/扱い/保存操作/辞書/補完確定/解釈注記/解釈エラー）· 2026-07-23';
 console.log('BUILD:', BUILD);
 document.getElementById('build').textContent = BUILD;
 
@@ -792,6 +792,8 @@ function applyRuleResult({ rule, text, rawText, dictHits, meta, aiFbNote }) {
   // **副作用ではなく「適用したモード」そのもの**を記録する。設定でオフなら新規扱いにならない。
   const isNew = !targeted && !!settings.get('plainUtteranceIsNew');
   logHistory({ at: Date.now(), text: rawText, dict: dictHits, conf: meta && meta.confidence, fb: !!(meta && meta.fallback), tg: targeted, nw: isNew, aiFb: !!aiFbNote, patch, notes, skipped, cleared, err: null, after: changed ? store.snapshot() : null });
+  // v59: この発話を計測メタの直近値に（下の自動保存でそのまま焼かれる）。path='rule'＝AI 失敗の受け皿もルール解釈が正
+  lastUtterance = { text: rawText, conf: meta && meta.confidence, path: 'rule', targeted, isNew, dict: dictHits, fallback: !!(meta && meta.fallback), notes, err: null };
 
   if (shouldAutoSave({ changed, targeted, notes, patch, text })) doSave({ auto: true });
 }
@@ -800,6 +802,9 @@ function applyRuleResult({ rule, text, rawText, dictHits, meta, aiFbNote }) {
 // v39-41 の線路（契約 buildPrompt / 検証ゲート parseBatch / 取り込みリスト）に音声を4つ目の入口として
 // 接続する。**置き換えではない**: 既定はルールのまま・AI 失敗時もルールに戻る（発話を捨てない v16）。
 let utteranceSeq = 0; // 追い越しガード: AI 応答が戻った時に新しい発話が来ていたら破棄（古い内容で上書きしない）
+// v59: 保存レコードの計測メタ（検証 CSV へ焼く）。**保存を形作った直近の1発話**を控える＝
+// 保存時に records の info.utter として渡す。手入力/クリア/編集ロードで null に戻す（古い発話を引きずらない）。
+let lastUtterance = null;
 async function interpretByAI({ text, rawText, dictHits, meta, rule, seq }) {
   notesEl.textContent = '🤖 AI解釈中…';
   let events = null, warnings = [], aiErr = null;
@@ -830,7 +835,8 @@ async function interpretByAI({ text, rawText, dictHits, meta, rule, seq }) {
     // 複数の予定＝フォーム（1件）には入れず「まとめて入力」へ（ユーザー決定・v39 の受け皿を再利用）
     let added;
     try {
-      added = VCBatch.stageAdd(events);
+      // v59: 経路＝AI（複数）・生テキスト＝この発話。全件が同じ発話から来る＝共有して焼く
+      added = VCBatch.stageAdd(events, undefined, { path: 'ai-multi', text: rawText, conf: meta && meta.confidence });
     } catch (e) {
       window.__vcNote('音声AI解釈', `取り込みリストへ保存できず→ルール解釈に戻します: ${(e && e.message) || e}`);
       applyRuleResult({ rule, text, rawText, dictHits, meta, aiFbNote: '🤖複数件の取り込みに失敗→ルール解釈' });
@@ -872,6 +878,8 @@ async function interpretByAI({ text, rawText, dictHits, meta, rule, seq }) {
   const changed = a.skipped.length !== Object.keys(patch).length || a.cleared.length > 0;
   const isNew = !!settings.get('plainUtteranceIsNew');
   logHistory({ at: Date.now(), text: rawText, dict: dictHits, conf: meta && meta.confidence, fb: !!(meta && meta.fallback), tg: false, nw: isNew, ai: true, patch, notes, skipped: a.skipped, cleared: a.cleared, err: null, after: changed ? store.snapshot() : null });
+  // v59: この発話を計測メタの直近値に（path='ai'＝1件を AI で解釈してフォームへ）。下の自動保存でそのまま焼かれる
+  lastUtterance = { text: rawText, conf: meta && meta.confidence, path: 'ai', targeted: false, isNew, dict: dictHits, fallback: !!(meta && meta.fallback), notes, err: null };
   // AI 経路の自動保存（v47・設定 autoSaveAI・既定オフ＝v42-v46 は呼んでいなかった）。
   // v42 で塞いだ理由＝「ルールパーサは決定的＝patch に日時が在る＝実際に言った、が保証されるが、
   // AI は創作し得る。保存は不可逆（読めない＝消せない）」。**その時に「精度を実機で見てから再検討」と
@@ -1572,7 +1580,8 @@ async function batchSaveOne(entry) {
   renderBatch();
   try {
     const now = new Date();
-    const r = await saveDraftCore(entry.draft, now, { info: provInfoFromEntry(entry) });
+    const info = provInfoFromEntry(entry); info.save = { auto: false }; // v59: カード個別保存＝手動
+    const r = await saveDraftCore(entry.draft, now, { info });
     if (!r.ok) {
       if (r.calError) handleCalendarError(r.calError, '保存に失敗');
       else toast(`⚠ ${r.problems.join(' / ')}`);
@@ -1623,7 +1632,7 @@ function batchToForm(entry) {
 // v53: 取り込みリストの保存本体。**「すべて保存」ボタンと自動保存の両方がここを通る**
 // ＝入口で挙動が変わらない（v39 が「どの入口も同じ検証ゲート・同じ台帳」を通したのと同じ考えを、保存側にも）。
 // 戻り: { okCount, failCount, listDroppedTotal, aborted }
-async function saveBatchEntries(entries, onProgress) {
+async function saveBatchEntries(entries, onProgress, auto) { // v59: auto=自動保存の回か（保存操作を計測 CSV へ）
   const out = { okCount: 0, failCount: 0, listDroppedTotal: 0, aborted: false };
   if (!entries || !entries.length) return out;
   batchBusy = true;
@@ -1660,7 +1669,8 @@ async function saveBatchEntries(entries, onProgress) {
           for (let i = 0; i < valid.length; i++) {
             progress(i + 1, valid.length);
             const { entry } = valid[i];
-            const r = await saveDraftCore(entry.draft, now, { skipCalendar: true, info: provInfoFromEntry(entry) });
+            const info = provInfoFromEntry(entry); info.save = { auto: !!auto }; // v59
+            const r = await saveDraftCore(entry.draft, now, { skipCalendar: true, info });
             if (r.ok && !(r.toList && !r.listOk)) {
               okCount++;
               listDroppedTotal += r.listDropped || 0;
@@ -1679,7 +1689,8 @@ async function saveBatchEntries(entries, onProgress) {
       for (let i = 0; i < entries.length; i++) {
         progress(i + 1, entries.length);
         const e = entries[i];
-        const r = await saveDraftCore(e.draft, now, { info: provInfoFromEntry(e) });
+        const info = provInfoFromEntry(e); info.save = { auto: !!auto }; // v59
+        const r = await saveDraftCore(e.draft, now, { info });
         if (!r.ok) {
           if (r.calError) {
             handleCalendarError(r.calError, `${i + 1}件目の保存に失敗`);
@@ -1747,7 +1758,7 @@ async function autoSaveStaged(added, warnings, how) {
     if (hold.length) window.__vcDebugNote(`🤖 自動保存を見送り（確認が要る ${hold.length}件）: ${how}`);
     return { ran: false, savedCount: 0, holdCount: hold.length };
   }
-  const r = await saveBatchEntries(save, null);
+  const r = await saveBatchEntries(save, null, true); // v59: まとめて入力の自動保存＝保存操作は「自動」
   batchResultToast(r, '🤖 自動で', hold.length ? `／⚠ ${hold.length}件は確認が要るのでカードに残しています` : '');
   window.__vcDebugNote(`🤖 まとめて入力の自動保存（${how}）: 保存${r.okCount} 失敗${r.failCount} 保留${hold.length}`);
   return { ran: true, savedCount: r.okCount, holdCount: hold.length };
@@ -1818,7 +1829,7 @@ document.getElementById('batchImport').addEventListener('click', async () => {
   }
   if (r.quoteMisses) window.__vcDebugNote(`📎 引用の不一致 ${r.quoteMisses}件（AI の引用が本文に見つからない＝言い換えか幻覚）`);
   let added;
-  try { added = VCBatch.stageAdd(r.events); } catch (e) {
+  try { added = VCBatch.stageAdd(r.events, undefined, { path: 'paste' }); } catch (e) { // v59: 経路＝貼付（生テキストは無し＝発話でない）
     toast(`取り込みを保存できませんでした: ${(e && e.message) || e}`); // 「取り込んだつもり」を作らない
     return;
   }
@@ -1942,7 +1953,8 @@ document.getElementById('batchAiRun').addEventListener('click', async () => {
     }
     if (r.quoteMisses) window.__vcDebugNote(`📎 引用の不一致 ${r.quoteMisses}件（AI の引用が本文に見つからない＝言い換えか幻覚）`);
     let added;
-    try { added = VCBatch.stageAdd(r.events); } catch (e) { toast(`取り込みを保存できませんでした: ${(e && e.message) || e}`); return; }
+    // v59: 経路＝AI（複数）・生テキスト＝送った本文（text）
+    try { added = VCBatch.stageAdd(r.events, undefined, { path: 'ai-multi', text }); } catch (e) { toast(`取り込みを保存できませんでした: ${(e && e.message) || e}`); return; }
     ta.value = '';
     renderBatch();
     const auto = await autoSaveStaged(added, r.warnings, 'AIで解釈して取り込み');
@@ -1974,7 +1986,7 @@ window.__vcRegisterWebMcp = function () {
   const r = VCBatch.registerWebMcp(navigator, {
     schema: VCContract.SCHEMA,
     onEvents: (events) => {
-      const added = VCBatch.stageAdd(events); // 書き込み失敗は throw ＝ execute が isError で返す
+      const added = VCBatch.stageAdd(events, undefined, { path: 'ai-multi' }); // v59: 経路＝AI（複数・外部エージェント）。書き込み失敗は throw ＝ execute が isError で返す
       renderBatch();
       // 🚫 **ここでは autoSaveStaged を呼ばない**（v53）＝「まとめて入力の自動保存」をオンにしても
       //    外部エージェントからの取り込みは必ず人の確認を通る。設定は**自分が起こした取り込み**への
@@ -2313,20 +2325,22 @@ function provInfoFromStore() {
   const cor = store.getCorrections();
   const fix = {};
   for (const f of Object.keys(cor)) fix[f] = cor[f] || '?';
-  return { prov, fix };
+  return { prov, fix, utter: lastUtterance }; // v59: この保存を形作った直近の発話メタ（手入力なら null）
 }
 // まとめて入力のカードから保存する時（staging には人の訂正が無い＝prov だけ）
 function provInfoFromEntry(entry) {
-  if (!entry || !entry.prov) return null;
-  const d = entry.draft || {};
   const prov = {};
-  for (const f of VCStore.FIELDS) {
-    const filled = f === 'allDay' ? d.allDay === true : d[f] !== '' && d[f] != null;
-    if (!filled) continue;
-    const p = entry.prov[f];
-    prov[f] = (p && p.source) || '?';
+  if (entry && entry.prov) {
+    const d = entry.draft || {};
+    for (const f of VCStore.FIELDS) {
+      const filled = f === 'allDay' ? d.allDay === true : d[f] !== '' && d[f] != null;
+      if (!filled) continue;
+      const p = entry.prov[f];
+      prov[f] = (p && p.source) || '?';
+    }
   }
-  return Object.keys(prov).length ? { prov } : null;
+  // v59: prov が空でも発話メタ（経路・生テキスト）は運ぶ＝records が prov 空を捨てて utter だけ焼く
+  return { prov, utter: (entry && entry.src) || null };
 }
 
 // ===== 保存コア（v39 で doSave から切り出し） =====
@@ -2401,7 +2415,9 @@ function saveDestLabels(r) {
 async function doSave(opts) {
   const auto = !!(opts && opts.auto);
   const now = new Date();
-  const r = await saveDraftCore(store.get(), now, { info: provInfoFromStore() });
+  const info = provInfoFromStore();
+  info.save = { auto }; // v59: 保存操作（自動/手動）を計測 CSV へ
+  const r = await saveDraftCore(store.get(), now, { info });
   if (!r.ok) {
     if (r.calError) handleCalendarError(r.calError, auto ? '自動保存に失敗' : '保存に失敗');
     else toast(`⚠ ${r.problems.join(' / ')}`);
@@ -2428,6 +2444,7 @@ async function doSave(opts) {
         document.getElementById('historyBox').open = true;
       }
     }
+    lastUtterance = null; // v59: 保存し切った＝次の手入力に古い発話メタを引きずらない
     store.reset();
     transcriptEl.textContent = '';
     notesEl.textContent = '';
@@ -2473,6 +2490,7 @@ function startEditRecord(r) {
     : null;
   if (!store.restore(VCBatch.toSnapshot(recordToDraft(r), priorProv))) { toast('フォームに載せられませんでした'); return; }
   editingRec = { id: r.id, dest: r.dest, rev: r.rev || 1, title: r.title };
+  lastUtterance = null; // v59: 載せた瞬間は発話メタを持たない＝喋らず手直しなら「手動・発話なし」で記録される
   // v44 の「辞書に登録して保存」がそのまま働くように、**読み込んだ時の値**を基準にする
   // （restore は基準を捨てる＝ここで置き直す）。以後、手で直した欄が学習の候補になる。
   voiceBaseline = { title: r.title || '', location: r.location || '', note: r.note || '' };
@@ -2529,7 +2547,8 @@ async function saveEditedRecord() {
 
   // ② リスト（台帳）を差し替え＝ここが「今正しい状態」（ゆう決定: リストは1行のまま）
   let updated = null;
-  try { updated = VCRecords.update(cur.id, res.event, now, provInfoFromStore()); } // v57: この版の出所と訂正を焼く
+  const info = provInfoFromStore(); info.save = { auto: false }; // v59: 更新して保存＝手動（声で直した時は utter が付く）
+  try { updated = VCRecords.update(cur.id, res.event, now, info); } // v57: この版の出所と訂正を焼く
   catch (err) {
     // カレンダーには入った後＝黙って成功にしない（v16）。人が何を直すべきか分かる形で言う
     window.__vcNote('保存済みの修正', `リストの更新に失敗: ${(err && err.message) || err}`);
@@ -2538,6 +2557,7 @@ async function saveEditedRecord() {
   }
   toast(`✅ リストの記録を直しました（改正vol${updated.rev}）${calMsg}`);
   endEditRecord();
+  lastUtterance = null; // v59: 直し切った＝次に引きずらない
   store.reset();
   transcriptEl.textContent = '';
   notesEl.textContent = '';
@@ -2547,6 +2567,7 @@ async function saveEditedRecord() {
 
 document.getElementById('editCancel').addEventListener('click', () => {
   endEditRecord();
+  lastUtterance = null; // v59
   store.reset();
   transcriptEl.textContent = '';
   notesEl.textContent = '';
@@ -2630,6 +2651,7 @@ document.getElementById('saveLearn').addEventListener('click', () => {
 
 document.getElementById('clear').addEventListener('click', () => {
   if (editingRec) endEditRecord(); // v54: 直すのをやめる＝クリアは「今の入力を捨てる」＝同じ意味
+  lastUtterance = null; // v59: 入力を捨てる＝発話メタも捨てる
   store.reset();
   transcriptEl.textContent = '';
   notesEl.textContent = '';

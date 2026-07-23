@@ -41,6 +41,35 @@
     return Object.keys(out).length ? out : null;
   }
 
+  // v59（計測 CSV の検証スキーマ・ゆう方針「リストは必要な情報だけ／検証用はできるだけ細かく」）:
+  //   発話メタ = 来歴（logHistory）が持っていた情報を保存レコードにも載せる＝1行で認識と解釈を突き合わせる。
+  //   保存を形作った **直近の1発話**の best-effort（複数発話や手直しが混じった保存では最後の発話）。
+  //   欄別の出所は prov/fix（v55-57）が担い、ここは「発話そのもの」の内訳。
+  //   text=生テキスト / conf=認識信頼度(0..1) / path=経路 / targeted,isNew=扱い /
+  //   dict=辞書展開[{k,v}] / fallback=補完確定(v16) / notes=解釈注記 / err=解釈エラー。
+  //   ローカル完結のまま（外に送らない＝CSV は端末内でゆうが書き出すだけ・privacy 文言は不変）。知らない形は捨てる。
+  const UTTER_PATHS = ['rule', 'ai', 'ai-multi', 'paste'];
+  function cleanUtter(x) {
+    if (!x || typeof x !== 'object' || Array.isArray(x)) return null;
+    const out = {};
+    if (typeof x.text === 'string' && x.text) out.text = x.text;
+    if (Number.isFinite(Number(x.conf))) out.conf = Number(x.conf);
+    if (UTTER_PATHS.includes(x.path)) out.path = x.path;
+    if (x.targeted) out.targeted = true;
+    if (x.isNew) out.isNew = true;
+    if (x.fallback) out.fallback = true;
+    if (typeof x.err === 'string' && x.err) out.err = x.err;
+    if (Array.isArray(x.dict)) {
+      const d = x.dict.filter((h) => h && typeof h.k === 'string' && typeof h.v === 'string').map((h) => ({ k: h.k, v: h.v }));
+      if (d.length) out.dict = d;
+    }
+    if (Array.isArray(x.notes)) {
+      const n = x.notes.filter((s) => typeof s === 'string' && s);
+      if (n.length) out.notes = n;
+    }
+    return Object.keys(out).length ? out : null;
+  }
+
   function loadRaw() {
     try {
       const v = JSON.parse(global.localStorage.getItem(KEY));
@@ -81,6 +110,10 @@
     if (pv) out.prov = pv;
     const fx = cleanSrcMap(r.fix);
     if (fx) out.fix = fx;
+    // v59: 発話メタ（計測 CSV）と保存操作（自動/手動）。無い行は持たない（旧レコードもそのまま読める）
+    const ut = cleanUtter(r.utter);
+    if (ut) out.utter = ut;
+    if (typeof r.auto === 'boolean') out.auto = r.auto;
     return out;
   }
 
@@ -128,6 +161,10 @@
     if (pv) rec.prov = pv;
     const fx = cleanSrcMap(info && info.fix);
     if (fx) rec.fix = fx;
+    // v59: 発話メタ（計測 CSV）と保存操作（自動/手動）。渡されない時は焼かない（出所を創作しない）
+    const ut = cleanUtter(info && info.utter);
+    if (ut) rec.utter = ut;
+    if (info && info.save && typeof info.save.auto === 'boolean') rec.auto = info.save.auto;
     all.push(rec);
     all.sort((a, b) => a.savedAt - b.savedAt); // 上限で落とすのは「最も古く保存したもの」
     const dropped = Math.max(0, all.length - CAP);
@@ -173,6 +210,10 @@
     if (pv) next.prov = pv;
     const fx = cleanSrcMap(info && info.fix);
     if (fx) next.fix = fx;
+    // v59: 発話メタと保存操作もこの版のもの（直している最中に喋れば付く・喋らなければ付かない）
+    const ut = cleanUtter(info && info.utter);
+    if (ut) next.utter = ut;
+    if (info && info.save && typeof info.save.auto === 'boolean') next.auto = info.save.auto;
     all[i] = next;
     persist(all);
     return next;
@@ -225,8 +266,13 @@
     // 「訂正」は 欄=直される前の出所（訂正率と「訂正のうち推論由来率」がこの2列から集計できる）
     const MARK = { transcript: '確', inferred: '推', human: '手' };
     const srcCell = (m) => (m ? Object.keys(m).map((f) => `${f}=${MARK[m[f]] || '?'}`).join(' ') : '');
-    // v54 の「改訂」・v57 の「出所」「訂正」は**末尾に足す**＝既存の列位置を動かさない（前に出した CSV と並べて読める）
-    const header = ['種類', 'タイトル', '開始日', '開始時刻', '終了日', '終了時刻', '終日', '場所', 'メモ', '保存先', '保存日時', '緯度', '経度', '改訂', '出所', '訂正'];
+    // v59: 発話メタ（検証列）。経路/扱いは来歴と同じ言葉。無い所は空＝創作しない（SPEC §7）。
+    const UPATH = { rule: 'ルール', ai: 'AI', 'ai-multi': 'AI（複数）', paste: '貼付' };
+    const uConf = (u) => (u && Number.isFinite(u.conf) ? `${Math.round(u.conf * 100)}%` : '');
+    const uDict = (u) => (u && u.dict ? u.dict.map((h) => `「${h.k}」→「${h.v}」`).join(' ') : '');
+    // v54 の「改訂」・v57 の「出所」「訂正」・v59 の発話メタは**末尾に足す**＝既存の列位置を動かさない（前に出した CSV と並べて読める）
+    const header = ['種類', 'タイトル', '開始日', '開始時刻', '終了日', '終了時刻', '終日', '場所', 'メモ', '保存先', '保存日時', '緯度', '経度', '改訂', '出所', '訂正',
+      '生テキスト', '認識信頼度', '経路', '扱い', '保存操作', '辞書', '補完確定', '解釈注記', '解釈エラー'];
     const lines = [header.map(cell).join(',')];
     for (const r of rows || []) {
       lines.push([
@@ -246,6 +292,16 @@
         r.rev > 1 ? r.rev : '', // 直していない行は空＝「1」で埋めない（無かったことを列でも創作しない）
         srcCell(r.prov), // v57: 無い行は空＝創作しない
         srcCell(r.fix),
+        // v59: 発話メタ（検証用）。手入力/貼付など該当しない所は空＝創作しない
+        (r.utter && r.utter.text) || '',                              // 生テキスト
+        uConf(r.utter),                                               // 認識信頼度
+        (r.utter && UPATH[r.utter.path]) || '',                       // 経路
+        r.utter ? (r.utter.targeted ? '欄指定' : (r.utter.isNew ? '新規' : '')) : '', // 扱い
+        r.auto === true ? '自動' : (r.auto === false ? '手動' : ''),  // 保存操作
+        uDict(r.utter),                                               // 辞書
+        (r.utter && r.utter.fallback) ? '○' : '',                     // 補完確定
+        (r.utter && r.utter.notes) ? r.utter.notes.join(' ／ ') : '', // 解釈注記
+        (r.utter && r.utter.err) || '',                               // 解釈エラー
       ].map(cell).join(','));
     }
     // BOM: Excel が UTF-8 と認識するため（無いと日本語が化ける）。改行は CRLF（RFC4180）。

@@ -187,7 +187,7 @@ t('toCsv: BOM で始まり CRLF 区切り・ヘッダ行がある', () => {
   const csv = R.toCsv([]);
   eq(csv.charCodeAt(0), 0xFEFF, '先頭が BOM（無いと Excel で日本語が化ける）');
   const lines = csv.slice(1).split(CRLF);
-  eq(lines[0], '種類,タイトル,開始日,開始時刻,終了日,終了時刻,終日,場所,メモ,保存先,保存日時,緯度,経度,改訂,出所,訂正');
+  eq(lines[0], '種類,タイトル,開始日,開始時刻,終了日,終了時刻,終日,場所,メモ,保存先,保存日時,緯度,経度,改訂,出所,訂正,生テキスト,認識信頼度,経路,扱い,保存操作,辞書,補完確定,解釈注記,解釈エラー');
   eq(lines[1], '', '末尾は CRLF で終わる（RFC4180）');
 });
 
@@ -197,7 +197,7 @@ t('toCsv: 1行の全列（予定・時刻あり・リスト・位置なし＝末
     allDay: false, location: '駅前', note: '保険証', dest: 'list', savedAt: MS(2026, 7, 19, 9, 5),
   }]);
   eq(csv.slice(1).split(CRLF)[1],
-    '予定,歯医者,2026-07-20,15:00,2026-07-20,16:30,,駅前,保険証,リスト,2026-07-19 09:05,,,,,');
+    '予定,歯医者,2026-07-20,15:00,2026-07-20,16:30,,駅前,保険証,リスト,2026-07-19 09:05,,,,,,,,,,,,,,'); // v59: 発話メタ9列は空（手作りの行＝utter/auto なし）
 });
 
 t('toCsv: 終日は時刻列が空・終日列に○（言っていない時刻を列でも創作しない）', () => {
@@ -206,7 +206,7 @@ t('toCsv: 終日は時刻列が空・終日列に○（言っていない時刻�
     allDay: true, location: '', note: '', dest: 'both', savedAt: MS(2026, 7, 19, 8, 0),
   }]);
   eq(csv.slice(1).split(CRLF)[1],
-    '記録,休み,2026-07-19,,2026-07-19,,○,,,両方,2026-07-19 08:00,,,,,');
+    '記録,休み,2026-07-19,,2026-07-19,,○,,,両方,2026-07-19 08:00,,,,,,,,,,,,,,'); // v59: 発話メタ9列は空
 });
 
 t('toCsv: 位置情報のある行は緯度・経度列に出る（v38）', () => {
@@ -243,7 +243,7 @@ t('toCsv: list() の実データがそのまま書ける（add → list → toCs
   const line = csv.slice(1).split(CRLF)[1];
   ok(line.startsWith('予定,会議,2026-07-20,10:00,'), `list() の行が出る（実際: ${line}）`);
   ok(line.includes(',丸の内,'), '場所が出る');
-  ok(line.endsWith(',両方,2026-07-19 09:00,,,,,'), '保存先と保存日時が出る（位置なし＝末尾空・出所/訂正も空）');
+  ok(line.endsWith(',両方,2026-07-19 09:00,,,,,,,,,,,,,,'), '保存先と保存日時が出る（位置なし＝末尾空・出所/訂正・発話メタ9列も空）');
 });
 
 // ===== 位置情報（v38）=====
@@ -407,8 +407,8 @@ t('v57: CSV に「出所」「訂正」列（末尾・無い行は空・確/推/
   R.add(ev('なし', 21000), 'list', D(10001));
   const lines = R.toCsv(R.list()).replace(/^﻿/, '').trim().split('\r\n');
   const heads = lines[0].split(',');
-  eq(heads.slice(-2), ['出所', '訂正']);
   const provIdx = heads.indexOf('出所');
+  eq(heads[provIdx + 1], '訂正', '出所の隣が訂正（v59 で発話メタ列が後ろに足された＝位置でなく見出しで探す）');
   const byTitle = {};
   for (const l of lines.slice(1)) { const c = l.split(','); byTitle[c[1]] = { p: c[provIdx], f: c[provIdx + 1] }; }
   eq(byTitle['あり'].p, 'title=確 startDate=推 startTime=手');
@@ -422,6 +422,77 @@ t('v57: 「?」（出所情報なし）も保てる＝不明を不明のまま�
   eq(R.list()[0].prov, { title: '?' });
   const lines = R.toCsv(R.list()).replace(/^﻿/, '').trim().split('\r\n');
   ok(lines[1].includes('title=?'), 'CSV でも ? のまま');
+});
+
+// ===== v59: 発話メタ（計測 CSV の検証スキーマ）=====
+// ゆう方針「リストは必要な情報だけ／検証用（CSV）はできるだけ細かく」。来歴が持っていた情報を保存レコードにも載せる。
+t('v59: 発話メタと保存操作を info から焼く（無効な形は捨てる・黙って壊れない）', () => {
+  R.add(ev('会議', 20000), 'list', D(10000), {
+    utter: { text: '10時会議', conf: 0.97, path: 'rule', isNew: true, fallback: true, dict: [{ k: '僕', v: 'ゆう' }], notes: ['⚠夕方あたり'], err: '' },
+    save: { auto: true },
+  });
+  const r = R.list()[0];
+  eq(r.utter.text, '10時会議');
+  eq(r.utter.conf, 0.97);
+  eq(r.utter.path, 'rule');
+  eq(r.utter.isNew, true);
+  eq(r.utter.fallback, true);
+  eq(r.utter.dict, [{ k: '僕', v: 'ゆう' }]);
+  eq(r.utter.notes, ['⚠夕方あたり']);
+  eq(r.auto, true);
+  ok(!('err' in r.utter), '空の err は焼かない（無かったことを創作しない）');
+  ok(!('targeted' in r.utter), '偽の扱いは持たない');
+});
+
+t('v59: 未知の経路・壊れた値・空の発話メタは持たない（旧レコードもそのまま読める）', () => {
+  R.add(ev('a', 20000), 'list', D(10000), { utter: { path: 'nope', conf: 'x', dict: 'bad', text: '' } });
+  ok(!('utter' in R.list()[0]), '中身が全部無効＝utter を持たない');
+  R.add(ev('b', 21000), 'list', D(10001), { utter: 'not-an-object' });
+  ok(!('utter' in R.list().find((x) => x.title === 'b')), '非オブジェクトは無視');
+  R.add(ev('c', 22000), 'list', D(10002)); // info 無し
+  ok(!('utter' in R.list().find((x) => x.title === 'c')) && !('auto' in R.list().find((x) => x.title === 'c')), 'info 無しは utter も auto も持たない（旧挙動不変）');
+});
+
+t('v59: 発話メタは localStorage 往復で保たれる（stage/records と同じ・再読込で落ちない）', () => {
+  R.add(ev('会議', 20000), 'list', D(10000), { utter: { text: 'A', path: 'ai', conf: 0.8 }, save: { auto: false } });
+  const again = require('../adapters/records.js').list()[0]; // 同じ localStorage を読み直す
+  eq(again.utter.text, 'A');
+  eq(again.utter.path, 'ai');
+  eq(again.auto, false);
+});
+
+t('v59: update はこの版の発話メタ/保存操作を焼く（声で直せば付く・喋らなければ付かない）', () => {
+  const rec = R.add(ev('会議', 20000), 'list', D(10000), { utter: { text: 'A', path: 'rule' }, save: { auto: true } });
+  R.update(rec.id, ev('会議', 20000), D(11000), { utter: { text: '場所 丸の内', path: 'rule' }, save: { auto: false } });
+  const r = R.list()[0];
+  eq(r.utter.text, '場所 丸の内', '新しい版の発話メタ（古い版を引き継がない）');
+  eq(r.auto, false, '更新して保存＝手動');
+});
+
+t('v59: CSV に発話メタ列が出る（経路ラベル/信頼度%/扱い/保存操作/辞書/補完確定/解釈注記/解釈エラー）', () => {
+  R.add(ev('会議', MS(2026, 7, 20, 10, 0)), 'list', D(MS(2026, 7, 19, 9, 0)), {
+    utter: { text: '10時会議', conf: 0.97, path: 'ai-multi', targeted: true, fallback: true, dict: [{ k: '僕の番号', v: '090' }], notes: ['⚠曖昧'], err: 'timeout' },
+    save: { auto: true },
+  });
+  const lines = R.toCsv(R.list()).replace(/^﻿/, '').trim().split('\r\n');
+  const h = lines[0].split(','), c = lines[1].split(','); // 値にカンマを含めていないので位置で読める
+  const at = (name) => c[h.indexOf(name)];
+  eq(at('生テキスト'), '10時会議');
+  eq(at('認識信頼度'), '97%');
+  eq(at('経路'), 'AI（複数）');
+  eq(at('扱い'), '欄指定', 'targeted が isNew より優先');
+  eq(at('保存操作'), '自動');
+  eq(at('辞書'), '「僕の番号」→「090」');
+  eq(at('補完確定'), '○');
+  eq(at('解釈注記'), '⚠曖昧');
+  eq(at('解釈エラー'), 'timeout');
+});
+
+t('v59: 保存操作は自動/手動を書き分ける（ノールックの直接の信号）', () => {
+  R.add(ev('a', 20000), 'list', D(10000), { save: { auto: false } });
+  const lines = R.toCsv(R.list()).replace(/^﻿/, '').trim().split('\r\n');
+  const h = lines[0].split(','), c = lines[1].split(',');
+  eq(c[h.indexOf('保存操作')], '手動');
 });
 
 console.log(`\nrecords.test: ${pass} passed, ${fail} failed`);

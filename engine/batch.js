@@ -301,6 +301,8 @@
           problems: Array.isArray(e.problems) ? e.problems.filter((s) => typeof s === 'string') : [],
           prov: (e.prov && typeof e.prov === 'object' && !Array.isArray(e.prov)) ? e.prov : null, // v56: 無い行は不明
           addedAt: typeof e.addedAt === 'number' ? e.addedAt : 0,
+          // v59: 経路・生テキスト（計測 CSV 用）。無い行は持たない（旧エントリもそのまま読める）
+          ...(e.src && typeof e.src === 'object' && !Array.isArray(e.src) ? { src: e.src } : {}),
         }));
     } catch { return []; }
   }
@@ -311,9 +313,12 @@
   }
 
   let seq = 0; // 同一ミリ秒の追加でも id が衝突しない通し番号
-  function stageAdd(events, now) {
+  // v59: src（任意）= この取り込みの経路・生テキスト（計測 CSV 用）。全件が同じ発話/貼付から来る＝共有して焼く。
+  //   { path:'ai-multi'|'paste'|…, text:<生テキスト>, conf:<認識信頼度> }。records.cleanUtter が保存時に検証する。
+  function stageAdd(events, now, src) {
     const t = now instanceof Date ? now.getTime() : typeof now === 'number' ? now : Date.now();
     const cur = loadStage();
+    const s = (src && typeof src === 'object' && !Array.isArray(src)) ? src : null;
     const added = (events || []).map((e) => ({
       id: `b${t}-${seq++}`,
       draft: Object.assign(emptyDraft(), e.draft),
@@ -321,6 +326,7 @@
       problems: Array.isArray(e.problems) ? e.problems : [],
       prov: (e.prov && typeof e.prov === 'object' && !Array.isArray(e.prov)) ? e.prov : null, // v56
       addedAt: t,
+      ...(s ? { src: s } : {}),
     }));
     persistStage(cur.concat(added));
     return added;
