@@ -1,5 +1,17 @@
 # voice-calendar — CHANGELOG（build log・最新が上）
 
+## v63 — 録音中の一時オーバーライドのボタンを「やめる」と同じ大きさに (2026-07-23)
+
+**背景（ゆう要求）**
+- 録音中に出る「この録音だけ 自動登録OFF／AI」（v61）のボタンを、「✕ やめる（入力しない）」（v49）と**同じ大きさにしたい**。「色はそのままでいい、大きさだけ」。
+
+**設計判断**
+- `.ov-btn` の `padding: 6px 13px` → `7px 16px`、`font-size: 12px` → `13px` ＝ `#micCancel`（やめる）と同値に。**色（border/background/color と有効化時の accent `.on`）は1バイトも触らない**＝「赤=停止／グレー=この録音だけ設定変更」の意味差は色で保つ（v46「視覚言語を増やさない」）。border-radius は元から両方 999px。
+- ロジックは無変更（CSS 2値のみ）。
+
+**結果**
+- テスト 474/474（version.test が BUILD=v63 と全 `?v=63` の一致を確認）。実ブラウザ検証（`localhost:5275`）: `.ov-btn` と `#micCancel` の computed style が padding=`7px 16px`・font-size=`13px`・border-radius=`999px` で **完全一致（match:true）**・BUILD=v63 配信・console 0。**web 完結・Swift 変更ゼロ**。
+
 ## v62 — 審査用ビルド＝位置情報を丸ごと無効化（可逆・コードは休眠で残す） (2026-07-23)
 
 **背景（ゆう判断）**
