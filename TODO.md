@@ -251,6 +251,14 @@
 >
 > **🟡 App Store 1.1(20) 審査提出済み＝審査待ち（2026-07-23 12:45・提出ID `7b9b7dc3-d7b3-4450-9e65-52f6059d637c`）**: v32-v62 を公開版（1.0(12)≈v31）へ載せる新バージョン。位置情報は v62 で削除（実機で「出ない」確認済み）・AI（BYOK）は**先回り開示＋$1上限テストキーを審査メモに添付**・App プライバシー=収集なし・Sign-in OFF・年齢 4+ 据え置き。Codemagic 1.1(20) は **DeviceLocation を外した Package.swift が通った**（native 除去の初検証 OK）。**次＝Apple の審査結果待ち**（最大48h・メール通知）。2.1 が再来したら審査メモの AI 開示＋テストキーで返信（素材 [docs/appstore.md](docs/appstore.md) §8-b/§11）。⚠ 見張り＝Guideline 5.1.2（AI 送信前の同意）＝却下されたら送信前確認の小改修で対応。
 >
+> **🎯 いま（2026-07-23 13:25〜・本セッション）＝審査待ちの間の web/native 改善（ゆう要求2つ）**:
+>
+> **🔧 v63（同日）＝録音中オーバーライドのボタンを「やめる」と同じ大きさに**: 「色はそのまま、大きさだけ」→ `.ov-btn` を `#micCancel` と同値（padding 7px 16px / font-size 13px）。色（グレー→有効化で accent）は据え置き＝赤=停止／グレー=この録音だけ設定変更、の意味差は色で保つ（v46）。web 完結・Swift ゼロ。テスト 474・実ブラウザで computed style 一致（match:true）✓・**push 済み（d9314b7）**。
+>
+> **🔧 v64（同日）＝ホーム画面の長押し（Quick Action）でリストを開く**: 「アプリ長押しでリストが開くように」→ **plugin を新設せず** Info.plist の静的ショートカット（`UIApplicationShortcutItems`・type 末尾 `.list`）＋ AppDelegate から WebView へ evaluateJavaScript（cold/warm 両対応・`window.__vcQuickAction` が受理を返すまで 0.3s×15 リトライ）。web は `openRecordsPanel` を関数化（開く＋最新描画＋「今」の線へ）＋入口 `window.__vcQuickAction`（try/catch・診断に🔖＝native 検証の目 v15）。触ったのは Info.plist と AppDelegate.swift だけ（依存構成不変）。テスト 474・実ブラウザ（`__vcQuickAction('list')`→リスト開く・診断🔖・console 0）✓・**push 済み（458a31c）**。**native は次の Codemagic ビルドで検証**（Windows で Swift 未コンパイル）。
+>
+> **▶▶ セッション締め（2026-07-23）＝v63/v64 を push 済み（GitHub 反映確認）**: 要求2つとも完了。web は Pages 配信検証へ。**native（v64 の Quick Action）は次ビルドで実機検証**（1.1 が審査通過後の 1.2 へ・1.1(20) は提出済みでフリーズ）。⚠ **環境の記録（訂正あり）**: 本セッション中、**git 出力の混線・commit の一時不成立・TODO.md の CR 改行化け・Read/Grep が実在しない行を返す** が多発。🔴 **当初 OneDrive 同期を原因と推定したが、ゆうが実データ（OneDrive はサインインもしていない）で否定＝OneDrive は不使用**。混線のエラー出力に PowerShell ラッパーの前置コード（`ering = 'PlainText'…`）が漏れており、環境の PowerShell が一因と見られる（真因は未特定）。対処＝git 出力を信じず `.git/refs` を直読み＋gh api で GitHub 側と突合して確定・改行を LF に正規化・幻が疑われる時は別ツール（Git Bash）で裁定。**教訓＝ツール出力が信頼できない時ほど、推定を事実として書かず環境非依存の手段で裁定する（OneDrive 決めつけは dont-fabricate の失敗）**。
+>
 > **▶▶ 次＝Pages で v59 を触る（実機ビルド不要）＋溜まったら次へ**:
 > 0. 🆕 **v59 の CSV**＝数日使って書き出し、**経路列でルール行 vs AI 行の訂正率**・**生テキスト×タイトル**（v58①）・**信頼度で認識/解釈の切り分け**が読めるか。読めれば v58② を「数」で判断できる。
 > 1. 🆕 **v58② は測ってから**＝経路別の訂正率・「AI が記録を曖昧に倒す率」を見て、AI 契約に「記録で時刻なし→今に倒す・曖昧扱いにしない（ルールの v27 と揃える）」を教えるか判断（⚠「夕方あたり」を褒められた挙動を壊さない線を守る）。
