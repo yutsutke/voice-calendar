@@ -611,20 +611,20 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
      理由: この版文字列は index.html にしかないが、ロジックは別ファイル＝別キャッシュ。
      付けないと「フッタは新しいのにパーサは古い」という嘘の状態が成立する（v9 で実際に踏んだ）。
      index.html が更新されれば src の URL も変わる → JS も必ず新しく取り直される。 -->
-<script src="engine/settings.js?v=61"></script>
-<script src="engine/schema.js?v=61"></script>
-<script src="engine/parser.js?v=61"></script>
-<script src="engine/dictionary.js?v=61"></script>
-<script src="engine/contract.js?v=61"></script>
-<script src="engine/batch.js?v=61"></script>
-<script src="engine/ai.js?v=61"></script>
-<script src="input/transcriber.js?v=61"></script>
-<script src="adapters/calendar.js?v=61"></script>
-<script src="adapters/records.js?v=61"></script>
-<script src="adapters/location.js?v=61"></script>
+<script src="engine/settings.js?v=62"></script>
+<script src="engine/schema.js?v=62"></script>
+<script src="engine/parser.js?v=62"></script>
+<script src="engine/dictionary.js?v=62"></script>
+<script src="engine/contract.js?v=62"></script>
+<script src="engine/batch.js?v=62"></script>
+<script src="engine/ai.js?v=62"></script>
+<script src="input/transcriber.js?v=62"></script>
+<script src="adapters/calendar.js?v=62"></script>
+<script src="adapters/records.js?v=62"></script>
+<script src="adapters/location.js?v=62"></script>
 <script>
 'use strict';
-const BUILD = 'v61：録音中に「この録音だけ 自動登録OFF／AI ON・OFF」の一時オーバーライド（設定を触らず1回だけ）· 2026-07-23';
+const BUILD = 'v62：審査用ビルド＝位置情報を丸ごと無効化（LOCATION_ENABLED=false ＋ Info.plist / package.json / Package.swift から除去。コードは休眠で残す）· 2026-07-23';
 console.log('BUILD:', BUILD);
 document.getElementById('build').textContent = BUILD;
 
@@ -1162,6 +1162,12 @@ renderHistory();
 // 台帳（adapters/records.js）から描く。予定/記録のトグルで「予定だけ・記録だけ・両方」の3通り。
 // 台帳が読み込めなくても本体（フォーム・保存）は殺さない（v13: 補助機能の失敗が本体を殺さない）。
 // ===== 位置情報（v38・設定オン時のみ）=====
+// 🔴 v62: **審査用に位置情報を丸ごと無効化するキルスイッチ**（ゆう判断＝App Store 審査で位置は厳しい）。
+//   false の間: 設定行・🗺地図・取得・warm-up・復帰チェックがすべて出ない/走らない（VCLoc=null に集約）。
+//   native 側は Info.plist の位置キー・package.json の device-location・Package.swift の DeviceLocation を
+//   同時に外してある（審査が「位置を使うアプリ」と見なさない）。コード・プラグイン・テストは休眠で残す
+//   ＝将来ここを true に戻し + native 3点を戻せば復活（v38/v50/v52 の投資を捨てない）。
+const LOCATION_ENABLED = false;
 // 保存時にいた場所を台帳の行に残す。失敗は診断に出す（補助機能＝toast で騒がないが黙って消えない v16）。
 //
 // 🔴 **取得も許可状態も adapters/location.js 経由**（v52・実機FB第33回）＝ native は
@@ -1172,7 +1178,7 @@ renderHistory();
 //   理由と設計の全文は adapters/location.js 冒頭。
 // ※ v50 の maximumAge:0（オフにしたら本当に取らない）はアダプタ側の GEO_OPTS に移した
 //   ＝「速さと電池は、切ったのに記録される、と引き換えにしてよいものではない」は不変。
-const VCLoc = (window.VCLocation && window.VCLocation.create) ? window.VCLocation.create() : null;
+const VCLoc = (LOCATION_ENABLED && window.VCLocation && window.VCLocation.create) ? window.VCLocation.create() : null;
 window.__vcDebugNote(`📍 位置エンジン: ${VCLoc ? VCLoc.engine : 'なし'}`
   + ((VCLoc && VCLoc.nativeFailure()) ? ` / native 失敗: ${VCLoc.nativeFailure()}` : ''));
 // 拒否バナーの文言は1か所に（保存時・設定オン時・復帰時の3経路が同じことを言う）
@@ -1353,7 +1359,7 @@ function recItem(r) {
   // 🗺 位置情報のある行は地図で開ける（v38）。Apple 系は Apple マップ・他は Google マップ
   // （URL を開くだけ＝地図 SDK もキーも持たない＝ローカル完結 SPEC §2 のまま）。
   // ピンは座標そのもの（q=lat,lng）＝タイトルで検索させない（別の場所に飛ぶ創作をしない）。
-  if (Number.isFinite(r.lat) && Number.isFinite(r.lng)) {
+  if (LOCATION_ENABLED && Number.isFinite(r.lat) && Number.isFinite(r.lng)) {
     const map = document.createElement('a');
     map.className = 'rec-map';
     map.textContent = '🗺 地図で見る';
@@ -2184,6 +2190,7 @@ function renderSettings() {
   const list = document.getElementById('settingsList');
   list.innerHTML = '';
   for (const d of settings.DEFS) {
+    if (!LOCATION_ENABLED && d.key === 'captureLocation') continue; // v62: 位置は無効化中＝設定行を出さない（死んだ設定を見せない）
     const item = document.createElement('div');
     item.className = 'set-item';
     const head = document.createElement('div');
@@ -2469,7 +2476,7 @@ async function saveDraftCore(draft, now, opts) {
   // v38: 位置情報（設定・既定オフ）。**保存をブロックしない**＝取れた時だけ後から行に付く
   // （自動保存 v28 の一本道を GPS の数秒で遅らせない）。対象はリストの行だけ＝カレンダーは
   // 書き込み後にアプリから触れない（write-only）。
-  if (listOk && listRec && settings.get('captureLocation')) captureGeoFor(listRec.id);
+  if (LOCATION_ENABLED && listOk && listRec && settings.get('captureLocation')) captureGeoFor(listRec.id);
 
   return { ok: true, event: res.event, warnings: res.warnings, isRecord, toCal, toList, calSaved, calAdapterName, listOk, listErr, listRec, listDropped };
 }

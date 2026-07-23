@@ -247,6 +247,10 @@
 >
 > **🔧 v61（同日・ゆう要求）＝録音中の一時オーバーライド「この録音だけ 自動登録OFF／AI ON・OFF」**: 「基本自動録音。正しく認識しない時その録音だけ手動にしたい。詳細設定は面倒」→ 録音中だけの使い捨て `recOverride`（**localStorage 不変・録音開始でリセット**＝この録音だけ）。自動登録OFF は減らす方向だけ（常に安全 §2-4）で音声経路の自動保存3つを塞ぐ（`shouldAutoSave` は音声専用の門＝手動まとめて入力は巻き込まない）。AI は `voiceAI` を上書き（**要キー不変**・キーある時だけボタン・既定の逆を1タップ）。視覚は「やめる」と別（グレー→accent＋✓）。**テスト 474/474**・実ブラウザ4系統✓（表示/トグル/自動保存抑止/AI分岐）・console 0・BUILD=v61。web 完結・Swift ゼロ。**実機（Pages）での手触り確認が次**。
 >
+> **🔴 v62（同日・ゆう判断）＝審査に出す前に位置情報を丸ごと無効化（可逆）**: v32-v61 を公開版（1.0(12)≈v31）へ載せる新バージョン提出の前段。位置は審査で厳しそう（Guideline 2.1 前例）→ **審査面を減らす**。本丸＝**package.json から `device-location` を外す**（`cap sync` が Package.swift を package.json から再生成する＝ここが native の正）＋ Package.swift 2行 ＋ Info.plist の位置キー ＋ privacy.html の位置記述を除去。JS は `LOCATION_ENABLED=false`（`VCLoc=null`→`geoUsable()` false で取得/warm-up/復帰が全部止まる・設定行/🗺/保存経路も gate・**stale な captureLocation=true でも取らない**）。**コードは休眠で残す＝可逆**（`local-plugins/device-location`・`adapters/location.js`・設定定義・test・CSV 列）。**テスト 474/474**・実ブラウザ検証✓（設定行なし/座標付きでも🗺なし/バナー非表示/console 0）・BUILD=v62。**native は次の Codemagic ビルドで初検証**（DeviceLocation を外した Package.swift・位置キー無し Info.plist）。
+>
+> **▶▶ いまここ＝App Store 新バージョン提出（v32-v62 を公開へ・ゆうが実行）**: ① Codemagic「ios-testflight」を **Start new build**（1.1(N)・marketing version は既に 1.1）→ **DeviceLocation 除去で通るか確認**（Package.swift の初コンパイル差分はここだけ） ② TestFlight で位置が**もう出ない**ことを実機確認（設定に位置行が無い・保存しても位置が付かない） ③ App Store Connect で 1.1 バージョン作成 → ビルド添付 → **App のプライバシーで位置情報の申告を外す**（この版の狙い）→ What's New（v32-v62 の要約）→ 審査提出。素材は [docs/appstore.md](docs/appstore.md)。
+>
 > **▶▶ 次＝Pages で v59 を触る（実機ビルド不要）＋溜まったら次へ**:
 > 0. 🆕 **v59 の CSV**＝数日使って書き出し、**経路列でルール行 vs AI 行の訂正率**・**生テキスト×タイトル**（v58①）・**信頼度で認識/解釈の切り分け**が読めるか。読めれば v58② を「数」で判断できる。
 > 1. 🆕 **v58② は測ってから**＝経路別の訂正率・「AI が記録を曖昧に倒す率」を見て、AI 契約に「記録で時刻なし→今に倒す・曖昧扱いにしない（ルールの v27 と揃える）」を教えるか判断（⚠「夕方あたり」を褒められた挙動を壊さない線を守る）。

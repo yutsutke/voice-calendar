@@ -1,5 +1,29 @@
 # voice-calendar — CHANGELOG（build log・最新が上）
 
+## v62 — 審査用ビルド＝位置情報を丸ごと無効化（可逆・コードは休眠で残す） (2026-07-23)
+
+**背景（ゆう判断）**
+- v32-v61 を公開版（現状 1.0(12)≈v31）へ載せる新バージョンを App Store 審査に出す。**位置情報は審査で厳しそう**（過去に Guideline 2.1 でプライバシーポリシー文言＝AI 連携を突かれた前例）→ **審査に出す前に位置情報関連を OFF にする**。位置情報（v38/v50/v52）は既定オフの opt-in 補助＝外して審査面を減らすのは低コスト。
+
+**設計判断（審査が見る native 宣言を消す＝本丸）**
+- 🔑 **`cap sync ios` が package.json から Package.swift を再生成する**（codemagic.yaml）＝ **package.json の依存が native の正**。Package.swift だけ直しても CI が DeviceLocation を書き戻す → **package.json から `device-location` を外す**のが決定的。
+  - ① `package.json` から `device-location` 除去（`npm install` で lock 更新＝node_modules から外れ cap sync が拾わない）／② `Package.swift` の DeviceLocation 2行を除去（CI 再生成と同じ形）／③ `Info.plist` の `NSLocationWhenInUseUsageDescription` 除去（審査が「位置を使うアプリ」と見なさない・CoreLocation もリンクされない）。
+- **JS は1フラグに集約** `const LOCATION_ENABLED = false`＝`VCLoc=null` に落とすと `geoUsable()` が false になり **取得・warm-up・復帰チェックが全部止まる**（既存配線がそのまま効く）。＋設定行を出さない・🗺地図を出さない（`&&` の short-circuit ＝過去データに座標があっても出ない）・保存経路の取得呼び出しをスキップ。
+  - 🚨 **stale な localStorage `captureLocation=true` でも取らない**＝設定値ではなくフラグで止める（TestFlight で一度オンにした端末で、UI を隠しただけでは取得が残る事故を防ぐ）。
+- **プライバシーポリシーを揃える**（`privacy.html` の位置記述 JP/EN を除去）＝Guideline 2.1 が**ポリシー文言を引き金にした**前例に倣い、アプリに無い機能を書かない。
+- **可逆＝コードは休眠で残す**: `local-plugins/device-location`・`adapters/location.js`・設定定義・`tests/location.test.js`・CSV の緯度経度列（v54「列位置を動かさない」）はそのまま。復活＝`LOCATION_ENABLED=true` ＋ native 3点を戻す。
+
+**結果**
+- テスト 474/474（休眠コードも green＝location.test 28）。実ブラウザ検証（`localhost:5275`・v62）: `LOCATION_ENABLED=false`／`VCLoc=null`／`geoUsable()=false`／設定行なし／座標付きレコードでも🗺なし／許可バナー非表示（display:none）／console 0。`npm install` が device-location を除去（lock の root 依存から消え、フォルダは extraneous＝休眠）。
+- **native は次の Codemagic ビルドで検証**（Windows で Swift はコンパイルできない）＝DeviceLocation を外した Package.swift が通るか・位置キーの無い Info.plist で審査面が減るか。
+
+**教訓**
+- **「機能を消す」は3層で消す＝宣言（Info.plist / CoreLocation リンク）・実装（JS/native）・約束（プライバシーポリシー）**。どれか1つでも残ると審査は「使うのに宣言が無い／宣言はあるのに使わない／ポリシーには在る」の食い違いを突く。**package.json が native 宣言の上流**だと押さえたのが要（UI を隠すだけでは native は消えない）。
+- **消す時ほど可逆に**（v26 の保存先撤去と同じ）＝休眠で残すのは、再投入の判断が数字（審査が通るか）で決まるから。捨てると再実装コストが判断を歪める。
+
+**残課題（ゆうが実行＝外向き操作）**
+- Codemagic で新ビルド（1.1(N)・marketing version は既に 1.1）→ App Store Connect で 1.1 を作成し提出。**App のプライバシーから位置情報の申告を外せる**（この版の狙い）。素材は docs/appstore.md。
+
 ## v61 — 録音中に「この録音だけ 自動登録OFF／AI ON・OFF」の一時オーバーライド (2026-07-23)
 
 **背景（ゆう要求）**
