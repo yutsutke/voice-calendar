@@ -115,6 +115,15 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
     background: transparent; color: #ff375f; font-size: 13px; font-family: inherit; cursor: pointer; }
   #micCancel:active { opacity: .6; }
   #micCancel[hidden] { display: none; }
+  /* v61: この録音だけの一時オーバーライド。やめる（赤・停止）とは別の意味＝録音1回だけ挙動を変える。
+     既定は控えめなグレー、有効化すると accent で「効いている」と分かる（新しい色語彙を増やさない＝v46）。 */
+  .mic-overrides { margin-top: 6px; display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
+  .mic-overrides[hidden] { display: none; }
+  .ov-btn { border: 1px solid var(--line); border-radius: 999px; padding: 6px 13px;
+    background: transparent; color: var(--sub); font-size: 12px; font-family: inherit; cursor: pointer; }
+  .ov-btn:active { opacity: .6; }
+  .ov-btn.on { border-color: var(--accent); color: var(--accent); background: var(--lock); font-weight: 600; }
+  .ov-btn[hidden] { display: none; }
   .transcript { min-height: 24px; text-align: center; color: var(--sub); font-size: 14px; margin: 2px 0 4px; overflow-wrap: anywhere; }
   .transcript .final { color: var(--ink); }
   .notes { text-align: center; font-size: 12px; color: var(--warn); min-height: 18px; margin-bottom: 8px; }
@@ -347,6 +356,12 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
     <!-- v49: 言い間違えに気づいた時の「やめる」（実機FB第31回）。録音中だけ出す。
          マイクをもう一度押す＝止めて**確定する**なので、言い間違えの取り消しには使えなかった。 -->
     <button id="micCancel" type="button" hidden>✕ やめる（入力しない）</button>
+    <!-- v61: この録音だけの一時オーバーライド（実機FBの要求＝詳細設定へ行かず1回だけ挙動を変える）。
+         録音中だけ出す。「やめる」（赤・停止）とは意味が別＝この録音の設定を上書きする。 -->
+    <div id="micOverrides" class="mic-overrides" hidden>
+      <button id="ovNoAuto" type="button" class="ov-btn">この録音だけ 自動登録OFF</button>
+      <button id="ovAI" type="button" class="ov-btn" hidden>この録音だけ AIで解釈</button>
+    </div>
   </div>
   <div class="transcript" id="transcript"></div>
   <div class="notes" id="notes"></div>
@@ -596,20 +611,20 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
      理由: この版文字列は index.html にしかないが、ロジックは別ファイル＝別キャッシュ。
      付けないと「フッタは新しいのにパーサは古い」という嘘の状態が成立する（v9 で実際に踏んだ）。
      index.html が更新されれば src の URL も変わる → JS も必ず新しく取り直される。 -->
-<script src="engine/settings.js?v=60"></script>
-<script src="engine/schema.js?v=60"></script>
-<script src="engine/parser.js?v=60"></script>
-<script src="engine/dictionary.js?v=60"></script>
-<script src="engine/contract.js?v=60"></script>
-<script src="engine/batch.js?v=60"></script>
-<script src="engine/ai.js?v=60"></script>
-<script src="input/transcriber.js?v=60"></script>
-<script src="adapters/calendar.js?v=60"></script>
-<script src="adapters/records.js?v=60"></script>
-<script src="adapters/location.js?v=60"></script>
+<script src="engine/settings.js?v=61"></script>
+<script src="engine/schema.js?v=61"></script>
+<script src="engine/parser.js?v=61"></script>
+<script src="engine/dictionary.js?v=61"></script>
+<script src="engine/contract.js?v=61"></script>
+<script src="engine/batch.js?v=61"></script>
+<script src="engine/ai.js?v=61"></script>
+<script src="input/transcriber.js?v=61"></script>
+<script src="adapters/calendar.js?v=61"></script>
+<script src="adapters/records.js?v=61"></script>
+<script src="adapters/location.js?v=61"></script>
 <script>
 'use strict';
-const BUILD = 'v60：メモ欄を4行に拡張（話した気分を全文で残す用途 v58①）· 2026-07-23';
+const BUILD = 'v61：録音中に「この録音だけ 自動登録OFF／AI ON・OFF」の一時オーバーライド（設定を触らず1回だけ）· 2026-07-23';
 console.log('BUILD:', BUILD);
 document.getElementById('build').textContent = BUILD;
 
@@ -694,6 +709,10 @@ const notesEl = document.getElementById('notes');
 const micBtn = document.getElementById('mic');
 const micState = document.getElementById('micState');
 const micCancelBtn = document.getElementById('micCancel');
+// v61: この録音だけの一時オーバーライドの UI（module スコープ＝転写層の onState から参照する）
+const ovBox = document.getElementById('micOverrides');
+const ovNoAuto = document.getElementById('ovNoAuto');
+const ovAI = document.getElementById('ovAI');
 
 function onUtterance(text, meta) {
   // v37: 辞書（言い換え）展開＝**解釈より前**に生テキストへ適用（欄指定「メモ 僕のメールアドレス」でも効く）。
@@ -729,7 +748,11 @@ function onUtterance(text, meta) {
   }
   // v42: 音声→AI 解釈（設定・既定オフ・要キー）。欄指定（「場所 立川」）はルールが速く確実・無料なので
   // AI に送らない。ルール解釈(rule)を先に済ませてから行く＝AI が失敗しても発話は無駄にならない。
-  if (!rule.targeted && settings.get('voiceAI') && window.VCAI && VCAI.hasKey() && window.VCBatch && window.VCContract) {
+  // v61: 「この録音だけ AI ON/OFF」の一時オーバーライドを設定より優先（ai===null＝設定に従う）。
+  // 要キーは不変＝force ON でもキーが無ければ下の条件が false になりルールへ（安全）。ボタンはキーがある時だけ出す。
+  const useAI = recOverride.ai !== null ? recOverride.ai : !!settings.get('voiceAI');
+  if (recOverride.ai !== null) window.__vcDebugNote(`🎤 この録音だけ AI=${useAI ? 'ON' : 'OFF'}`);
+  if (!rule.targeted && useAI && window.VCAI && VCAI.hasKey() && window.VCBatch && window.VCContract) {
     interpretByAI({ text, rawText, dictHits, meta, rule, seq: mySeq });
     return;
   }
@@ -808,6 +831,26 @@ let utteranceSeq = 0; // 追い越しガード: AI 応答が戻った時に新�
 // v59: 保存レコードの計測メタ（検証 CSV へ焼く）。**保存を形作った直近の1発話**を控える＝
 // 保存時に records の info.utter として渡す。手入力/クリア/編集ロードで null に戻す（古い発話を引きずらない）。
 let lastUtterance = null;
+// v61: この録音だけの一時オーバーライド（詳細設定を触らず1回だけ挙動を変える・実機FBの要求）。
+// **録音開始のたびにリセット**（onState）＝「この録音だけ」。設定(localStorage)は一切変えない。
+//   noAutoSave: この録音だけ自動保存しない（保存ボタンで入る）。**減らす方向だけ**＝常に安全（迷ったら保存しない §2-4）。
+//   ai: null=設定(voiceAI)に従う / true=この録音だけ AI で解釈 / false=この録音だけルールで解釈。要キー（無ければボタンを出さない）。
+let recOverride = { noAutoSave: false, ai: null };
+function resetRecOverride() { recOverride.noAutoSave = false; recOverride.ai = null; }
+function renderOverrideButtons() {
+  if (!ovNoAuto) return;
+  ovNoAuto.classList.toggle('on', recOverride.noAutoSave);
+  ovNoAuto.textContent = (recOverride.noAutoSave ? '✓ ' : '') + 'この録音だけ 自動登録OFF';
+  // AI はキーがある時だけ出す（無ければ AI はどちらの向きにも動かせない＝既定の体験不変 v40）。
+  const canAI = !!(window.VCAI && VCAI.hasKey());
+  ovAI.hidden = !canAI;
+  if (canAI) {
+    const aiDefault = !!settings.get('voiceAI'); // 既定で AI か（この録音の「逆」を1タップで提示）
+    const active = recOverride.ai !== null;
+    ovAI.classList.toggle('on', active);
+    ovAI.textContent = (active ? '✓ ' : '') + (aiDefault ? 'この録音だけ AIを使わない' : 'この録音だけ AIで解釈');
+  }
+}
 async function interpretByAI({ text, rawText, dictHits, meta, rule, seq }) {
   notesEl.textContent = '🤖 AI解釈中…';
   let events = null, warnings = [], aiErr = null;
@@ -851,7 +894,10 @@ async function interpretByAI({ text, rawText, dictHits, meta, rule, seq }) {
     // 来歴は先に積む（💾 は「直前の行」に刻むため＝v33 と同じ順番）
     logHistory({ at: Date.now(), text: rawText, dict: dictHits, conf: meta && meta.confidence, fb: !!(meta && meta.fallback), tg: false, nw: false, ai: true, aiMulti: events.length, patch: {}, notes: [note].concat(warnings), skipped: [], cleared: [], err: null, after: null });
     // v53: 設定オンなら確認を挟まずここで保存する（オフなら下の else ＝v42 の挙動そのまま）
-    const auto = await autoSaveStaged(added, warnings, '音声→AI（複数件）');
+    // v61: 「この録音だけ 自動登録OFF」なら複数件も自動保存せず「まとめて入力」で確認（autoSaveBatch オフと同じ扱い）。
+    const auto = recOverride.noAutoSave
+      ? { ran: false, savedCount: 0, holdCount: 0 }
+      : await autoSaveStaged(added, warnings, '音声→AI（複数件）');
     if (auto.ran) {
       notesEl.textContent = `🤖 複数の予定（${events.length}件）を読み取り、${auto.savedCount}件を自動保存しました`
         + (auto.holdCount ? `（${auto.holdCount}件は確認が要るのでカードに残しています）` : '');
@@ -903,6 +949,10 @@ async function interpretByAI({ text, rawText, dictHits, meta, rule, seq }) {
 /// 迷ったら保存しない（人がフォームを見て押せばいい＝失うのは1タップだけ）。
 /// softNotes（v58）= AI の ambiguities だけ。notes（必ず止める）と分けて受ける。理由は下の門を参照。
 function shouldAutoSave({ changed, targeted, notes, patch, text, softNotes }) {
+  // v61: 「この録音だけ 自動登録OFF」＝この録音の自動保存だけ止める（設定は変えない・減らす方向のみ＝常に安全）。
+  //   shouldAutoSave は音声経路専用（呼び出しは applyRuleResult と interpretByAI の2箇所）＝
+  //   まとめて入力の手動経路（autoSaveStaged 直呼び）には影響しない。録音開始のたびにリセット済み。
+  if (recOverride.noAutoSave) return false;
   const mode = settings.get('autoSaveAfterUtterance'); // v47: 'off' | 'datetime' | 'always'（v46 まで boolean）
   if (mode === 'off') return false; // 既定
   // 🚨 v54: **保存済みの行を直している最中は自動保存しない**。ここで走ると (a) 直しかけの中間状態が
@@ -2016,6 +2066,9 @@ const transcriber = VCTranscriber.createTranscriber({
     micBtn.classList.toggle('listening', on);
     micState.textContent = on ? '聞いています…（もう一度押すと停止）' : '';
     micCancelBtn.hidden = !on; // v49: 「やめる」は録音中だけ＝押せる時にだけ在る
+    // v61: 一時オーバーライドは「この録音だけ」＝録音開始でリセット・録音中だけ出す。
+    if (on) resetRecOverride();
+    if (ovBox) { ovBox.hidden = !on; if (on) renderOverrideButtons(); }
   },
   onError(e) {
     if (e === 'no-speech') { micState.textContent = ''; return; } // web の「無言」は正常系
@@ -2050,9 +2103,26 @@ if (transcriber.available) {
     if (typeof transcriber.cancel !== 'function') { transcriber.stop(); return; } // 古い転写層でも止まる
     transcriber.cancel();
     micCancelBtn.hidden = true;
+    if (ovBox) ovBox.hidden = true; // v61: やめたら一時オーバーライドの行も隠す
     transcriptEl.textContent = '';
     micState.textContent = '';
     toast('🎤 やめました（何も入力していません）');
+  });
+  // v61: この録音だけの一時オーバーライド（実機FBの要求＝詳細設定へ行かず1回だけ切替）。
+  // 設定(localStorage)は変えない・録音開始でリセット（onState）。
+  ovNoAuto.addEventListener('click', () => {
+    recOverride.noAutoSave = !recOverride.noAutoSave;
+    renderOverrideButtons();
+    toast(recOverride.noAutoSave ? '🎤 この録音は自動登録しません（保存ボタンで入ります）' : '🎤 自動登録を元に戻しました');
+  });
+  ovAI.addEventListener('click', () => {
+    const opposite = !settings.get('voiceAI'); // 既定の逆（既定OFF→この録音はON / 既定ON→この録音はOFF）
+    recOverride.ai = (recOverride.ai === opposite) ? null : opposite;
+    renderOverrideButtons();
+    const eff = recOverride.ai === null
+      ? (settings.get('voiceAI') ? 'AIで解釈（既定に戻す）' : 'ルールで解釈（既定に戻す）')
+      : (recOverride.ai ? 'この録音だけ AIで解釈します' : 'この録音だけ AIを使いません（ルール）');
+    toast('🎤 ' + eff);
   });
 } else {
   micBtn.disabled = true;
