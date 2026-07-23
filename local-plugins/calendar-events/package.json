@@ -1,12 +1,13 @@
 {
   "name": "calendar-events",
   "version": "0.0.1",
-  "description": "Local Capacitor plugin: DraftEvent → EventKit 保存（iOS）。書き込み専用アクセス（iOS17+）優先。voice-calendar 用。",
+  "description": "Local Capacitor plugin: DraftEvent → カレンダー保存（iOS=EventKit 書き込み専用 / Android=CalendarContract 直書き）。voice-calendar 用。",
   "main": "index.js",
   "files": [
     "index.js",
     "ios/Sources",
-    "Package.swift"
+    "Package.swift",
+    "android"
   ],
   "keywords": [
     "capacitor",
@@ -17,6 +18,9 @@
   "capacitor": {
     "ios": {
       "src": "ios"
+    },
+    "android": {
+      "src": "android"
     }
   },
   "peerDependencies": {

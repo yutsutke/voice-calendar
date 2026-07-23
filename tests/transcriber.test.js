@@ -92,6 +92,37 @@ t('Plugins.X が無く registerPlugin だけある環境ではそれを保険に
   });
 });
 
+// ===== v65: Android 対応＝engine 名は事実・native 判定はフラグ =====
+// 🚨 なぜテストするか: v65 まで index.html は engine==='sfspeech' を「native の音声が生きている」の
+// 代理に使っていた。Android で engine 名を正直（androidspeech）にした瞬間、名前ゲートは
+// **起動即録音（v24）を Android でだけ黙って殺す**。判定は .native フラグ＝名前と分離して固定する。
+t('v65: Android では engine=androidspeech（診断・来歴・CSV に嘘を書かない）＋ native フラグ', () => {
+  withCapacitor({
+    isNativePlatform: () => true,
+    getPlatform: () => 'android',
+    Plugins: { SpeechRecognition: { addListener: () => {} } },
+  }, () => {
+    const tr = createTranscriber(H);
+    eq(tr.engine, 'androidspeech', 'Android の実体は android.speech.SpeechRecognizer');
+    eq(tr.native, true, '起動即録音（v24）のゲートはこのフラグを見る');
+  });
+});
+
+t('v65: native フラグは iOS でも立ち・web には無い（名前でなくフラグが判定の正）', () => {
+  withCapacitor({
+    isNativePlatform: () => true,
+    getPlatform: () => 'ios',
+    Plugins: { SpeechRecognition: { addListener: () => {} } },
+  }, () => {
+    const tr = createTranscriber(H);
+    eq(tr.engine, 'sfspeech', 'iOS は従来どおり sfspeech');
+    eq(tr.native, true, 'iOS でも native フラグ');
+  });
+  withCapacitor(undefined, () => {
+    ok(!createTranscriber(H).native, 'web に native フラグは無い（起動即録音は走らない）');
+  });
+});
+
 // ===== simulate は転写層が壊れていても使える（フォームが本体） =====
 t('native が全滅していても simulate は発話を流せる', () => {
   withCapacitor({ isNativePlatform: () => true }, () => {

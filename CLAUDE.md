@@ -29,15 +29,18 @@ engine/contract.js       # AI 連携の契約（v39）: バッチ封筒の JSON 
 engine/batch.js          # まとめて入力（v39）: parseBatch 検証ゲート（AI の出力を信用しない・不正は落として明記）＋取り込みリスト台帳＋buildPrompt。音声経路と独立
 engine/ai.js             # BYOK（v40）: プロバイダアダプタ（Anthropic/Gemini・OpenAI は CORS 非対応で入れない）。キーは端末内のみ・エラー文にキーを出さない・fetch 注入でテスト
                          #   v42: 音声もこの経路で解釈できる（設定 voiceAI・既定オフ・AI 経路は自動保存しない・失敗はルールへ自動フォールバック）
-input/transcriber.js     # 転写層: WebSpeech(web/iOS Safari) / 将来 SFSpeechRecognizer プラグイン。simulate() でテキスト注入
-adapters/calendar.js     # 永続層: materialize(保存時既定値はここに集約) + ics(web) / eventkit(iOS・保存先は OS 既定1本)
+input/transcriber.js     # 転写層: WebSpeech(web) / native プラグイン（iOS=SFSpeech・Android=SpeechRecognizer 同一契約）。simulate() でテキスト注入。native 判定は `.native` フラグ（engine 名でゲートしない・v65）
+adapters/calendar.js     # 永続層: materialize(保存時既定値はここに集約) + ics(web) / eventKitAdapter（native 共通・iOS=EventKit / Android=CalendarContract・保存先は既定1本）
 adapters/records.js      # ローカル記録台帳（v32）: 保存先「リスト/両方」の控えを端末内に保持（write-only でカレンダーは読めない→リスト表示の土台）
 scripts/sync-web.mjs     # root の web 本体 → www/（Capacitor webDir）を生成。cap の前に必ず実行（npm run cap:sync）
 www/                     # 生成物（gitignore）。手で編集しない
-local-plugins/           # ローカル Capacitor プラグイン（SPM）。命名規約: npm名 kebab → PascalCase 一致必須
-  calendar-events/       #   EventKit 保存（iOS17+ 書込専用・OS 既定カレンダーへ・openSettings 復帰導線）
-  speech-recognition/    #   SFSpeechRecognizer 転写（on-device 優先・無音1.8s自動確定/6s打ち切り）
+local-plugins/           # ローカル Capacitor プラグイン（iOS=SPM / Android=gradle・v65）。命名規約: npm名 kebab → PascalCase 一致必須
+  calendar-events/       #   カレンダー保存: iOS=EventKit（17+ 書込専用・OS 既定へ） / Android=CalendarContract 直書き（主カレンダーへ・READ+WRITE 権限＝write-only が無い OS の正直な形）
+  speech-recognition/    #   転写: iOS=SFSpeechRecognizer / Android=SpeechRecognizer（同じ jsName・同じイベント契約・無音1.8s確定/6s打ち切り・v15/v16 の保険も両 OS 同構造）
 ios/                     # cap add ios の生成物をコミット（spike と同流儀）。Info.plist に権限4つ
+android/                 # cap add android の生成物をコミット（v65）。🔑 iOS と違い Windows ローカルでビルド完結（Codemagic 不要）:
+                         #   $env:JAVA_HOME="C:\Program Files\Android\Android Studio\jbr"; ./android/gradlew.bat -p android assembleDebug
+                         #   APK: android/app/build/outputs/apk/debug/app-debug.apk。web 変更後は sync:web → npx cap copy android
 codemagic.yaml           # Mac なしビルド → TestFlight（あの日の実績ワークフロー）
 tests/parser.test.js     # パーサ単体テスト — 決め打ちルールはテストが仕様
 tests/schema.test.js     # 共有状態＋欄ロック＋設定注入のテスト（v3 の実バグの回帰込み）

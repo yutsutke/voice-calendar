@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- RECORD_AUDIO はアプリ本体のマニフェストに書く（iOS の Info.plist と同じ流儀＝権限はアプリが宣言する） -->
+</manifest>

@@ -1,5 +1,37 @@
 # voice-calendar — CHANGELOG（build log・最新が上）
 
+## v65 — Android 対応の初版（cap add android＋プラグイン2本の Android 側） (2026-07-23)
+
+**背景（ゆう要求＝un-park）**
+- 「アンドロイドでこのアプリをつかえるようにしたい」＋実機あり＋「一般公開（Play Store）まで視野」。SPEC §3 で park していた Android の un-park 条件（**明示要求＋v0 検証済み**）が両方揃った（iOS は App Store 公開・日常投入レベル）。カレンダー保存はゆう決定「**直書き**」（権限ゼロの Intent 方式は保存のたび OS 編集画面＝背骨②違反のため不採用）。
+- 同日、**iOS 1.1(20) の審査通過をゆう報告**（lookup はまだ 1.0＝公開反映待ち。反映確認まで「公開済み」とは記録しない）。
+
+**設計判断**
+- **エンジン/JS はほぼ無変更＝SPEC §6「宿主非依存」の回収**: transcriber.js / calendar.js の native 分岐は `Capacitor.Plugins.<jsName>` を掴むだけなので、**同じ jsName・同じメソッド・同じイベント・同じエラーコードの Android プラグインを書けば JS はそのまま動く**。契約は tests/transcriber.test.js・tests/calendar.test.js が両 OS 共通で守る。
+- **speech-recognition/android**（Java・`android.speech.SpeechRecognizer`）: iOS 版の実機で買った知見を同じ構造で移植＝無音1.8s の**自前タイマー**（EXTRA_SPEECH_INPUT_COMPLETE_SILENCE… は Google 実装が無視することが多い）／stopListening 後 2s の**確定待ち保険**（v15）／**空の確定は最後の途中結果で補完・両方空だけエラー＝黙って捨てない**（v16）／`確定 len=N partial=M` 等の debug イベント（実機開発の目・v15）。欄名＋辞書ヒントは API 33+ の `EXTRA_BIASING_STRINGS`（v22/v44 の contextualStrings 相当）。**初版は既定の認識サービス**（on-device 固定は ja モデル未取得端末で壊れる分岐が増える→実機の診断ログを見てから硬化）。
+- **calendar-events/android**（Java・CalendarContract 直書き）: **Android には iOS17 の write-only に当たる権限が無い**→ READ+WRITE_CALENDAR を正直に要求（READ は書き込み先カレンダーの解決だけ・既存予定は読まない）。保存先は**主カレンダー1本**（IS_PRIMARY → Google アカウント → 書き込み可の先頭。iOS v26「OS の既定1本」と同じ思想＝アプリ内選択 UI は作らない）。IS_PRIMARY 列は一部 OEM で例外→**列抜きで再クエリ**（黙って壊れない）。終日は CalendarContract の決まりどおり **UTC 0時＋DTEND 排他**（.ics の +1日 と同じ）。getTarget は**権限を要求しない**・拒否は `PERMISSION_DENIED`＝**JS の既存バナー配線（v23）が無変更で効く**。
+- **MainActivity**: v64 Quick Action の Android 版（static shortcuts＝`res/xml/shortcuts.xml`・action 末尾 `.list` 判定・`evaluateJavascript` を 0.3s×15 リトライ＝iOS AppDelegate と同じ形）。
+- **Manifest**: RECORD_AUDIO / READ+WRITE_CALENDAR ＋ **`<queries>`（RecognitionService）**＝Android 11+ のパッケージ可視性。これが無いと `isRecognitionAvailable` が**黙って false** を返す罠。位置情報は入れない（v62 の休眠と整合）。
+- **アイコン**: iOS 提出版 1024²（キラッ削除・角黒の処理済み）から全密度15枚を生成。adaptive は**黒背景＋中央70%**＝角が黒なのでマスクの欠けが見えない。
+- **web（v65・BUILD bump）**: engine 名を正直に（Android は `androidspeech`）＋ **native 判定を `.native` フラグに分離**。v65 まで index.html は `engine==='sfspeech'` を「native の音声が生きている」の代理に使っており、**名前を正直にした瞬間に起動即録音（v24）が Android でだけ黙って死ぬ**ところだった。
+
+**ハマったところ**
+- PowerShell の**スクリプトファイル経由だと System.Drawing が読めない**（インライン実行なら通る・この環境の癖）→ アイコン生成はインラインで回避。
+- 最初のアイコンを `assets/appicon-source.jpg` から生成 → **右下の「キラッ」が残っていた**（v30 で処理したのは appiconset 側の 1024² だった）→ iOS 提出版から再生成。**「元画像」が2つある時はどちらが提出版かを目で確認する**。
+
+**結果**
+- **APK が一発ビルド成功**（BUILD SUCCESSFUL 41s・4.2MB・Java プラグイン2本の初コンパイル通過）。**Windows ローカルで完結**（Android Studio の JBR 21＋SDK 36 が既在・Codemagic 不要＝iOS より速い開発ループ）。
+- テスト **476/476**（transcriber +2＝Android engine 名と native フラグの契約を固定）。実ブラウザ（localhost:5276・v65）: BUILD 表示・`__vcAutoRecord`→`engine:webspeech`（web で録音しない＝従来挙動不変）・console 0。
+- **native は実機未検証**＝次はゆうの Android 実機にインストールして一本道（話す→フォーム→カレンダー）を踏む。
+
+**教訓**
+- **名前をゲートに使わない**: `engine==='sfspeech'` のような「事実の表示」を条件分岐に転用すると、プラットフォームが増えた瞬間に**表示を正直にする変更が機能を殺す**。表示（engine 名）と判定（.native）は別の変数に分ける。
+- **契約を書き写す移植は速い**: iOS Swift 290行の設計判断（保険タイマー・空確定の補完・debug の粒度）をそのまま Java に写した＝**設計の再発明ゼロ**で初回コンパイル・初回一発成功。v15/v16 で実機と往復して買った知見が、2つ目の OS では最初から入っている。
+
+**残課題**
+- ゆうの実機で: ①Chrome で Pages（道A の実データ） ②APK インストール → 一本道 → 診断ログ（認識サービスの素性・無音停止の挙動・保存先の解決結果）。
+- on-device 認識の硬化（診断を見てから）／スプラッシュ画面が Capacitor 既定のまま／versionName・署名・Play Store 素材は A3 で。
+
 ## v64 — ホーム画面の長押し（Quick Action）でリストを開く (2026-07-23)
 
 **背景（ゆう要求）**

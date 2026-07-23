@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- v64 の Android 版: ホーム画面の長押しで「リスト」を開く（iOS の UIApplicationShortcutItems に対応）。
+     静的ショートカット＝インストール時から出る・アプリ状態に依存しない（iOS 側と同じ設計判断）。
+     action 末尾 ".list" を MainActivity が判定する（iOS の type 末尾判定と同じ緩い照合）。 -->
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="list"
+        android:enabled="true"
+        android:icon="@mipmap/ic_launcher"
+        android:shortcutShortLabel="@string/shortcut_list_short"
+        android:shortcutLongLabel="@string/shortcut_list_long">
+        <intent
+            android:action="io.github.yutsutke.voicecalendar.action.list"
+            android:targetPackage="io.github.yutsutke.voicecalendar"
+            android:targetClass="io.github.yutsutke.voicecalendar.MainActivity" />
+    </shortcut>
+</shortcuts>

@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <application
+        android:allowBackup="true"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="true"
+        android:theme="@style/AppTheme">
+
+        <activity
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode|navigation|density"
+            android:name=".MainActivity"
+            android:label="@string/title_activity_main"
+            android:theme="@style/AppTheme.NoActionBarLaunch"
+            android:launchMode="singleTask"
+            android:exported="true">
+
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+
+            <!-- v64 の Android 版: ホーム画面の長押し（App Shortcut）で「リスト」を開く（res/xml/shortcuts.xml） -->
+            <meta-data android:name="android.app.shortcuts" android:resource="@xml/shortcuts" />
+
+        </activity>
+
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths"></meta-data>
+        </provider>
+    </application>
+
+    <!-- Permissions（iOS の Info.plist 権限4つに対応する Android 側。位置情報は v62 で休眠中＝入れない） -->
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <!-- 音声入力（SpeechRecognizer）。転写はシステムの音声認識サービスが行う -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <!-- カレンダー保存（CalendarContract 直書き）。Android には iOS17 の「書き込み専用」に当たる権限が
+         無いため READ+WRITE を要求する（READ は書き込み先カレンダーの解決だけに使う＝既存予定は読まない） -->
+    <uses-permission android:name="android.permission.READ_CALENDAR" />
+    <uses-permission android:name="android.permission.WRITE_CALENDAR" />
+
+    <!-- Android 11+ のパッケージ可視性: これが無いと SpeechRecognizer.isRecognitionAvailable が
+         音声認識サービスを見つけられず false を返す（黙って「利用できません」になる罠） -->
+    <queries>
+        <intent>
+            <action android:name="android.speech.RecognitionService" />
+        </intent>
+    </queries>
+</manifest>

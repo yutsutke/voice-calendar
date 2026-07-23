@@ -2,8 +2,9 @@
 //
 // 実装は環境で切り替えるが、出口はどれも同じ:
 //   onInterim(text) / onFinal(text, {engine, confidence?}) / onState('listening'|'idle') / onError(msg)
-//   - native (iOS): SFSpeechRecognizer プラグイン（local-plugins/speech-recognition。
-//     オンデバイス優先・無音で自動停止＝ローカル完結 SPEC §2）
+//   - native (iOS/Android): SFSpeechRecognizer / android.speech.SpeechRecognizer プラグイン
+//     （local-plugins/speech-recognition。同じ jsName・同じイベント契約＝この層は1本のまま。
+//      オンデバイス優先・無音で自動停止＝ローカル完結 SPEC §2）
 //   - web: Web Speech API（開発・GitHub Pages 検証用）
 //   - simulate(text): テキストを「発話」として同じ経路に流す（全実装共通・マイクなし環境用）
 // 転写と解釈が分離しているから、ここを差し替えても解釈層（engine/parser.js）は不変。
@@ -32,6 +33,13 @@
   // 音声はフォームの補助であって前提ではない。ここは静かに諦めて呼び手に返す。
   function createNative(h, C) {
     let plugin, listening = false, cancelled = false;
+    // v65: engine 名は事実を映す（診断・来歴・CSV の認識エンジン列に出る値）:
+    // iOS=SFSpeechRecognizer → 'sfspeech' / Android=android.speech.SpeechRecognizer → 'androidspeech'。
+    // 🚨 「native かどうか」の判定にこの名前を使わない＝宿主は `.native` フラグを見る
+    // （v65 まで index.html が engine==='sfspeech' を native の代理にしており、Android で名前を
+    //  正直にした瞬間に起動即録音 v24 が黙って死ぬところだった＝名前ゲートは増えた瞬間に壊れる）。
+    const engineName = (typeof C.getPlatform === 'function' && C.getPlatform() === 'android')
+      ? 'androidspeech' : 'sfspeech';
     try {
       plugin = nativePlugin(C, 'SpeechRecognition');
       if (!plugin) return { failed: 'SpeechRecognition プラグインが native に登録されていません' };
@@ -42,7 +50,7 @@
         // Swift 側に cancel を足さずに済むのは、確定を**受け取ってから捨てる**形にしたため
         // ＝native の再ビルド無しでこの機能が成立する（stop は既存メソッド）。
         if (cancelled) return;
-        const meta = { engine: 'sfspeech' };
+        const meta = { engine: engineName };
         if (typeof d.confidence === 'number') meta.confidence = d.confidence;
         if (d.fallback) meta.fallback = true; // isFinal が来ず途中結果で確定した印（v15 の保険）
         h.onFinal((d.text || '').trim(), meta);
@@ -60,7 +68,8 @@
     }
     return {
       available: true,
-      engine: 'sfspeech',
+      engine: engineName,
+      native: true, // 宿主の「native の音声が生きているか」判定はこれ（engine 名ではなく）
       // opts.silenceMs: 話し終わってから確定するまでの無音（v19 の設定。native へ渡す）
       start(opts) {
         cancelled = false; // 新しい発話＝前回のキャンセルを引きずらない

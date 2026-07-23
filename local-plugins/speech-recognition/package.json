@@ -1,12 +1,13 @@
 {
   "name": "speech-recognition",
   "version": "0.0.1",
-  "description": "Local Capacitor plugin: SFSpeechRecognizer による日本語転写（iOS）。オンデバイス優先・無音で自動停止。voice-calendar 用。",
+  "description": "Local Capacitor plugin: 日本語転写（iOS=SFSpeechRecognizer / Android=SpeechRecognizer）。オンデバイス優先・無音で自動停止。voice-calendar 用。",
   "main": "index.js",
   "files": [
     "index.js",
     "ios/Sources",
-    "Package.swift"
+    "Package.swift",
+    "android"
   ],
   "keywords": [
     "capacitor",
@@ -17,6 +18,9 @@
   "capacitor": {
     "ios": {
       "src": "ios"
+    },
+    "android": {
+      "src": "android"
     }
   },
   "peerDependencies": {

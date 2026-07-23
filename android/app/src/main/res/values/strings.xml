@@ -1,0 +1,10 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">ボイスカレンダー</string>
+    <string name="title_activity_main">ボイスカレンダー</string>
+    <string name="package_name">io.github.yutsutke.voicecalendar</string>
+    <string name="custom_url_scheme">io.github.yutsutke.voicecalendar</string>
+    <!-- v64 の Android 版: ホーム長押しショートカット -->
+    <string name="shortcut_list_short">リスト</string>
+    <string name="shortcut_list_long">リストを開く</string>
+</resources>

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- アダプティブアイコンの背景。元画像（assets/appicon-source.jpg）は v30 で四隅を黒に
+         してあるため、黒背景と継ぎ目なしで馴染む（タイルが黒地に浮かぶ見た目になる） -->
+    <color name="ic_launcher_background">#000000</color>
+</resources>

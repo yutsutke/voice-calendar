@@ -613,20 +613,20 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
      理由: この版文字列は index.html にしかないが、ロジックは別ファイル＝別キャッシュ。
      付けないと「フッタは新しいのにパーサは古い」という嘘の状態が成立する（v9 で実際に踏んだ）。
      index.html が更新されれば src の URL も変わる → JS も必ず新しく取り直される。 -->
-<script src="engine/settings.js?v=64"></script>
-<script src="engine/schema.js?v=64"></script>
-<script src="engine/parser.js?v=64"></script>
-<script src="engine/dictionary.js?v=64"></script>
-<script src="engine/contract.js?v=64"></script>
-<script src="engine/batch.js?v=64"></script>
-<script src="engine/ai.js?v=64"></script>
-<script src="input/transcriber.js?v=64"></script>
-<script src="adapters/calendar.js?v=64"></script>
-<script src="adapters/records.js?v=64"></script>
-<script src="adapters/location.js?v=64"></script>
+<script src="engine/settings.js?v=65"></script>
+<script src="engine/schema.js?v=65"></script>
+<script src="engine/parser.js?v=65"></script>
+<script src="engine/dictionary.js?v=65"></script>
+<script src="engine/contract.js?v=65"></script>
+<script src="engine/batch.js?v=65"></script>
+<script src="engine/ai.js?v=65"></script>
+<script src="input/transcriber.js?v=65"></script>
+<script src="adapters/calendar.js?v=65"></script>
+<script src="adapters/records.js?v=65"></script>
+<script src="adapters/location.js?v=65"></script>
 <script>
 'use strict';
-const BUILD = 'v64：ホーム画面の長押し（Quick Action）でリストを開く（native・Info.plist＋AppDelegate・web は openRecordsPanel）· 2026-07-23';
+const BUILD = 'v65：Android 対応の初版（cap add android＋プラグイン2本の Android 側・web は native 判定をフラグ化）· 2026-07-23';
 console.log('BUILD:', BUILD);
 document.getElementById('build').textContent = BUILD;
 
@@ -2174,7 +2174,7 @@ function autoRecord(trigger) {
   if (transcriber.isListening()) return 'listening';       // toggle ではなく start＝既に聞いていたら触らない
   const d = store.get();
   if (VCStore.FIELDS.some((f) => d[f] !== '' && d[f] !== false)) return 'draft'; // 書きかけを守る
-  if (transcriber.engine !== 'sfspeech') return `engine:${transcriber.engine}`;  // native の音声が生きている時だけ
+  if (!transcriber.native) return `engine:${transcriber.engine}`;  // native の音声が生きている時だけ（v65: 名前でなくフラグ＝Android でも効く）
   window.__vcDebugNote(`🎙 自動録音（${trigger}）`);
   transcriber.start(micOpts());
   return 'started';
@@ -2191,7 +2191,7 @@ document.addEventListener('visibilitychange', () => {
   let tries = 0;
   const iv = setInterval(() => {
     if (transcriber.isListening() || ++tries > 3) { clearInterval(iv); return; } // 録れた/上限で終了
-    if (transcriber.engine !== 'sfspeech') { clearInterval(iv); return; }         // web はタップ必須＝リトライ不要
+    if (!transcriber.native) { clearInterval(iv); return; }                       // web はタップ必須＝リトライ不要（v65: 名前でなくフラグ）
     const d = store.get();
     if (VCStore.FIELDS.some((f) => d[f] !== '' && d[f] !== false)) { clearInterval(iv); return; } // 書きかけを守る
     autoRecord('起動再試');
