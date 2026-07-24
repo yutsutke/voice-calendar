@@ -98,6 +98,16 @@ function nativePlugin(C, name) {
 - **補助機能（音声）の失敗が本体（フォーム）を殺さないこと**: v13 では `registerPlugin` の TypeError がインラインスクリプトを止め、**音声と無関係な「保存」「クリア」まで死んだ**（背骨①の違反）。転写層は**何があっても throw しない**（`createTranscriber` は必ずオブジェクトを返し、失敗理由は `.nativeFailure`）。テキスト送信は転写層に依存させない。
 - **実機の確認は「診断」パネル**（画面下の `<details>`）: 環境・エンジン・native 失敗理由・4層の読込・**初期化が完走したか**・捕捉エラー。head の自己完結コードなので**本体が全滅しても出る**。iPhone にコンソールは無く Mac も無い＝**画面に出す以外に見る手段が無い**（1回の確認に Codemagic 15分）。
 
+## 🚨 JS ⇄ native は「型」でも壊れる（v66 で Android が全滅した場所）
+
+**引数名が合っていても、型で黙って落ちる。**しかも**片側の OS だけ**で壊れるので、動いている側が「正しさの証拠」に見える。
+
+- **Android の `PluginCall#getDouble` は Double / Float / Integer しか通さず、それ以外は既定値（null）を返す**。org.json は整数を Integer に収まらなければ **Long** で持つ ⇒ **ms エポック（13桁）は必ず Long ⇒ 必ず null**。iOS の `CAPPluginCall.getDouble` は NSNumber 経由で通るため、**同じ契約・同じ引数名のまま Android でだけ 100% 失敗**した（v66: カレンダー保存が一度も成功しない）。
+- ✅ **Android で数値を受けるときは `Object` で取って `instanceof Number` → `longValue()`**（`CalendarEventsPlugin.msOf()` が手本）。**どの subtype で来るかに賭けない。**
+- ✅ **必須チェックのエラー文に「項目の列挙」を書かない**。**どれが欠けたか＋実際に来た値と型**を出す（`startMs=Long:1784812680000`）。v65 の一括文言「title / startMs / endMs は必須です」のせいで、実機の1行から原因へ降りられなかった。
+- ✅ **null のまま unbox しない**（NPE でアプリごと落ちる＝「黙って捨てない」の裏＝**黙って落ちない**）。権限ダイアログを挟んで戻る経路があるので、値を読む場所ごとに門を置く。
+- **JS のテストは名前しか見られない**（`tests/calendar.test.js` の不変条件2）。だから不変条件6で **Java のソースを読んで構造を縛った**。**プラグインを増やしたら、同じガードをその新しいソースにも足す**。
+
 ## 🚨 欄ロックの鉄則（v3 で実バグを踏んだ場所）
 
 **「編集中か」を二重に持たない。** ロックの正は `store.setLockSource(fn)` に注入された述語（UI では `activeElement` 基準）だけ。`render()` の描画スキップも `applyVoicePatch` のスキップも `store.isLocked()` から導出する。
