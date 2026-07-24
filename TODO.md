@@ -249,6 +249,7 @@
 >
 > **🔴 v62（同日・ゆう判断）＝審査に出す前に位置情報を丸ごと無効化（可逆）**: v32-v61 を公開版（1.0(12)≈v31）へ載せる新バージョン提出の前段。位置は審査で厳しそう（Guideline 2.1 前例）→ **審査面を減らす**。本丸＝**package.json から `device-location` を外す**（`cap sync` が Package.swift を package.json から再生成する＝ここが native の正）＋ Package.swift 2行 ＋ Info.plist の位置キー ＋ privacy.html の位置記述を除去。JS は `LOCATION_ENABLED=false`（`VCLoc=null`→`geoUsable()` false で取得/warm-up/復帰が全部止まる・設定行/🗺/保存経路も gate・**stale な captureLocation=true でも取らない**）。**コードは休眠で残す＝可逆**（`local-plugins/device-location`・`adapters/location.js`・設定定義・test・CSV 列）。**テスト 474/474**・実ブラウザ検証✓（設定行なし/座標付きでも🗺なし/バナー非表示/console 0）・BUILD=v62。**native は次の Codemagic ビルドで初検証**（DeviceLocation を外した Package.swift・位置キー無し Info.plist）。
 >
+> **✅ App Store 1.1 は承認・公開済み（2026-07-24 02:10 JST に反映確認）→ 詳細は下の「🎉 App Store 1.1 公開」の節**。以下は提出時点の記録:
 > **🟡 App Store 1.1(20) 審査提出済み＝審査待ち（2026-07-23 12:45・提出ID `7b9b7dc3-d7b3-4450-9e65-52f6059d637c`）**: v32-v62 を公開版（1.0(12)≈v31）へ載せる新バージョン。位置情報は v62 で削除（実機で「出ない」確認済み）・AI（BYOK）は**先回り開示＋$1上限テストキーを審査メモに添付**・App プライバシー=収集なし・Sign-in OFF・年齢 4+ 据え置き。Codemagic 1.1(20) は **DeviceLocation を外した Package.swift が通った**（native 除去の初検証 OK）。**次＝Apple の審査結果待ち**（最大48h・メール通知）。2.1 が再来したら審査メモの AI 開示＋テストキーで返信（素材 [docs/appstore.md](docs/appstore.md) §8-b/§11）。⚠ 見張り＝Guideline 5.1.2（AI 送信前の同意）＝却下されたら送信前確認の小改修で対応。
 >
 > **🎯 いま（2026-07-23 13:25〜・本セッション）＝審査待ちの間の web/native 改善（ゆう要求2つ）**:
@@ -269,11 +270,20 @@
 >
 > **🔧 v65（同日）＝Android 対応の初版**: `cap add android`＋**プラグイン2本の Android 側を Java で新設**（speech-recognition=SpeechRecognizer・iOS の v15/v16 の保険を同構造で移植／calendar-events=CalendarContract 直書き・主カレンダー1本・PERMISSION_DENIED で既存バナー配線がそのまま効く）＋MainActivity に v64 Quick Action の Android 版＋アイコン15枚（iOS 提出版から生成）。web は engine 名の正直化（androidspeech）と **native 判定の `.native` フラグ分離**（名前ゲートのままだと起動即録音 v24 が Android で黙って死んだ）。**APK 一発ビルド成功（41s・4.2MB・Windows ローカル完結＝Codemagic 不要）**・テスト 476/476・実ブラウザ v65 ✓ console 0。**native は実機未検証**。
 >
-> **▶▶ Android の次（ゆうの実機で）**:
-> - **A0: Chrome で Pages を触る**（道A の実データ・5分）= ①マイクで「明日10時 会議」→フォーム ②「リスト」保存 ③「カレンダー」保存→.ics の手触り ④診断パネルの環境行。Android Chrome は認識結果が二重になる既知の癖→来歴の 🗣 で見える。
-> - **A2: APK を実機へ**（USB デバッグ＋`adb install` or APK ファイル転送）→ 一本道（話す→フォーム→カレンダー）→ 診断ログ（認識サービスの素性・無音停止・保存先の解決）→ ホーム長押し「リスト」。APK: `android/app/build/outputs/apk/debug/app-debug.apk`。
-> - **A3: Play Store**＝**アカウントは既にある**（「あの日」個人アカウント・確認要件クリア済み）＝$25 も本人確認も不要。素材は docs/appstore.md 流用。⚠ **本番公開**の段でクローズドテスト義務（◯人×14日）が出るかは Console の表示に従う（**内部テストには無関係**＝今日から配れる）。
-> - 残: on-device 認識の硬化（診断を見てから）／スプラッシュが Capacitor 既定のまま／署名・versionName。
+> **🔧 v65 署名配線（同日・commit 7c16488）**: リポ外 `Documents/voice-calendar-signing/upload-keystore.jks`＋`upload-keystore.properties`（iOS の cert_key と同じ場所・gitignore）を build.gradle が読んで release に署名（無ければスキップ＝他マシン/CI は従来どおり）。**署名付き AAB 3.1MB を確認**（jarsigner verified）＝`android/app/build/outputs/bundle/release/app-release.aab`。
+>
+> **▶▶ Android の現在地（2026-07-23 夕・ゆうが Play Console を操作）**:
+> - ✅ **A0 通過**: Android Chrome の Pages で「録音・リスト登録・.ics 保存までできます」（web 経路の一本道が実機で成立）。
+> - 🟡 **A2 進行中＝Play 内部テストで配信**: ゆうが「アプリを作成（無料・自動保護ON のまま）→ 内部テスト → 署名 AAB アップロード → テスター（自分の Gmail）登録 → リンクを実機 Chrome で開いてオプトイン」まで完了。**次＝実機でインストールして触る**（ゆう「あとでさわる」）。⚠ **パッケージ名 `io.github.yutsutke.voicecalendar` が最初の AAB で恒久確定**（iOS と同一 ID）。
+>   - 実機で見る: **一本道**（話す→フォーム→保存→Google カレンダーに出るか）／**診断パネル**（認識サービスの素性・無音停止・保存先の解決結果）／**ホーム長押し→「リスト」**。Android Chrome は認識結果が二重になる既知の癖→来歴 🗣 で見える。
+>   - 別ルート（生きている）: USB デバッグ＋`adb install android/app/build/outputs/apk/debug/app-debug.apk`。
+> - **A3: 一般公開**＝**Play アカウントは既にある**（「あの日」個人・確認要件クリア済み・$25/本人確認 不要）。素材 docs/appstore.md 流用。⚠ 本番公開の段でクローズドテスト義務（◯人×14日）が出るかは Console 表示に従う（**内部テストには無関係**）。
+> - 残: on-device 認識の硬化（実機診断を見てから）／スプラッシュが Capacitor 既定のまま／data safety・ストア掲載情報は本番の段で。
+>
+> **▶▶ セッション締め（2026-07-23 16:58）＝Android un-park → 内部テスト配信まで一気通貫**: cap add android＋プラグイン2本 Java 移植＋Quick Action＋アイコン＋署名 AAB（commit 3aac117/7c16488・push 済み）。web は v65（native 判定を .native フラグへ・Pages 配信検証済み BUILD=v65）。**native は実機未検証**＝ゆうが後で内部テスト版を触る。⚠ この回、ゆうの「すでに審査は通ってます」を iOS と誤読 → ASC スクショで Play アカウントのことと判明し訂正（iOS 1.1 は審査待ちのまま）。
+>
+> **🎉 App Store 1.1 公開（2026-07-24 02:10 JST・セッション冒頭に確認）＝v32-v62 が一般ユーザーに届いた**: 昨日 12:45 提出の 1.1(20) が一晩（約13時間）で承認・リリース。**Guideline 2.1 の再来は無し**＝先回り開示（審査メモの AI 説明＋$1上限テストキー）と v62 の位置情報削除が効いた形。見張っていた 5.1.2（AI 送信前の同意）も来なかった。裏取り＝lookup API `resultCount=1` / `version 1.1` / `currentVersionReleaseDate 2026-07-23T17:10:52Z`（[公開URL](https://apps.apple.com/jp/app/voicecalendar/id6791578087)）。
+> ⚠ **公開版 1.1 に載っていないもの**＝ **v63（オーバーライドのボタン寸法）/ v64（ホーム長押し→リスト）/ v65（Android 対応＋native 判定の .native フラグ）**。repo は既に 1.2 へ bump 済み（`41388d6`）＝**次の Codemagic ビルドが 1.2(21)**。v64 の Quick Action は**まだ native 未検証**。
 >
 > **▶▶ 次＝Pages で v59 を触る（実機ビルド不要）＋溜まったら次へ**:
 > 0. 🆕 **v59 の CSV**＝数日使って書き出し、**経路列でルール行 vs AI 行の訂正率**・**生テキスト×タイトル**（v58①）・**信頼度で認識/解釈の切り分け**が読めるか。読めれば v58② を「数」で判断できる。
