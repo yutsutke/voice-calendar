@@ -129,6 +129,45 @@ t('native が何も返さなくても throw しない（undefined の戻り）',
   });
 });
 
+// ===== v67: 「入ったのに見えない」の計器（native の読み返し・候補一覧） =====
+t('🚨【v67】native の読み返し結果 verify を落とさない（診断に出す唯一の証拠）', async () => {
+  await withCapacitor(nativeCap({
+    save: async () => ({ id: 'E1', calendarTitle: '個人', verify: '読返=✓ id=42 cal=3 開始=07/24 10:01 未同期=1' }),
+  }), async () => {
+    const r = await eventKitAdapter.save(EV);
+    ok(r.verify.includes('読返=✓'), 'native が読み返した1行をそのまま運ぶ');
+    ok(r.verify.includes('cal=3'), 'どの暦に入ったかが落ちていない');
+  });
+});
+
+t('【v67】verify を返さない native（iOS）でも壊れない', async () => {
+  await withCapacitor(nativeCap({ save: async () => ({ id: 'E1' }) }), async () => {
+    const r = await eventKitAdapter.save(EV);
+    eq(r.verify, '', '無ければ空＝呼び手は「あれば診断に出す」だけ');
+    eq(r.ok, true);
+  });
+});
+
+t('🚨【v67】getTarget は選ばれなかった暦も落とさない（なぜそこに入ったかを辿る材料）', async () => {
+  await withCapacitor(nativeCap({
+    getTarget: async () => ({
+      authorized: true, found: true, id: '3', title: '個人',
+      candidates: ['id=3「個人」a@example.com/com.google 権限=700 表示=1 同期=1 主', 'id=9「祝日」…(書込不可)'],
+    }),
+  }), async () => {
+    const t2 = await eventKitAdapter.getTarget();
+    eq(t2.candidates.length, 2, '書き込み不可の暦も含めて全部（「無いから選ばれなかった」と「在るのに選ばれなかった」は別の話）');
+    ok(t2.candidates[0].includes('同期=1'), '同期対象かどうかが読める＝Google へ上がるかの判定材料');
+  });
+});
+
+t('【v67】candidates を返さない native（iOS）でも壊れない', async () => {
+  await withCapacitor(nativeCap({ getTarget: async () => ({ authorized: true, found: true, title: '個人' }) }), async () => {
+    const t2 = await eventKitAdapter.getTarget();
+    eq(t2.candidates, [], '無ければ空配列＝呼び手は length で見るだけ');
+  });
+});
+
 t('どこへ保存したかが返る（保存 toast に出す＝「入ったのに見つからない」を防ぐ）', async () => {
   await withCapacitor(nativeCap({
     save: async () => ({ id: 'E1', calendarTitle: '仕事', calendarSource: 'Gmail' }),

@@ -196,6 +196,9 @@
         id: res.id,
         calendarTitle: res.calendarTitle || '',
         calendarSource: res.calendarSource || '',
+        // v67: native が「書いた行を読み返した結果」（Android のみ。iOS は返さない＝空）。
+        // **保存の成否には使わない**＝あくまで診断へ流す文字列（「入ったのに見えない」の計器）。
+        verify: res.verify || '',
       };
     },
 
@@ -212,6 +215,9 @@
         source: res.source || '',
         sourceType: res.sourceType || '',
         warning: res.warning || '',
+        // v67: 端末に在る暦の一覧（**選ばれなかったものも含む**・Android のみ）。
+        // 「なぜそこに入ったのか」を実機の画面だけで辿るための材料（写真1枚で決着させる）。
+        candidates: Array.isArray(res.candidates) ? res.candidates.map(String) : [],
       };
     },
 

@@ -188,14 +188,109 @@ public class CalendarEventsPlugin extends Plugin {
                 call.reject("カレンダーへの保存に失敗しました");
                 return;
             }
+            long eventId = ContentUris.parseId(uri);
             // **どこに入れたかを返す**＝JS が保存 toast に出す（「入ったが見つからない」を防ぐ）
             JSObject out = new JSObject();
-            out.put("id", String.valueOf(ContentUris.parseId(uri)));
+            out.put("id", String.valueOf(eventId));
             out.put("calendarTitle", cal.title);
             out.put("calendarSource", cal.account);
+            // v67: **書いた行を読み返して返す**（下の readBack を参照）
+            out.put("verify", readBack(eventId) + " " + requestSync(cal));
             call.resolve(out);
         } catch (Exception e) {
             call.reject("カレンダーへの保存に失敗: " + e.getMessage());
+        }
+    }
+
+    // ---- v67: 「入ったのに見えない」を推測で語らないための計器 ----
+
+    /**
+     * 🚨 **insert が URI を返した ≠ 期待した行がそこに在る**。
+     * v66 で「保存は成功したのに Google カレンダーに出ない」に当たった時、
+     * 手元にあったのは「成功した」という事実だけで、**行が在るのか・どの暦に入ったのか・
+     * 日時が何になったのか・同期待ちなのか**を誰も見られなかった（Mac も PC も繋がっていない実機）。
+     * → **書いた直後に自分で読み返す**。READ_CALENDAR は保存先の解決のために既に持っている。
+     *
+     * v15/v16 の「数字を診断に出す」の永続版＝次に同じ疑いが出た時、推測でなく1行で判定できる。
+     * 読めない列（同期系）は端末差があるので**落ちたら狭い projection で再クエリ**（黙って壊れない）。
+     */
+    private String readBack(long eventId) {
+        String[] wide = {
+            CalendarContract.Events.CALENDAR_ID, CalendarContract.Events.TITLE,
+            CalendarContract.Events.DTSTART, CalendarContract.Events.ALL_DAY,
+            CalendarContract.Events.EVENT_TIMEZONE, CalendarContract.Events.DELETED,
+            CalendarContract.Events.DIRTY, CalendarContract.Events._SYNC_ID };
+        String[] narrow = {
+            CalendarContract.Events.CALENDAR_ID, CalendarContract.Events.TITLE,
+            CalendarContract.Events.DTSTART, CalendarContract.Events.ALL_DAY,
+            CalendarContract.Events.EVENT_TIMEZONE };
+        String r = readBackWith(eventId, wide);
+        if (r == null) r = readBackWith(eventId, narrow);
+        // 🚨 読み返せない＝**insert は成功したと言ったのに行が無い**。黙って成功と言い続けない
+        return r == null ? ("読返=✗ 行が見つからない id=" + eventId) : r;
+    }
+
+    private String readBackWith(long eventId, String[] proj) {
+        Uri uri = ContentUris.withAppendedId(CalendarContract.Events.CONTENT_URI, eventId);
+        try (Cursor c = getContext().getContentResolver().query(uri, proj, null, null, null)) {
+            if (c == null || !c.moveToFirst()) return null;
+            StringBuilder sb = new StringBuilder("読返=✓");
+            sb.append(" id=").append(eventId);
+            sb.append(" cal=").append(str(c, CalendarContract.Events.CALENDAR_ID));
+            sb.append(" 題=").append(str(c, CalendarContract.Events.TITLE));
+            sb.append(" 開始=").append(fmt(lng(c, CalendarContract.Events.DTSTART)));
+            sb.append(" 終日=").append(str(c, CalendarContract.Events.ALL_DAY));
+            sb.append(" tz=").append(str(c, CalendarContract.Events.EVENT_TIMEZONE));
+            String deleted = str(c, CalendarContract.Events.DELETED);
+            if (deleted != null) sb.append(" 削除=").append(deleted);
+            String dirty = str(c, CalendarContract.Events.DIRTY);
+            // dirty=1 かつ syncId 無し＝「端末には在るがまだ Google へ上がっていない」＝同期待ち
+            if (dirty != null) sb.append(" 未同期=").append(dirty);
+            if (hasCol(c, CalendarContract.Events._SYNC_ID)) {
+                String sid = str(c, CalendarContract.Events._SYNC_ID);
+                sb.append(" syncId=").append(sid == null || sid.isEmpty() ? "なし" : "有");
+            }
+            return sb.toString();
+        } catch (Exception e) {
+            return null; // 呼び手が狭い projection で再挑戦
+        }
+    }
+
+    private static boolean hasCol(Cursor c, String name) { return c.getColumnIndex(name) >= 0; }
+    private static String str(Cursor c, String name) {
+        int i = c.getColumnIndex(name);
+        return (i < 0 || c.isNull(i)) ? null : c.getString(i);
+    }
+    private static Long lng(Cursor c, String name) {
+        int i = c.getColumnIndex(name);
+        return (i < 0 || c.isNull(i)) ? null : c.getLong(i);
+    }
+    private static String fmt(Long ms) {
+        if (ms == null) return "なし";
+        java.text.SimpleDateFormat f = new java.text.SimpleDateFormat("MM/dd HH:mm", java.util.Locale.JAPAN);
+        return f.format(new java.util.Date(ms));
+    }
+
+    /**
+     * 直書きした行は「dirty」として置かれ、**そのアカウントの同期アダプタが次に走るまで
+     * Google 側へ上がらない**（端末内には在るので端末のカレンダー表示には出る）。
+     * 定期同期を待たずに一度つついておく＝「保存したのにしばらく Web に出ない」を減らす。
+     * ⚠ これは**仮説への保険であって原因の特定ではない**。効いたかどうかは上の readBack の
+     *    `未同期`/`syncId` で見る（推測を事実として書かない）。失敗しても保存は成功のまま。
+     */
+    private String requestSync(Target cal) {
+        try {
+            if (cal.account == null || cal.account.isEmpty() || cal.accountType == null || cal.accountType.isEmpty()) {
+                return "同期要求=対象不明";
+            }
+            android.accounts.Account acc = new android.accounts.Account(cal.account, cal.accountType);
+            android.os.Bundle b = new android.os.Bundle();
+            b.putBoolean(android.content.ContentResolver.SYNC_EXTRAS_MANUAL, true);
+            b.putBoolean(android.content.ContentResolver.SYNC_EXTRAS_EXPEDITED, true);
+            android.content.ContentResolver.requestSync(acc, CalendarContract.AUTHORITY, b);
+            return "同期要求=出した";
+        } catch (Exception e) {
+            return "同期要求=✗(" + e.getClass().getSimpleName() + ")";
         }
     }
 
@@ -221,38 +316,52 @@ public class CalendarEventsPlugin extends Plugin {
         return best;
     }
 
+    /**
+     * v67: 列は**番号ではなく名前で引く**（`getColumnIndex`）。v65 は projection の並びと
+     * `c.getInt(4)` のような添字を人間が対応させており、**列を1つ足すだけで意味が総崩れになる**
+     * （しかも例外は出ず、別の列を読んで黙って違う暦を選ぶ＝v66 と同じ silent wrong answer の形）。
+     * 候補の一覧（lastCandidates）もここで作る＝「何が在って、なぜそれを選んだか」を画面に出せる。
+     */
+    private java.util.List<String> lastCandidates = new java.util.ArrayList<>();
+
     private Target tryQuery(boolean withPrimary) {
-        String[] proj = withPrimary
-            ? new String[] {
-                CalendarContract.Calendars._ID,
-                CalendarContract.Calendars.CALENDAR_DISPLAY_NAME,
-                CalendarContract.Calendars.ACCOUNT_NAME,
-                CalendarContract.Calendars.ACCOUNT_TYPE,
-                CalendarContract.Calendars.CALENDAR_ACCESS_LEVEL,
-                CalendarContract.Calendars.VISIBLE,
-                CalendarContract.Calendars.IS_PRIMARY }
-            : new String[] {
-                CalendarContract.Calendars._ID,
-                CalendarContract.Calendars.CALENDAR_DISPLAY_NAME,
-                CalendarContract.Calendars.ACCOUNT_NAME,
-                CalendarContract.Calendars.ACCOUNT_TYPE,
-                CalendarContract.Calendars.CALENDAR_ACCESS_LEVEL,
-                CalendarContract.Calendars.VISIBLE };
+        java.util.List<String> proj = new java.util.ArrayList<>(java.util.Arrays.asList(
+            CalendarContract.Calendars._ID,
+            CalendarContract.Calendars.CALENDAR_DISPLAY_NAME,
+            CalendarContract.Calendars.ACCOUNT_NAME,
+            CalendarContract.Calendars.ACCOUNT_TYPE,
+            CalendarContract.Calendars.CALENDAR_ACCESS_LEVEL,
+            CalendarContract.Calendars.VISIBLE,
+            CalendarContract.Calendars.SYNC_EVENTS));
+        if (withPrimary) proj.add(CalendarContract.Calendars.IS_PRIMARY);
+
         Target best = null;
+        java.util.List<String> seen = new java.util.ArrayList<>();
         try (Cursor c = getContext().getContentResolver().query(
-                CalendarContract.Calendars.CONTENT_URI, proj, null, null, null)) {
+                CalendarContract.Calendars.CONTENT_URI, proj.toArray(new String[0]), null, null, null)) {
             if (c == null) return null;
             while (c.moveToNext()) {
-                int access = c.getInt(4);
-                if (access < CalendarContract.Calendars.CAL_ACCESS_CONTRIBUTOR) continue; // 書き込み不可は対象外
-                boolean visible = c.getInt(5) != 0;
-                boolean primary = withPrimary && c.getInt(6) != 0;
-                String accountType = c.getString(3) == null ? "" : c.getString(3);
+                Long access = lng(c, CalendarContract.Calendars.CALENDAR_ACCESS_LEVEL);
+                boolean visible = !"0".equals(str(c, CalendarContract.Calendars.VISIBLE));
+                boolean syncEvents = !"0".equals(str(c, CalendarContract.Calendars.SYNC_EVENTS));
+                boolean primary = withPrimary && !"0".equals(str(c, CalendarContract.Calendars.IS_PRIMARY))
+                    && str(c, CalendarContract.Calendars.IS_PRIMARY) != null;
+                String accountType = or(str(c, CalendarContract.Calendars.ACCOUNT_TYPE), "");
+                boolean writable = access != null && access >= CalendarContract.Calendars.CAL_ACCESS_CONTRIBUTOR;
 
+                // 🚨 **選ばれなかった暦も含めて全部記録する**＝「なぜそこに入ったのか」を後から辿れる
+                seen.add("id=" + or(str(c, CalendarContract.Calendars._ID), "?")
+                    + "「" + or(str(c, CalendarContract.Calendars.CALENDAR_DISPLAY_NAME), "") + "」"
+                    + " " + or(str(c, CalendarContract.Calendars.ACCOUNT_NAME), "") + "/" + accountType
+                    + " 権限=" + (access == null ? "?" : access) + (writable ? "" : "(書込不可)")
+                    + " 表示=" + (visible ? 1 : 0) + " 同期=" + (syncEvents ? 1 : 0)
+                    + (primary ? " 主" : ""));
+
+                if (!writable) continue; // 書き込み不可は対象外
                 Target t = new Target();
-                t.id = c.getLong(0);
-                t.title = c.getString(1) == null ? "" : c.getString(1);
-                t.account = c.getString(2) == null ? "" : c.getString(2);
+                t.id = or(lng(c, CalendarContract.Calendars._ID), -1L);
+                t.title = or(str(c, CalendarContract.Calendars.CALENDAR_DISPLAY_NAME), "");
+                t.account = or(str(c, CalendarContract.Calendars.ACCOUNT_NAME), "");
                 t.accountType = accountType;
                 if (primary && visible) t.rank = 0;
                 else if ("com.google".equals(accountType) && visible) t.rank = 1;
@@ -263,8 +372,12 @@ public class CalendarEventsPlugin extends Plugin {
         } catch (Exception e) {
             return null; // withPrimary=true で落ちた時は呼び手が false で再クエリ
         }
+        lastCandidates = seen;
         return best;
     }
+
+    private static String or(String v, String dflt) { return v == null ? dflt : v; }
+    private static long or(Long v, long dflt) { return v == null ? dflt : v; }
 
     /** 保存先の「素性」を人の言葉に（iOS の sourceTypeName と同じ役割） */
     private String sourceTypeName(String accountType) {
@@ -300,6 +413,8 @@ public class CalendarEventsPlugin extends Plugin {
         out.put("title", cal.title);
         out.put("source", cal.account);
         out.put("sourceType", sourceTypeName(cal.accountType));
+        // v67: 端末に在る暦を**選ばれなかったものも含めて**返す＝「なぜそこに入ったのか」を画面で辿れる
+        out.put("candidates", new com.getcapacitor.JSArray(lastCandidates));
         call.resolve(out);
     }
 

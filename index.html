@@ -613,20 +613,20 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
      理由: この版文字列は index.html にしかないが、ロジックは別ファイル＝別キャッシュ。
      付けないと「フッタは新しいのにパーサは古い」という嘘の状態が成立する（v9 で実際に踏んだ）。
      index.html が更新されれば src の URL も変わる → JS も必ず新しく取り直される。 -->
-<script src="engine/settings.js?v=66"></script>
-<script src="engine/schema.js?v=66"></script>
-<script src="engine/parser.js?v=66"></script>
-<script src="engine/dictionary.js?v=66"></script>
-<script src="engine/contract.js?v=66"></script>
-<script src="engine/batch.js?v=66"></script>
-<script src="engine/ai.js?v=66"></script>
-<script src="input/transcriber.js?v=66"></script>
-<script src="adapters/calendar.js?v=66"></script>
-<script src="adapters/records.js?v=66"></script>
-<script src="adapters/location.js?v=66"></script>
+<script src="engine/settings.js?v=67"></script>
+<script src="engine/schema.js?v=67"></script>
+<script src="engine/parser.js?v=67"></script>
+<script src="engine/dictionary.js?v=67"></script>
+<script src="engine/contract.js?v=67"></script>
+<script src="engine/batch.js?v=67"></script>
+<script src="engine/ai.js?v=67"></script>
+<script src="input/transcriber.js?v=67"></script>
+<script src="adapters/calendar.js?v=67"></script>
+<script src="adapters/records.js?v=67"></script>
+<script src="adapters/location.js?v=67"></script>
 <script>
 'use strict';
-const BUILD = 'v66：Android のカレンダー保存が必ず失敗するのを修正（ms エポックを Long で受け取る）· 2026-07-24';
+const BUILD = 'v67：保存した行を native が読み返して診断に出す（入ったのに見えないの切り分け）· 2026-07-24';
 console.log('BUILD:', BUILD);
 document.getElementById('build').textContent = BUILD;
 
@@ -2379,6 +2379,12 @@ async function refreshCalendarTarget() {
       window.__vcCalTarget = `${who}｜${t.sourceType}`;
       show('set-cur', `${who} — OS の既定カレンダー`);
     }
+    // v67: 端末に在る暦を**選ばれなかったものも含めて**診断へ（Android のみ返る）。
+    // 「なぜそこに入ったのか」を実機の画面だけで辿れるようにする＝写真1枚で決着させる。
+    if (t.candidates && t.candidates.length) {
+      window.__vcNote('カレンダー候補', `${t.candidates.length}件 ／ 選択=id=${t.id}`);
+      t.candidates.forEach((line) => window.__vcNote('　暦', line));
+    }
   } catch (err) {
     // 取れないこと自体を表に出す（黙って空欄にしない＝v16）
     window.__vcCalTarget = `エラー: ${(err && err.message) || err}`;
@@ -2478,6 +2484,9 @@ async function saveDraftCore(draft, now, opts) {
       : res.event;
     try {
       calSaved = (await adapter.save(calEvent)) || {};
+      // v67: native が「書いた行を読み返した」結果を診断に残す（Android のみ返る）。
+      // toast は流れて消える＝**入ったのに見えない時に残る証拠**がここにしか無い（v16）。
+      if (calSaved.verify) window.__vcNote('カレンダー保存', calSaved.verify);
       permBanner(false);
     } catch (err) {
       return { ok: false, calError: err, event: res.event, warnings: res.warnings };
