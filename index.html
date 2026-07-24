@@ -1,4 +1,4 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="ja">
 <head>
 <meta charset="utf-8">
@@ -613,20 +613,20 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
      理由: この版文字列は index.html にしかないが、ロジックは別ファイル＝別キャッシュ。
      付けないと「フッタは新しいのにパーサは古い」という嘘の状態が成立する（v9 で実際に踏んだ）。
      index.html が更新されれば src の URL も変わる → JS も必ず新しく取り直される。 -->
-<script src="engine/settings.js?v=65"></script>
-<script src="engine/schema.js?v=65"></script>
-<script src="engine/parser.js?v=65"></script>
-<script src="engine/dictionary.js?v=65"></script>
-<script src="engine/contract.js?v=65"></script>
-<script src="engine/batch.js?v=65"></script>
-<script src="engine/ai.js?v=65"></script>
-<script src="input/transcriber.js?v=65"></script>
-<script src="adapters/calendar.js?v=65"></script>
-<script src="adapters/records.js?v=65"></script>
-<script src="adapters/location.js?v=65"></script>
+<script src="engine/settings.js?v=66"></script>
+<script src="engine/schema.js?v=66"></script>
+<script src="engine/parser.js?v=66"></script>
+<script src="engine/dictionary.js?v=66"></script>
+<script src="engine/contract.js?v=66"></script>
+<script src="engine/batch.js?v=66"></script>
+<script src="engine/ai.js?v=66"></script>
+<script src="input/transcriber.js?v=66"></script>
+<script src="adapters/calendar.js?v=66"></script>
+<script src="adapters/records.js?v=66"></script>
+<script src="adapters/location.js?v=66"></script>
 <script>
 'use strict';
-const BUILD = 'v65：Android 対応の初版（cap add android＋プラグイン2本の Android 側・web は native 判定をフラグ化）· 2026-07-23';
+const BUILD = 'v66：Android のカレンダー保存が必ず失敗するのを修正（ms エポックを Long で受け取る）· 2026-07-24';
 console.log('BUILD:', BUILD);
 document.getElementById('build').textContent = BUILD;
 

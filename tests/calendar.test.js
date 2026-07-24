@@ -14,7 +14,12 @@
 //   5. 🚫 **保存先の選択を復活させない**（v26 で撤去）＝ write-only では選択を次の起動へ持ち越せず、
 //      「選べるのに効かない」嘘になる。この判断は実機2往復（v23→v25）で得たもので、
 //      忘れて作り直すのが一番の損失＝テストで縛る。理由は CalendarEventsPlugin.swift 冒頭。
+//   6. 🚨 **ms エポックを native が Long として受け取れる読み方をしている**（v66 の実バグ）＝
+//      Android の Capacitor は getDouble が Long を落とす。JS からは型が見えないため
+//      1〜5 を全て満たしていても実機で全滅しうる＝**ソースを読んで構造で縛る**。
 'use strict';
+const { readFileSync } = require('node:fs');
+const { join } = require('node:path');
 const { materialize, eventKitAdapter, pickAdapter, icsAdapter, buildIcs } = require('../adapters/calendar.js');
 
 let pass = 0, fail = 0;
@@ -180,6 +185,43 @@ t('【v13 の症状】プラグイン未登録なら理由の分かる throw（�
     await rejects(() => eventKitAdapter.save(EV), 'CalendarEvents プラグインが native に登録されていません');
     await rejects(() => eventKitAdapter.getTarget(), 'CalendarEvents プラグインが native に登録されていません');
   });
+});
+
+// ===== 不変条件6: ms エポックの受け取り方（v66 で Android が全滅した罠） =====
+//
+// 症状: Android 実機で「カレンダーに保存」が **必ず**「title / startMs / endMs は必須です」で失敗。
+//       タイトルも開始も画面に入っているのに落ちる。iOS では起きない。
+// 真因: Capacitor 8 の PluginCall#getDouble は Double / Float / Integer しか通さず
+//       それ以外は既定値（null）を返す。bridge は org.json でパースし、org.json は整数リテラルを
+//       Integer に収まらなければ **Long** で持つ。ms エポックは常に Long → 常に null → 常に reject。
+//       Swift の getDouble は NSNumber 経由なので同じコードが通る＝**Android だけ**壊れる。
+// なぜ 476/476 が通っていたのに実機で全滅したか: JS 側から native の**型**は見えない。
+//       上の不変条件2（引数名）は名前しか見ていない。→ Java のソースを読んで構造で縛る。
+const ANDROID_CAL_JAVA = join(
+  __dirname, '..', 'local-plugins', 'calendar-events', 'android', 'src', 'main',
+  'java', 'io', 'github', 'yutsutke', 'voicecalendar', 'calendar', 'CalendarEventsPlugin.java'
+);
+
+t('🚨【v66 回帰】ms エポックは Integer に収まらない（このバグの前提を数字で残す）', () => {
+  const INT_MAX = 2147483647;
+  ok(EV.start.getTime() > INT_MAX, `ms エポック ${EV.start.getTime()} は Integer.MAX_VALUE(${INT_MAX}) を超える＝org.json は Long で持つ`);
+  ok(EV.end.getTime() > INT_MAX);
+});
+
+t('🚨【v66 回帰】Android native は startMs/endMs を getDouble で読まない（Long が落ちる）', () => {
+  const src = readFileSync(ANDROID_CAL_JAVA, 'utf8');
+  const bad = src.match(/getDouble\s*\(\s*"(?:startMs|endMs)"/g) || [];
+  eq(bad, [], 'getDouble("startMs"/"endMs") は Capacitor が Long を通さない＝実機で必ず null になる');
+  ok(/private static Long msOf\(/.test(src), 'Number 経由で longValue() に落とすヘルパ msOf を通す');
+  ok(/instanceof Number/.test(src), 'Integer / Long / Double のどれで来ても同じ値になる読み方であること');
+});
+
+t('🚨【v66】保存の必須チェックは「どれが欠けたか」を出す（3項目の一括にしない）', () => {
+  const src = readFileSync(ANDROID_CAL_JAVA, 'utf8');
+  // 「文中に出てくるか」ではなく「reject に渡しているか」を見る（コメントは歴史として残すため）
+  ok(!/call\.reject\s*\(\s*"title \/ startMs \/ endMs/.test(src), '一括の文言だと「タイトルが空」と「型で落ちた」が区別できない（v66 の診断が詰まった原因）');
+  ok(/タイトルが空です/.test(src) && /開始が未入力です/.test(src) && /終了を作れませんでした/.test(src), '3つを別々の言葉で出す');
+  ok(/startMs=/.test(src), '実際に来た値と型を添える（v15/v16「数字を診断に出す」）');
 });
 
 // ===== buildIcs（v39 で複数 VEVENT 対応・単一の回帰を先に固定） =====

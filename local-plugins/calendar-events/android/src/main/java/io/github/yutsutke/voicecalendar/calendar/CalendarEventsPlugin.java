@@ -70,12 +70,58 @@ public class CalendarEventsPlugin extends Plugin {
         return getPermissionState("calendar") == PermissionState.GRANTED;
     }
 
+    // ---- JS → native の数値の受け取り（v66 の実バグ。ここを間違えると Android だけ全滅する） ----
+
+    /**
+     * JS から来た数値を long で取り出す。
+     *
+     * 🚨 **ms エポックに `call.getDouble()` を使ってはいけない**（v66 で実機が全滅した場所）:
+     * Capacitor 8 の PluginCall#getDouble は値が **Double / Float / Integer の時だけ**通し、
+     * それ以外は既定値（null）を返す（node_modules/@capacitor/android/.../PluginCall.java:238）。
+     * bridge は JS の JSON を org.json でパースするが、org.json は整数リテラルを
+     * **Integer に収まればInteger・収まらなければ Long** で持つ。ms エポック
+     * （例 1784812680000）は Integer.MAX_VALUE の 800 倍以上＝**必ず Long**
+     * → getDouble は必ず null → 「必須です」で毎回 reject＝**カレンダー保存が一度も成功しない**。
+     *
+     * iOS(Swift) の同じコードは CAPPluginCall.getDouble が NSNumber 経由なので Long でも通る
+     * ＝**同じ契約・同じ引数名なのに Android でだけ壊れる**。JS のテストは 476/476 通っていた
+     * （JS ⇄ native の**型**は JS 側からは見えない）＝実機まで誰も気づけない種類の事故。
+     *
+     * → Number として受けて longValue() に落とす（Integer/Long/Double/Float のどれで来ても同じ）。
+     */
+    private static Long msOf(PluginCall call, String key) {
+        Object v = call.getData().opt(key);
+        return (v instanceof Number) ? ((Number) v).longValue() : null;
+    }
+
+    /** 実際に何が来たかを人が読める形に（診断＝v15/v16「数字を出す」。toast にそのまま出る） */
+    private static String raw(PluginCall call, String key) {
+        Object v = call.getData().opt(key);
+        if (v == null || v == org.json.JSONObject.NULL) return "なし";
+        return v.getClass().getSimpleName() + ":" + v;
+    }
+
+    /**
+     * 欠けている必須値を人の言葉で返す（揃っていれば null）。
+     * 🚨 **3項目を1つの文言にまとめない**: v65 は「title / startMs / endMs は必須です」の一括で、
+     * 「タイトルが空」と「JS→native の型で落ちた」が区別できず、症状から原因へ辿れなかった。
+     * 型（Long/Integer）と実値まで出す＝次に同じ疑いが出た時、推測でなく数字で判定できる。
+     */
+    private static String missingMessage(PluginCall call) {
+        java.util.List<String> miss = new java.util.ArrayList<>();
+        if (call.getString("title") == null) miss.add("タイトルが空です");
+        if (msOf(call, "startMs") == null) miss.add("開始が未入力です（startMs=" + raw(call, "startMs") + "）");
+        if (msOf(call, "endMs") == null) miss.add("終了を作れませんでした（endMs=" + raw(call, "endMs") + "）");
+        return miss.isEmpty() ? null : android.text.TextUtils.join(" / ", miss);
+    }
+
     // ---- save ----
 
     @PluginMethod
     public void save(PluginCall call) {
-        if (call.getString("title") == null || call.getDouble("startMs") == null || call.getDouble("endMs") == null) {
-            call.reject("title / startMs / endMs は必須です");
+        String missing = missingMessage(call);
+        if (missing != null) {
+            call.reject(missing);
             return;
         }
         if (!hasCalendarAccess()) {
@@ -96,9 +142,17 @@ public class CalendarEventsPlugin extends Plugin {
     }
 
     private void write(PluginCall call) {
+        // 権限ダイアログを挟んで戻ってくる経路（calendarPermCallback）があるので、値はここで読み直す。
+        // 二重の門にしてあるのは、null 束縛のまま unbox すると **NPE でアプリごと落ちる**ため
+        // （黙って捨てないの裏＝黙って落ちない）。通常は save() で弾かれている。
+        String missing = missingMessage(call);
+        if (missing != null) {
+            call.reject(missing);
+            return;
+        }
         String title = call.getString("title");
-        long startMs = call.getDouble("startMs").longValue();
-        long endMs = call.getDouble("endMs").longValue();
+        long startMs = msOf(call, "startMs");
+        long endMs = msOf(call, "endMs");
         boolean allDay = Boolean.TRUE.equals(call.getBoolean("allDay", false));
         String location = call.getString("location");
         String note = call.getString("note");

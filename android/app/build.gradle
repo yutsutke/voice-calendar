@@ -16,8 +16,13 @@ android {
         applicationId "io.github.yutsutke.voicecalendar"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0"
+        // Play は **同じ versionCode の AAB を二度受け付けない**＝内部テストへ上げるたびに +1 する。
+        // versionName は iOS のマーケティングバージョンと揃える（同じ web BUILD・同じ機能＝
+        // 別々の数字にすると「どっちの版の話か」が会話で崩れる。版表示に嘘をつかせない＝v10 の教訓）。
+        //   1 / "1.0" = 初回 AAB（v65・Play 内部テスト）
+        //   2 / "1.2" = v66（Android のカレンダー保存が必ず失敗するのを修正）
+        versionCode 2
+        versionName "1.2"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.

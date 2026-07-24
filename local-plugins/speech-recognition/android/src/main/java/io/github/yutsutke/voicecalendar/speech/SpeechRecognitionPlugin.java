@@ -93,6 +93,10 @@ public class SpeechRecognitionPlugin extends Plugin {
     @PluginMethod
     public void start(PluginCall call) {
         // 詳細設定（v19）。範囲外は既定に丸める＝壊れた設定でも動く
+        // ℹ️ ここは getDouble で正しい: Capacitor の getDouble は Integer/Float/Double しか通さず
+        //    **Long を落とす**（v66 で calendar 側が全滅した罠）が、silenceMs は 500〜10000 ＝
+        //    org.json が必ず Integer で持つ範囲。**ms エポックのような大きい値をここに増やすなら
+        //    CalendarEventsPlugin.msOf() と同じ Number 経由の読み方に変えること。**
         Double ms = call.getDouble("silenceMs");
         if (ms != null && ms >= 500 && ms <= 10000) silenceMs = ms.longValue();
         // v44: 辞書の値（人名・社名などの正しい表記）を認識器に教える。JS 側が上限件数まで絞って渡す

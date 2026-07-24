@@ -285,6 +285,17 @@
 > **🎉 App Store 1.1 公開（2026-07-24 02:10 JST・セッション冒頭に確認）＝v32-v62 が一般ユーザーに届いた**: 昨日 12:45 提出の 1.1(20) が一晩（約13時間）で承認・リリース。**Guideline 2.1 の再来は無し**＝先回り開示（審査メモの AI 説明＋$1上限テストキー）と v62 の位置情報削除が効いた形。見張っていた 5.1.2（AI 送信前の同意）も来なかった。裏取り＝lookup API `resultCount=1` / `version 1.1` / `currentVersionReleaseDate 2026-07-23T17:10:52Z`（[公開URL](https://apps.apple.com/jp/app/voicecalendar/id6791578087)）。
 > ⚠ **公開版 1.1 に載っていないもの**＝ **v63（オーバーライドのボタン寸法）/ v64（ホーム長押し→リスト）/ v65（Android 対応＋native 判定の .native フラグ）**。repo は既に 1.2 へ bump 済み（`41388d6`）＝**次の Codemagic ビルドが 1.2(21)**。v64 の Quick Action は**まだ native 未検証**。
 >
+> **🔴 実機FB第36回（Android 内部テスト版 v65 の初実機・2026-07-24）＝カレンダー保存が「必ず」失敗**: ゆうの実機で `保存に失敗: title / startMs / endMs は必須です`。**画面にはタイトルも開始（2026/07/23 20:38）も入っている**。音声・診断・権限・保存先解決は全て正常（engine `androidspeech`／保存先 `yutsutke@yahoo.co.jp｜Google`）＝**一本道の最後の1歩だけ**が落ちていた。ゆうが前夜に別 Claude と立てた原因分析を持ち込み、**こちらでコードを読んで裏を取ってから**着手（分析は3点とも実物と一致）。
+>
+> **🔧 v66（同日）＝ms エポックを Long で受け取る（Android 専用の修正）**: 真因＝`getDouble("startMs")` を null 判定に使っていた。**Capacitor 8 の `PluginCall#getDouble` は Double/Float/Integer しか通さず、それ以外は null**（node_modules のソースで確認）。org.json は整数を Integer に収まらなければ **Long** で持ち、ms エポック `1784812680000` は Integer.MAX の約831倍＝**必ず Long → 必ず null → 必ず reject**。iOS の Swift は NSNumber 経由で通るため**同じ契約・同じ引数名なのに Android でだけ全滅**した。
+> - **`msOf()`＝Number で受けて longValue()**＝どの subtype で来ても直る形（自分の org.json の読みに賭けない）。
+> - **エラー文を3つに分割＋実値と型を添える**（`startMs=Long:1784812680000`）＝v65 の一括文言では「タイトルが空」と「型で落ちた」が区別できず、実機の1行から原因へ降りられなかった（v15/v16「数字を出す」）。`write()` にも同じ門（null の unbox は **NPE でアプリごと落ちる**）。
+> - **テストで構造を縛った**（不変条件6を新設・v26 と同じ流儀）＝`getDouble("startMs"/"endMs")` の不在／`msOf`・`instanceof Number` の存在／一括 reject の禁止／**ms エポックが Integer に収まらない前提を数字で残す**。ガードが本物かを旧コード文字列で検査＝**6項目すべて「旧=落ちる／新=通る」**。
+> - **検証（Android は Windows ローカルで完結＝実測できる）**: テスト **479/479**／`assembleDebug` BUILD SUCCESSFUL 24s／`javap` でクラスに `msOf` 在り／**署名済み AAB 3.11MB 再生成（jarsigner exit=0）・dex を直接検分して新メッセージ3種が在り旧文言が消えていることまで確認**／web BUILD=v66・全 `?v=66`・console 0。**versionCode 1→2・versionName "1.2"**（Play は同じ versionCode を受け付けない／iOS のマーケティングバージョンに揃える）。
+> - 🚨 **教訓＝JS ⇄ native の「型」は両側のテストを全部通してもすり抜ける**。476/476 は引数の**名前**を守っていたが（v23 不変条件2）、名前が合っていても型で落ちる。しかも**片側だけ**で壊れるので、動いている iOS が「正しさの証拠」に見えてしまう。断ち切ったのは症状の細部（タイトルが入っているのに「title …は必須です」）＝ v16 と同じく**症状と原因は最初から一致していた**。
+>
+> **▶▶ Android の次（ゆうの手番）**: `android/app/build/outputs/bundle/release/app-release.aab`（versionCode 2）を **Play 内部テストへ上げ直す** → 実機で **一本道の完走**（話す→フォーム→保存→**Google カレンダーに出るか**）。通れば Android の v0 が端から端まで成立。同じ回で見たい残り＝**ホーム長押し→リスト**（v64 の Android 版・未検証）／認識が二重になる Android の癖（来歴 🗣）／on-device 認識の硬化。
+>
 > **▶▶ 次＝Pages で v59 を触る（実機ビルド不要）＋溜まったら次へ**:
 > 0. 🆕 **v59 の CSV**＝数日使って書き出し、**経路列でルール行 vs AI 行の訂正率**・**生テキスト×タイトル**（v58①）・**信頼度で認識/解釈の切り分け**が読めるか。読めれば v58② を「数」で判断できる。
 > 1. 🆕 **v58② は測ってから**＝経路別の訂正率・「AI が記録を曖昧に倒す率」を見て、AI 契約に「記録で時刻なし→今に倒す・曖昧扱いにしない（ルールの v27 と揃える）」を教えるか判断（⚠「夕方あたり」を褒められた挙動を壊さない線を守る）。
