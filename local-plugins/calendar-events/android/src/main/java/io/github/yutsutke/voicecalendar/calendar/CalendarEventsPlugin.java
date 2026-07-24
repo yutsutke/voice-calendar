@@ -57,12 +57,17 @@ import java.util.TimeZone;
 )
 public class CalendarEventsPlugin extends Plugin {
 
-    /** 保存先カレンダーの素性（describe した結果） */
+    /** 端末に在るカレンダー1本の素性（**書き込み不可のものも作る**＝一覧に出して選択の材料にする） */
     private static class Target {
         long id;
         String title = "";
         String account = "";
         String accountType = "";
+        long access = 0;
+        boolean visible;
+        boolean syncEvents;
+        boolean primary;
+        boolean writable;
         int rank = 9; // 小さいほど優先（0=primary / 1=Google / 2=その他書き込み可）
     }
 
@@ -157,9 +162,17 @@ public class CalendarEventsPlugin extends Plugin {
         String location = call.getString("location");
         String note = call.getString("note");
 
-        Target cal = findDefaultCalendar();
+        // v68: 呼び手が保存先を指定できる（詳細設定「保存先カレンダー」）。空＝自動選択（従来）
+        java.util.List<Target> all = queryCalendars();
+        String wanted = call.getString("calendarId");
+        Target cal = resolveTarget(all, wanted);
         if (cal == null) {
-            call.reject("書き込み先のカレンダーが見つかりません（端末のカレンダーアプリでアカウントを確認）");
+            if (wanted != null && !wanted.isEmpty()) {
+                // 🚨 **黙って別の暦へ倒さない**（v25 の轍）。選び直せる場所も文言で示す
+                call.reject("選んだ保存先カレンダー（id=" + wanted + "）が見つかりません。詳細設定の「保存先カレンダー」で選び直してください。", "TARGET_NOT_FOUND");
+            } else {
+                call.reject("書き込み先のカレンダーが見つかりません（端末のカレンダーアプリでアカウントを確認）");
+            }
             return;
         }
 
@@ -307,24 +320,61 @@ public class CalendarEventsPlugin extends Plugin {
     // ---- 保存先の解決 ----
 
     /**
-     * 主カレンダーを機械的に1つ選ぶ。IS_PRIMARY 列は一部 OEM の Provider が projection に
-     * 入れると例外を投げることがある → 落ちたら IS_PRIMARY 抜きで再クエリ（黙って壊れない）。
+     * 端末のカレンダーを**全部**取る（書き込み不可も含む）。IS_PRIMARY 列は一部 OEM の Provider が
+     * projection に入れると例外を投げることがある → 落ちたら IS_PRIMARY 抜きで再クエリ（黙って壊れない）。
      */
-    private Target findDefaultCalendar() {
-        Target best = tryQuery(true);
-        if (best == null) best = tryQuery(false);
+    private java.util.List<Target> queryCalendars() {
+        java.util.List<Target> all = tryQuery(true);
+        if (all == null) all = tryQuery(false);
+        return all == null ? new java.util.ArrayList<Target>() : all;
+    }
+
+    /**
+     * 🚨 **機械的に1本へ decide できるのは、候補が1本のときだけ**（v68 で実機が教えた）。
+     * 「主（IS_PRIMARY）」は**アカウントごとに1つある**ので、Google アカウントが2つ在る端末では
+     * rank 0 が2つできる → 下の `t.rank < best.rank` は**先に見つかった方**を残す＝
+     * 実質「端末に先に追加されたアカウント」＝ユーザーから見れば**完全に恣意的**。
+     * 実機（実機FB第37回）では yahoo と gmail の両方が「主・表示・同期」で並び、
+     * アプリは yahoo を選び、ゆうが見ていたのは gmail だった＝**保存は成功しているのに見えない**。
+     *
+     * iOS にこの問題が無いのは **OS が「新規イベントの既定カレンダー」を1つ持っている**から（v26 は
+     * それに乗った）。**Android にその OS 設定は無い**＝自動選択は「候補が1本の時の便宜」でしかない。
+     * → 呼び手（JS の詳細設定）が id を指定できる。指定が無い時だけこの自動選択に落ちる。
+     */
+    private Target pickDefault(java.util.List<Target> all) {
+        Target best = null;
+        for (Target t : all) {
+            if (!t.writable) continue;
+            if (best == null || t.rank < best.rank) best = t;
+        }
         return best;
+    }
+
+    /**
+     * 保存先を決める。指定が在ればそれ、無ければ自動選択。
+     * 🚨 **指定された暦が見つからない／書き込めない時に、黙って別の暦へ倒さない**（null を返す）。
+     * v25（iOS）で「選んだカレンダーになっているのに別のカレンダーに保存される」を踏んでいる＝
+     * 選択が効かないより、**効かないことが分かる**方がよい（SPEC §7 silent wrong answer の禁止）。
+     */
+    private Target resolveTarget(java.util.List<Target> all, String wantedId) {
+        if (wantedId == null || wantedId.isEmpty()) return pickDefault(all);
+        for (Target t : all) if (String.valueOf(t.id).equals(wantedId) && t.writable) return t;
+        return null;
+    }
+
+    /** 書き込み可の候補が2本以上あるか＝**自動選択が恣意的になる状況**（JS が注意書きを出す材料） */
+    private boolean isAmbiguous(java.util.List<Target> all) {
+        int n = 0;
+        for (Target t : all) if (t.writable) n++;
+        return n > 1;
     }
 
     /**
      * v67: 列は**番号ではなく名前で引く**（`getColumnIndex`）。v65 は projection の並びと
      * `c.getInt(4)` のような添字を人間が対応させており、**列を1つ足すだけで意味が総崩れになる**
      * （しかも例外は出ず、別の列を読んで黙って違う暦を選ぶ＝v66 と同じ silent wrong answer の形）。
-     * 候補の一覧（lastCandidates）もここで作る＝「何が在って、なぜそれを選んだか」を画面に出せる。
      */
-    private java.util.List<String> lastCandidates = new java.util.ArrayList<>();
-
-    private Target tryQuery(boolean withPrimary) {
+    private java.util.List<Target> tryQuery(boolean withPrimary) {
         java.util.List<String> proj = new java.util.ArrayList<>(java.util.Arrays.asList(
             CalendarContract.Calendars._ID,
             CalendarContract.Calendars.CALENDAR_DISPLAY_NAME,
@@ -335,45 +385,53 @@ public class CalendarEventsPlugin extends Plugin {
             CalendarContract.Calendars.SYNC_EVENTS));
         if (withPrimary) proj.add(CalendarContract.Calendars.IS_PRIMARY);
 
-        Target best = null;
-        java.util.List<String> seen = new java.util.ArrayList<>();
+        java.util.List<Target> all = new java.util.ArrayList<>();
         try (Cursor c = getContext().getContentResolver().query(
                 CalendarContract.Calendars.CONTENT_URI, proj.toArray(new String[0]), null, null, null)) {
             if (c == null) return null;
             while (c.moveToNext()) {
                 Long access = lng(c, CalendarContract.Calendars.CALENDAR_ACCESS_LEVEL);
-                boolean visible = !"0".equals(str(c, CalendarContract.Calendars.VISIBLE));
-                boolean syncEvents = !"0".equals(str(c, CalendarContract.Calendars.SYNC_EVENTS));
-                boolean primary = withPrimary && !"0".equals(str(c, CalendarContract.Calendars.IS_PRIMARY))
-                    && str(c, CalendarContract.Calendars.IS_PRIMARY) != null;
-                String accountType = or(str(c, CalendarContract.Calendars.ACCOUNT_TYPE), "");
-                boolean writable = access != null && access >= CalendarContract.Calendars.CAL_ACCESS_CONTRIBUTOR;
-
-                // 🚨 **選ばれなかった暦も含めて全部記録する**＝「なぜそこに入ったのか」を後から辿れる
-                seen.add("id=" + or(str(c, CalendarContract.Calendars._ID), "?")
-                    + "「" + or(str(c, CalendarContract.Calendars.CALENDAR_DISPLAY_NAME), "") + "」"
-                    + " " + or(str(c, CalendarContract.Calendars.ACCOUNT_NAME), "") + "/" + accountType
-                    + " 権限=" + (access == null ? "?" : access) + (writable ? "" : "(書込不可)")
-                    + " 表示=" + (visible ? 1 : 0) + " 同期=" + (syncEvents ? 1 : 0)
-                    + (primary ? " 主" : ""));
-
-                if (!writable) continue; // 書き込み不可は対象外
                 Target t = new Target();
                 t.id = or(lng(c, CalendarContract.Calendars._ID), -1L);
                 t.title = or(str(c, CalendarContract.Calendars.CALENDAR_DISPLAY_NAME), "");
                 t.account = or(str(c, CalendarContract.Calendars.ACCOUNT_NAME), "");
-                t.accountType = accountType;
-                if (primary && visible) t.rank = 0;
-                else if ("com.google".equals(accountType) && visible) t.rank = 1;
-                else if (visible) t.rank = 2;
+                t.accountType = or(str(c, CalendarContract.Calendars.ACCOUNT_TYPE), "");
+                t.access = access == null ? 0 : access;
+                t.visible = !"0".equals(str(c, CalendarContract.Calendars.VISIBLE));
+                t.syncEvents = !"0".equals(str(c, CalendarContract.Calendars.SYNC_EVENTS));
+                t.primary = withPrimary && str(c, CalendarContract.Calendars.IS_PRIMARY) != null
+                    && !"0".equals(str(c, CalendarContract.Calendars.IS_PRIMARY));
+                t.writable = access != null && access >= CalendarContract.Calendars.CAL_ACCESS_CONTRIBUTOR;
+                if (t.primary && t.visible) t.rank = 0;
+                else if ("com.google".equals(t.accountType) && t.visible) t.rank = 1;
+                else if (t.visible) t.rank = 2;
                 else t.rank = 3;
-                if (best == null || t.rank < best.rank) best = t;
+                // 🚨 **書き込み不可の暦も捨てない**＝一覧に出す（「在るのに選べない」と「そもそも無い」は別の話）
+                all.add(t);
             }
         } catch (Exception e) {
             return null; // withPrimary=true で落ちた時は呼び手が false で再クエリ
         }
-        lastCandidates = seen;
-        return best;
+        return all;
+    }
+
+    /** 候補を JS へ（**表示の文言は JS 側で作る**＝native はデータだけ返す。SPEC §6 の境界） */
+    private com.getcapacitor.JSArray candidatesJson(java.util.List<Target> all) {
+        java.util.List<JSObject> rows = new java.util.ArrayList<>();
+        for (Target t : all) {
+            JSObject o = new JSObject();
+            o.put("id", String.valueOf(t.id));
+            o.put("title", t.title);
+            o.put("account", t.account);
+            o.put("sourceType", sourceTypeName(t.accountType));
+            o.put("access", t.access);
+            o.put("writable", t.writable);
+            o.put("visible", t.visible);
+            o.put("syncEvents", t.syncEvents);
+            o.put("primary", t.primary);
+            rows.add(o);
+        }
+        return new com.getcapacitor.JSArray(rows);
     }
 
     private static String or(String v, String dflt) { return v == null ? dflt : v; }
@@ -399,22 +457,30 @@ public class CalendarEventsPlugin extends Plugin {
             call.resolve(out);
             return;
         }
-        Target cal = findDefaultCalendar();
+        java.util.List<Target> all = queryCalendars();
+        String wanted = call.getString("calendarId");
+        Target cal = resolveTarget(all, wanted);
+        out.put("authorized", true);
+        // v67: 端末に在る暦を**選ばれなかったものも含めて**返す＝「なぜそこに入ったのか」を画面で辿れる。
+        // v68: 選択 UI の材料でもある（found でない時も返す＝選び直せないと詰む）
+        out.put("candidates", candidatesJson(all));
+        out.put("chosen", wanted == null ? "" : wanted);
+        // v68: 書き込み可が2本以上＝自動選択が恣意的＝JS が「選んでください」と促す材料
+        out.put("ambiguous", isAmbiguous(all));
         if (cal == null) {
-            out.put("authorized", true);
             out.put("found", false);
-            out.put("warning", "書き込み先のカレンダーが見つかりません（端末のカレンダーアプリでアカウントを確認）");
+            out.put("warning", (wanted != null && !wanted.isEmpty())
+                ? "選んだ保存先カレンダー（id=" + wanted + "）が今は見つかりません。下から選び直してください。"
+                : "書き込み先のカレンダーが見つかりません（端末のカレンダーアプリでアカウントを確認）");
             call.resolve(out);
             return;
         }
-        out.put("authorized", true);
         out.put("found", true);
         out.put("id", String.valueOf(cal.id));
         out.put("title", cal.title);
         out.put("source", cal.account);
         out.put("sourceType", sourceTypeName(cal.accountType));
-        // v67: 端末に在る暦を**選ばれなかったものも含めて**返す＝「なぜそこに入ったのか」を画面で辿れる
-        out.put("candidates", new com.getcapacitor.JSArray(lastCandidates));
+        out.put("auto", wanted == null || wanted.isEmpty()); // 自動で決めたのか、選ばれたものか
         call.resolve(out);
     }
 

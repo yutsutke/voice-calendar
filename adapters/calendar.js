@@ -180,16 +180,21 @@
     // 保存先は OS の既定カレンダー（native 側が決める）。
     // 戻り値の calendarTitle/calendarSource は「どこに入れたか」＝保存 toast に出す（v23）
     // ＝「保存できたのに見つからない」を防ぐ。
-    async save(ev) {
+    // opts.calendarId（v68・Android）: 保存先の指定。**空なら鍵ごと渡さない**＝ iOS へ行く
+    // ペイロードは v67 までと1バイトも変わらない（設定を触らない人の体験は不変・v19）。
+    async save(ev, opts) {
       const plugin = requireCalendarPlugin();
-      const res = await plugin.save({
+      const payload = {
         title: ev.title,
         startMs: ev.start.getTime(),
         endMs: ev.end.getTime(),
         allDay: ev.allDay,
         location: ev.location,
         note: ev.note,
-      }) || {};
+      };
+      const wanted = opts && opts.calendarId;
+      if (wanted) payload.calendarId = String(wanted);
+      const res = await plugin.save(payload) || {};
       return {
         ok: true,
         method: 'eventkit',
@@ -204,9 +209,11 @@
 
     // 今どこへ入るか（権限は要求しない＝設定を開いただけでダイアログを出さない）。
     // authorized:false = まだ許可を聞いていない／拒否された。
-    async getTarget() {
+    async getTarget(opts) {
       const plugin = requireCalendarPlugin();
-      const res = await plugin.getTarget() || {};
+      const wanted = opts && opts.calendarId;
+      // save と同じ規則: 指定が無ければ**引数ごと渡さない**（iOS の呼び出しは従来のまま）
+      const res = (wanted ? await plugin.getTarget({ calendarId: String(wanted) }) : await plugin.getTarget()) || {};
       return {
         authorized: !!res.authorized,
         found: !!res.found,
@@ -216,8 +223,22 @@
         sourceType: res.sourceType || '',
         warning: res.warning || '',
         // v67: 端末に在る暦の一覧（**選ばれなかったものも含む**・Android のみ）。
-        // 「なぜそこに入ったのか」を実機の画面だけで辿るための材料（写真1枚で決着させる）。
-        candidates: Array.isArray(res.candidates) ? res.candidates.map(String) : [],
+        // 「なぜそこに入ったのか」を実機の画面だけで辿る材料＋ v68 の選択 UI の材料。
+        // 🚨 **表示の文言は宿主が作る**＝native はデータだけ返す（SPEC §6 の境界）。
+        candidates: Array.isArray(res.candidates) ? res.candidates.map((c) => ({
+          id: String((c && c.id) || ''),
+          title: String((c && c.title) || ''),
+          account: String((c && c.account) || ''),
+          sourceType: String((c && c.sourceType) || ''),
+          writable: !!(c && c.writable),
+          visible: !!(c && c.visible),
+          syncEvents: !!(c && c.syncEvents),
+          primary: !!(c && c.primary),
+        })) : [],
+        // v68: 書き込み可の暦が2本以上＝自動選択が恣意的になる（＝選んでもらう必要がある）
+        ambiguous: !!res.ambiguous,
+        // 今の行き先が「自動で決まった」のか「選ばれたもの」なのか（表示に嘘をつかせない）
+        auto: res.auto === undefined ? true : !!res.auto,
       };
     },
 

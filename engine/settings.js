@@ -120,10 +120,21 @@
       native: true, // native の音声プラグインに渡す（web では効かない）
     },
   ];
-  // 🚫 targetCalendarId（保存先の選択）は **v26 で撤去**した。write-only では選択を次の起動へ
-  // 持ち越せず（実機FB第17回）、設定に残しても「選べるのに効かない」嘘になるため。
-  // 保存先を変える正しい道は **OS 設定 → カレンダー → デフォルトカレンダー**（実機で成立済み）。
-  // 「今どこへ入るか」の表示は設定ではなく事実＝詳細設定の情報行と診断に出す（index.html）。
+  // targetCalendarId は **v26（iOS）で撤去 → v68（Android）で復活**させた。同じ名前だが前提が違う:
+  //   iOS: write-only ＝アプリはカレンダー一覧を読めず、選択を次の起動へ持ち越せない（実機FB第17回）
+  //        → 設定に残せば「選べるのに効かない」嘘になる。正しい道は OS 設定 → デフォルトカレンダー。
+  //   Android: **READ_CALENDAR を恒久的に持っている**（保存先の解決に要る）＝一覧を読め、id を保存して
+  //        次回も解決できる。**そして OS 側に「新規イベントの既定カレンダー」設定が無い**。
+  // ＝ v26 の判断を否定したのではなく、**制約が違うプラットフォームで別の答えを出した**。
+  DEFS.push({
+    key: 'targetCalendarId',
+    label: '保存先カレンダー',
+    hint: '予定を書き込むカレンダーを選びます。「自動」は端末の主カレンダーに入れますが、Google アカウントが2つ以上あると「主」も2つあるため、どちらに入るかは選べません（アプリは今どこへ入るかを下に表示します）。',
+    why: 'v68 実機FB第37回（2026-07-24・Android）: 保存は成功しているのに Google カレンダーに出ない → 診断で判明した真因は **端末に Google アカウントが2つ（yahoo と gmail）在り、どちらも IS_PRIMARY=1 で同点** ＝ 自動選択は「先に見つかった方」＝実質「先に端末へ追加された方」を選んでいた（ユーザーから見れば恣意的）。ゆうが見ていたのは gmail、アプリが書いていたのは yahoo。**iOS には OS の「新規イベントの既定カレンダー」があるので v26 でそれに乗れたが、Android にその設定は無い**＝機械的に1本へ decide できるのは候補が1本の時だけ。v19 の基準（実機で実際に事故が起きた決定だけを設定にする）を満たす',
+    def: '', // 空＝自動選択（**v65-v67 の実挙動そのまま**＝触らない人の体験は変わらない）
+    type: 'id', // 取りうる値が実行時に決まる（端末のカレンダー一覧）＝固定の options を持てない
+    render: 'custom', // 一覧を native から取るため、詳細設定の汎用ループでは描かない（index.html が描く）
+  });
 
   function load() {
     const out = {};
@@ -138,6 +149,9 @@
           const v = d.migrate ? d.migrate(raw) : raw;
           if (d.type === 'number' && typeof v === 'number') out[d.key] = v;
           else if (d.type === 'enum' && (d.options || []).some((o) => o.value === v)) out[d.key] = v; // 選択肢に無い値は既定のまま
+          // 'id'（v68）: 取りうる値が実行時に決まる＝ここでは**文字列であること**しか検証できない。
+          // 実在するかは宿主が確かめる（無ければ native が TARGET_NOT_FOUND を返す＝黙って別へ倒さない）
+          else if (d.type === 'id' && typeof v === 'string') out[d.key] = v;
           else if (!d.type && typeof v === 'boolean') out[d.key] = v;
         }
       }
@@ -156,6 +170,7 @@
         const d = DEFS.find((x) => x.key === key);
         if (!d) return;
         if (d.type === 'enum' && !(d.options || []).some((o) => o.value === value)) return; // 未知の値で壊さない
+        if (d.type === 'id' && typeof value !== 'string') return; // 文字列以外は受けない（実在確認は宿主）
         values[key] = value;
         try { global.localStorage.setItem(KEY, JSON.stringify(values)); } catch {}
         listeners.forEach((fn) => fn(key, value));

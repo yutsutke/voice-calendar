@@ -45,7 +45,7 @@ t('既定値がこれまでの実挙動と一致する（触らない人の体�
   eq(s.get('voiceAI'), false, '🔴 音声のAI解釈はオフ＝音声の核経路はオフライン・決定的のまま（v42・外部送信とコストの opt-in）');
   eq(s.get('autoSaveAI'), false, '🔴 AI 経路の自動保存はオフ＝v42-v46 の挙動（AI で解釈した発話はフォームに残る）。v47 で opt-in にした');
   eq(s.get('autoSaveBatch'), false, '🔴 まとめて入力の自動保存はオフ＝v39-v52 の挙動（取り込みリストで人が確認してから保存）。v53 で opt-in にした');
-  eq(s.get('targetCalendarId'), undefined, '🚫 保存先の選択は v26 で撤去（write-only では効かない＝復活させない）');
+  eq(s.get('targetCalendarId'), '', '🔴 保存先カレンダーは空＝自動選択＝v65-v67 の実挙動（v26 で iOS から撤去 → v68 で Android に復活。既定は触らない人の体験を変えない）');
 });
 
 t('全ての設定に label / hint / why がある（なぜ設定にしたかを残す）', () => {
@@ -66,13 +66,26 @@ t('set した値が保存され、次回の起動で復元される', () => {
   eq(s2.get('protectManualEdits'), true, '触っていない設定は既定のまま');
 });
 
-// v26 で撤去した設定の残骸が端末に残っていても無害であること
-// （v23-v25 を使った端末には targetCalendarId が localStorage に残っている）
-t('撤去した設定の保存値が残っていても壊れない（未知のキーは無視）', () => {
+// 🚨 v68: targetCalendarId は **v26 で撤去 → v68 で復活**した。v23-v25 を使った端末（ゆうの iPhone）には
+// **当時の EKCalendar 識別子が localStorage に残っている**。engine はそれが実在するか知りようがない
+// （取りうる値は端末のカレンダー一覧＝実行時にしか決まらない）＝ここで検証できるのは**型だけ**。
+// 実在確認と後始末は宿主の仕事: 候補を出せない環境（iOS/web）では index.html が空へ掃除し、
+// 候補が在って id が消えていれば native が TARGET_NOT_FOUND を返す（**黙って別の暦へ倒さない**）。
+t('【v68】古い保存値は型だけ検証して載せる（実在確認は宿主・engine は端末を知らない）', () => {
   localStorage.setItem(KEY, JSON.stringify({ targetCalendarId: 'CAL-OLD', silenceMs: 2500 }));
   const s = createSettings();
-  eq(s.get('targetCalendarId'), undefined, '撤去した設定は復活しない');
+  eq(s.get('targetCalendarId'), 'CAL-OLD', '文字列ならそのまま載る（engine は実在を判定できない）');
   eq(s.get('silenceMs'), 2500, '生きている設定は復元される');
+});
+
+t('【v68】保存先カレンダーの壊れた値は既定（自動）へ落ちる', () => {
+  localStorage.setItem(KEY, JSON.stringify({ targetCalendarId: 42 }));
+  eq(createSettings().get('targetCalendarId'), '', '数値は受けない＝自動に戻る（黙って壊れない）');
+  localStorage.setItem(KEY, JSON.stringify({ targetCalendarId: { id: 4 } }));
+  eq(createSettings().get('targetCalendarId'), '', 'オブジェクトも受けない');
+  const s = createSettings();
+  s.set('targetCalendarId', 7); // 数値で set しても受けない
+  eq(s.get('targetCalendarId'), '', '文字列以外は無視（未知の値で壊さない＝enum と同じ流儀）');
 });
 
 t('resetAll で既定に戻り、保存も消える', () => {

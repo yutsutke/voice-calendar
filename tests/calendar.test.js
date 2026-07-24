@@ -94,22 +94,48 @@ t('🚫 保存先の選択 API を持たない（write-only では効かない�
   });
 });
 
-t('🚫 save は保存先を指定しない（OS の既定カレンダー1本＝native が決める）', async () => {
+// v68: 保存先の指定は **Android で復活**した（iOS の write-only 制約が無く、一覧を読めて id を
+// 持ち越せる／かつ OS 側に「新規イベントの既定カレンダー」が無い）。ただし **既定は空＝自動**で、
+// 空のときに送るペイロードは v67 までと1バイトも変わらない＝ iOS の契約は不変（v19 の既定不変原則）。
+t('🚫 指定が無ければ calendarId を送らない（iOS へ行くペイロードは従来のまま）', async () => {
   let got = null;
   await withCapacitor(nativeCap({ save: async (a) => { got = a; return { id: 'E1' }; } }), async () => {
-    await eventKitAdapter.save(EV);
+    await eventKitAdapter.save(EV);                       // opts 無し
+    ok(!('calendarId' in got), '鍵ごと無い（空文字を送るのも「指定した」に見える＝送らない）');
+    await eventKitAdapter.save(EV, {});                   // opts あり・空
+    ok(!('calendarId' in got), '空の opts でも送らない');
+    await eventKitAdapter.save(EV, { calendarId: '' });   // 設定が既定（空）のまま
+    ok(!('calendarId' in got), '空文字は「自動」＝送らない');
   });
-  ok(!('calendarId' in got), 'calendarId を渡さない＝選択の残骸が復活していない');
 });
 
-t('getTarget は引数を取らない（今どこへ入るかを聞くだけ）', async () => {
-  let called = 0, gotArgs;
-  await withCapacitor(nativeCap({ getTarget: async (...a) => { called++; gotArgs = a; return { authorized: true, found: true, title: '個人' }; } }), async () => {
+t('【v68】指定があれば calendarId を渡す（Android の保存先選択）', async () => {
+  let got = null;
+  await withCapacitor(nativeCap({ save: async (a) => { got = a; return { id: 'E1' }; } }), async () => {
+    await eventKitAdapter.save(EV, { calendarId: '4' });
+  });
+  eq(got.calendarId, '4', '文字列で渡す（native は id の文字列比較で解決する）');
+  eq(got.startMs, EV.start.getTime(), '既存の契約は壊れていない');
+});
+
+t('getTarget: 指定が無ければ引数を取らない／あれば calendarId だけ渡す', async () => {
+  let gotArgs;
+  await withCapacitor(nativeCap({ getTarget: async (...a) => { gotArgs = a; return { authorized: true, found: true, title: '個人' }; } }), async () => {
     const t2 = await eventKitAdapter.getTarget();
     eq(t2.title, '個人');
+    eq(gotArgs.length, 0, 'native へ余計な引数を渡さない（iOS の呼び出しは従来のまま）');
+    await eventKitAdapter.getTarget({ calendarId: '' });
+    eq(gotArgs.length, 0, '空＝自動＝引数なし');
+    await eventKitAdapter.getTarget({ calendarId: '4' });
+    eq(gotArgs, [{ calendarId: '4' }], '選択中はそれだけを渡す');
   });
-  eq(called, 1);
-  eq(gotArgs.length, 0, 'native へ余計な引数を渡さない');
+});
+
+t('🚫【v26】アプリ内カレンダー"チューザー"は復活させない（iOS の write-only では効かない）', async () => {
+  await withCapacitor(nativeCap({}), async () => {
+    const a = pickAdapter();
+    ok(typeof a.chooseCalendar !== 'function', 'EKCalendarChooser 方式は撤去したまま（理由は Swift 冒頭）');
+  });
 });
 
 // ===== 不変条件3: 戻りが欠けても壊れない・どこに入れたかは落とさない =====
@@ -148,16 +174,32 @@ t('【v67】verify を返さない native（iOS）でも壊れない', async () 
   });
 });
 
-t('🚨【v67】getTarget は選ばれなかった暦も落とさない（なぜそこに入ったかを辿る材料）', async () => {
+t('🚨【v67/v68】getTarget は選ばれなかった暦も落とさない（なぜそこに入ったかを辿る材料）', async () => {
   await withCapacitor(nativeCap({
     getTarget: async () => ({
-      authorized: true, found: true, id: '3', title: '個人',
-      candidates: ['id=3「個人」a@example.com/com.google 権限=700 表示=1 同期=1 主', 'id=9「祝日」…(書込不可)'],
+      authorized: true, found: true, id: '2', title: 'a@example.com', auto: true, ambiguous: true,
+      candidates: [
+        { id: '1', title: '日本の祝日', account: 'a@example.com', sourceType: 'Google', writable: false, visible: true, syncEvents: true, primary: false },
+        { id: '2', title: 'a@example.com', account: 'a@example.com', sourceType: 'Google', writable: true, visible: true, syncEvents: true, primary: true },
+        { id: '4', title: 'b@gmail.com', account: 'b@gmail.com', sourceType: 'Google', writable: true, visible: true, syncEvents: true, primary: true },
+      ],
     }),
   }), async () => {
     const t2 = await eventKitAdapter.getTarget();
-    eq(t2.candidates.length, 2, '書き込み不可の暦も含めて全部（「無いから選ばれなかった」と「在るのに選ばれなかった」は別の話）');
-    ok(t2.candidates[0].includes('同期=1'), '同期対象かどうかが読める＝Google へ上がるかの判定材料');
+    eq(t2.candidates.length, 3, '書き込み不可の暦も含めて全部（「無いから選ばれなかった」と「在るのに選ばれなかった」は別の話）');
+    eq(t2.candidates[1].syncEvents, true, '同期対象かどうかが読める＝Google へ上がるかの判定材料');
+    // 🚨 実機FB第37回そのもの: 「主」が2つ＝自動選択は恣意的＝選んでもらうしかない
+    eq(t2.candidates.filter((c) => c.primary && c.writable).length, 2, 'アカウントごとに「主」がある');
+    eq(t2.ambiguous, true, '複数の書き込み先がある事実を落とさない（黙って1つに決めない）');
+    eq(t2.auto, true, '今の行き先が自動で決まったのか選択なのかが分かる');
+  });
+});
+
+t('【v68】auto/ambiguous を返さない native（iOS）でも壊れない', async () => {
+  await withCapacitor(nativeCap({ getTarget: async () => ({ authorized: true, found: true, title: '個人' }) }), async () => {
+    const t2 = await eventKitAdapter.getTarget();
+    eq(t2.ambiguous, false, '不明なら「複数ある」とは言わない');
+    eq(t2.auto, true, 'iOS は常に OS の既定＝自動（表示は従来どおり）');
   });
 });
 

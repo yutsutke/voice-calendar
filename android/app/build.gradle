@@ -22,7 +22,8 @@ android {
         //   1 / "1.0" = 初回 AAB（v65・Play 内部テスト）
         //   2 / "1.2" = v66（Android のカレンダー保存が必ず失敗するのを修正）
         //   3 / "1.2" = v67（保存した行を native が読み返して診断に出す）
-        versionCode 3
+        //   4 / "1.2" = v68（保存先カレンダーを選べるように・Android）
+        versionCode 4
         versionName "1.2"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {

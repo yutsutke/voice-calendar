@@ -613,20 +613,20 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
      理由: この版文字列は index.html にしかないが、ロジックは別ファイル＝別キャッシュ。
      付けないと「フッタは新しいのにパーサは古い」という嘘の状態が成立する（v9 で実際に踏んだ）。
      index.html が更新されれば src の URL も変わる → JS も必ず新しく取り直される。 -->
-<script src="engine/settings.js?v=67"></script>
-<script src="engine/schema.js?v=67"></script>
-<script src="engine/parser.js?v=67"></script>
-<script src="engine/dictionary.js?v=67"></script>
-<script src="engine/contract.js?v=67"></script>
-<script src="engine/batch.js?v=67"></script>
-<script src="engine/ai.js?v=67"></script>
-<script src="input/transcriber.js?v=67"></script>
-<script src="adapters/calendar.js?v=67"></script>
-<script src="adapters/records.js?v=67"></script>
-<script src="adapters/location.js?v=67"></script>
+<script src="engine/settings.js?v=68"></script>
+<script src="engine/schema.js?v=68"></script>
+<script src="engine/parser.js?v=68"></script>
+<script src="engine/dictionary.js?v=68"></script>
+<script src="engine/contract.js?v=68"></script>
+<script src="engine/batch.js?v=68"></script>
+<script src="engine/ai.js?v=68"></script>
+<script src="input/transcriber.js?v=68"></script>
+<script src="adapters/calendar.js?v=68"></script>
+<script src="adapters/records.js?v=68"></script>
+<script src="adapters/location.js?v=68"></script>
 <script>
 'use strict';
-const BUILD = 'v67：保存した行を native が読み返して診断に出す（入ったのに見えないの切り分け）· 2026-07-24';
+const BUILD = 'v68：保存先カレンダーを選べるようにした（Android・複数アカウントで自動選択が恣意的だった）· 2026-07-24';
 console.log('BUILD:', BUILD);
 document.getElementById('build').textContent = BUILD;
 
@@ -2216,6 +2216,7 @@ function renderSettings() {
   list.innerHTML = '';
   for (const d of settings.DEFS) {
     if (!LOCATION_ENABLED && d.key === 'captureLocation') continue; // v62: 位置は無効化中＝設定行を出さない（死んだ設定を見せない）
+    if (d.render === 'custom') continue; // v68: 選択肢が実行時に決まる（保存先カレンダー）＝下の専用行で描く
     const item = document.createElement('div');
     item.className = 'set-item';
     const head = document.createElement('div');
@@ -2286,22 +2287,33 @@ function renderSettings() {
   launch.append(lhead, lhint);
   list.appendChild(launch);
 
-  // 保存先＝**設定ではなく事実**（v26 で選択を撤去）。それでも「今どこへ入るか」は見せる:
-  // OS の既定が iCloud か Google かで行き先が変わり、見えないと「保存できたのに見つからない」の
-  // 原因に辿り着けない（v23 の要求「見れたり」はここで生きている）。変える道は OS 設定への案内。
+  // 保存先の行。**iOS では「事実の表示」・Android では「選べる設定」**（v26 → v68）:
+  //   iOS は write-only ＝一覧を読めず選択を持ち越せない（v25/v26）→ 変える道は OS 設定への案内だけ。
+  //   Android は一覧を読めて id を保存できる／かつ OS 側に「新規イベントの既定」が無い（v68）。
+  // 🚨 **プラットフォーム名で分岐しない**（v65 の教訓「名前をゲートに使わない」）＝
+  //    native が候補を返せたかどうか＝**能力**で分ける。返せない環境では今までの表示のまま。
   const info = document.createElement('div');
   info.className = 'set-item';
   const ihead = document.createElement('div');
   ihead.className = 'set-head';
   const ilabel = document.createElement('label');
   ilabel.textContent = '保存先のカレンダー';
+  ilabel.setAttribute('for', 'set-targetCalendarId');
   const itag = document.createElement('span');
   itag.className = 'set-native';
   itag.textContent = 'アプリのみ';
   ilabel.append(' ', itag);
-  ihead.append(ilabel);
+  const pick = document.createElement('select');
+  pick.id = 'set-targetCalendarId';
+  pick.style.display = 'none'; // 候補を取れた時だけ出す（＝選べる時だけ見せる）
+  pick.addEventListener('change', () => {
+    settings.set('targetCalendarId', pick.value);
+    refreshCalendarTarget(); // 今どこへ入るかを即座に描き直す（選んだのに表示が古い、を作らない）
+  });
+  ihead.append(ilabel, pick);
   const ihint = document.createElement('div');
   ihint.className = 'set-hint';
+  ihint.id = 'hint-calendarTarget';
   ihint.textContent = '変えるには iOS の「設定 → アプリ → カレンダー → デフォルトカレンダー」。Google に入れたい時は、先に設定でカレンダーのアカウントに Google を追加して、それを既定にする（アプリは Google と直接通信せず、OS が同期する）。';
   const cur = document.createElement('div');
   cur.className = 'set-cur';
@@ -2351,7 +2363,56 @@ function handleCalendarError(err, prefix) {
     permBanner(true, 'カレンダーへの追加が許可されていません。「設定を開く」→ カレンダー を許可してください。');
     return;
   }
+  // v68: 選んだ保存先が消えた（アカウント削除・同期解除など）。**黙って別の暦へ倒さない**ので
+  // ここへ来る＝選び直せる場所へ案内し、選択肢を取り直しておく（行き止まりにしない＝v23 と同じ形）。
+  if (code === 'TARGET_NOT_FOUND') {
+    toast(`${prefix}: 選んだ保存先カレンダーが見つかりません。詳細設定で選び直してください。`);
+    refreshCalendarTarget();
+    return;
+  }
   toast(`${prefix}: ${(err && err.message) || err}`);
+}
+
+/// v68: 保存先を選ぶ `<select>` を組み立てる（**候補を返せた環境だけ**＝能力で分岐・v65 の教訓）。
+/// 🚨 書き込み不可の暦（祝日など）は**選択肢に出さない**（選べるのに保存できない、を作らない）が、
+///    診断には全部出す（「在るのに選べない」と「そもそも無い」は別の話）。
+function renderCalendarPicker(t) {
+  const pick = document.getElementById('set-targetCalendarId');
+  const hint = document.getElementById('hint-calendarTarget');
+  if (!pick) return;
+  const writable = (t.candidates || []).filter((c) => c.writable);
+  if (!writable.length) {
+    // 候補を出せない環境（iOS＝write-only／web）。**ここで古い保存値を掃除する**:
+    // v23-v25 の iPhone には当時の EKCalendar 識別子が localStorage に残っており、放っておくと
+    // 使えない指定が save のペイロードに乗り続ける（iOS の契約を汚す）。黙って消さず診断に残す。
+    if (settings.get('targetCalendarId')) {
+      window.__vcNote('保存先カレンダー', `この環境では選べないため、古い指定（${settings.get('targetCalendarId')}）を「自動」に戻しました`);
+      settings.set('targetCalendarId', '');
+    }
+    pick.style.display = 'none'; // 従来どおり「事実の表示」のまま
+    return;
+  }
+  pick.innerHTML = '';
+  const auto = document.createElement('option');
+  auto.value = '';
+  auto.textContent = '自動';
+  pick.appendChild(auto);
+  for (const c of writable) {
+    const o = document.createElement('option');
+    o.value = c.id;
+    // 名前が account と同じことが多い（Google の主カレンダー）＝重ねて出さない
+    const name = c.title && c.title !== c.account ? `${c.title}（${c.account}）` : (c.account || c.title || `id=${c.id}`);
+    o.textContent = c.syncEvents ? name : `${name}〔同期オフ〕`; // 同期オフ＝端末内にしか残らない事実を出す
+    pick.appendChild(o);
+  }
+  pick.value = settings.get('targetCalendarId') || '';
+  pick.style.display = '';
+  if (hint) {
+    hint.textContent = t.ambiguous
+      // 実機FB第37回の事故そのもの＝「主」が2つ在ると自動選択は先に見つかった方になる
+      ? '書き込めるカレンダーが複数あります。「自動」は端末が先に見つけた方に入れるため、見ているカレンダーと違うことがあります（保存は成功しているのに見つからない、が起きます）。入れたいカレンダーを選んでください。'
+      : '予定を書き込むカレンダーを選びます。「自動」は端末の主カレンダーに入れます。';
+  }
 }
 
 /// 今どこへ入るかを表示する（権限は要求しない＝設定を開いただけでダイアログを出さない）。
@@ -2367,7 +2428,8 @@ async function refreshCalendarTarget() {
     return;
   }
   try {
-    const t = await adapter.getTarget();
+    const t = await adapter.getTarget({ calendarId: settings.get('targetCalendarId') });
+    renderCalendarPicker(t);
     if (!t.authorized) {
       window.__vcCalTarget = '(未許可＝保存時に確認)';
       show('set-cur', 'まだカレンダーの許可がありません。保存するときに確認します。');
@@ -2375,15 +2437,20 @@ async function refreshCalendarTarget() {
       window.__vcCalTarget = '❌ 見つからない';
       show('set-cur warn', `⚠ ${t.warning || '書き込み先のカレンダーが見つかりません（OS のカレンダー設定を確認）'}`);
     } else {
-      const who = t.source ? `${t.title}（${t.source}）` : t.title;
-      window.__vcCalTarget = `${who}｜${t.sourceType}`;
-      show('set-cur', `${who} — OS の既定カレンダー`);
+      const who = t.source && t.source !== t.title ? `${t.title}（${t.source}）` : t.title;
+      window.__vcCalTarget = `${who}｜${t.sourceType}${t.auto ? '（自動）' : '（選択）'}`;
+      // v68: 「自動で決まった」か「自分で選んだ」かを出す＝表示に嘘をつかせない。
+      // 複数候補があるのに自動のままなら、それが事故の芽だと分かる形で言う（黙って選ばない）。
+      show('set-cur', t.auto
+        ? (t.ambiguous ? `${who} — 自動で選ばれています（他にも書き込めるカレンダーがあります）` : `${who} — 自動（OS の主カレンダー）`)
+        : `${who} — ここに入ります（選択中）`);
     }
     // v67: 端末に在る暦を**選ばれなかったものも含めて**診断へ（Android のみ返る）。
     // 「なぜそこに入ったのか」を実機の画面だけで辿れるようにする＝写真1枚で決着させる。
     if (t.candidates && t.candidates.length) {
-      window.__vcNote('カレンダー候補', `${t.candidates.length}件 ／ 選択=id=${t.id}`);
-      t.candidates.forEach((line) => window.__vcNote('　暦', line));
+      window.__vcNote('カレンダー候補', `${t.candidates.length}件 ／ 行き先=id=${t.id || '(なし)'}${t.auto ? '（自動）' : '（選択）'}`);
+      t.candidates.forEach((c) => window.__vcNote('　暦', `id=${c.id}「${c.title}」${c.account}／${c.sourceType}`
+        + ` 書込=${c.writable ? 1 : 0} 表示=${c.visible ? 1 : 0} 同期=${c.syncEvents ? 1 : 0}${c.primary ? ' 主' : ''}`));
     }
   } catch (err) {
     // 取れないこと自体を表に出す（黙って空欄にしない＝v16）
@@ -2483,7 +2550,8 @@ async function saveDraftCore(draft, now, opts) {
       ? Object.assign({}, res.event, { title: `📝 ${res.event.title}` })
       : res.event;
     try {
-      calSaved = (await adapter.save(calEvent)) || {};
+      // v68: 保存先の指定（Android のみ・空＝自動＝従来）。engine は設定を知らない＝宿主が渡す（SPEC §6）
+      calSaved = (await adapter.save(calEvent, { calendarId: settings.get('targetCalendarId') })) || {};
       // v67: native が「書いた行を読み返した」結果を診断に残す（Android のみ返る）。
       // toast は流れて消える＝**入ったのに見えない時に残る証拠**がここにしか無い（v16）。
       if (calSaved.verify) window.__vcNote('カレンダー保存', calSaved.verify);
