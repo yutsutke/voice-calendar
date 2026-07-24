@@ -239,6 +239,12 @@
         ambiguous: !!res.ambiguous,
         // 今の行き先が「自動で決まった」のか「選ばれたもの」なのか（表示に嘘をつかせない）
         auto: res.auto === undefined ? true : !!res.auto,
+        // v69: **保存できること と Google に届くことは別**（実機FB第38回）。
+        // sync=同期設定の素性 / pending=まだ上がっていない件数（-1＝不明。0 と混ぜない）
+        // syncBlocked=「何をしても上がらない」と言い切れる時だけ true（不明は false＝嘘の警告を出さない）
+        sync: res.sync || '',
+        pending: typeof res.pending === 'number' ? res.pending : -1,
+        syncBlocked: !!res.syncBlocked,
       };
     },
 

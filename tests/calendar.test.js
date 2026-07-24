@@ -203,6 +203,34 @@ t('【v68】auto/ambiguous を返さない native（iOS）でも壊れない', a
   });
 });
 
+// ===== v69: 保存できること と Google に届くこと は別（実機FB第38回） =====
+// 実測: Android が作った予定は端末には在る（他社カレンダーアプリに出る・readBack=✓）のに
+// Google のサーバには1件も無かった（接続済み Google アカウントを直接照会して確認）。
+// 同じ日に iPhone から入れた予定は届いていた＝**書き込みは成功・端末→Google の同期だけが動いていない**。
+t('🚨【v69】同期の素性と未送信件数を落とさない（保存成功と「届いた」を混同しない）', async () => {
+  await withCapacitor(nativeCap({
+    getTarget: async () => ({
+      authorized: true, found: true, id: '2', title: 'a@example.com',
+      sync: '端末の自動同期=ON このアカウントの暦同期=OFF 同期可=1 実行中=0 待ち=0',
+      pending: 7, syncBlocked: true,
+    }),
+  }), async () => {
+    const t2 = await eventKitAdapter.getTarget();
+    eq(t2.pending, 7, '未送信の滞留件数＝増えるだけで減らないなら止まっている証拠');
+    eq(t2.syncBlocked, true, '「何をしても上がらない」と言い切れる時だけ true');
+    ok(t2.sync.includes('暦同期=OFF'), '素性の文字列をそのまま診断へ運ぶ');
+  });
+});
+
+t('🚨【v69】同期が読めない環境で「大丈夫」と嘘をつかない', async () => {
+  await withCapacitor(nativeCap({ getTarget: async () => ({ authorized: true, found: true, title: '個人' }) }), async () => {
+    const t2 = await eventKitAdapter.getTarget();
+    eq(t2.pending, -1, '不明は -1（0 と混ぜない＝「未送信は無い」と言わない）');
+    eq(t2.syncBlocked, false, '判断が付かない時は警告を出さない（正常な端末に嘘の警告を出す方が悪い）');
+    eq(t2.sync, '', '素性が無ければ空');
+  });
+});
+
 t('【v67】candidates を返さない native（iOS）でも壊れない', async () => {
   await withCapacitor(nativeCap({ getTarget: async () => ({ authorized: true, found: true, title: '個人' }) }), async () => {
     const t2 = await eventKitAdapter.getTarget();

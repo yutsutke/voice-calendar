@@ -307,6 +307,59 @@ public class CalendarEventsPlugin extends Plugin {
         }
     }
 
+    /**
+     * v69: **保存できること と Google に届くことは別**（実機FB第38回で確定）。
+     *
+     * ゆうの端末では Android が作った予定が1件も Google のサーバに届いていなかった（接続済み
+     * Google アカウントを直接照会して 0件を確認）。一方 iPhone から入れた同じ日の予定は届いていた
+     * ＝ **CalendarContract への書き込みは成功していて、端末→Google の同期だけが動いていない**。
+     *
+     * 直書きした行は dirty=1 で置かれ、**そのアカウントの同期アダプタ**が上げる。動くかどうかは
+     * カレンダー権限ではなく **アカウントの同期設定**が決める:
+     *   - マスター自動同期（端末全体）
+     *   - そのアカウント×カレンダーの自動同期
+     *   - そもそも syncable か（0 なら何をしても上がらない）
+     * → **全部読んで出す**。ここが見えないと「保存はできたのに見つからない」を実機の画面から
+     *    説明できない（v23 で「今どこへ入るか」を出したのと同じ理由の、同期版）。
+     */
+    private String syncInfo(Target cal) {
+        try {
+            if (cal.account == null || cal.account.isEmpty() || cal.accountType == null || cal.accountType.isEmpty()) {
+                return "同期=対象不明";
+            }
+            android.accounts.Account acc = new android.accounts.Account(cal.account, cal.accountType);
+            String auth = CalendarContract.AUTHORITY;
+            StringBuilder sb = new StringBuilder();
+            sb.append("端末の自動同期=").append(android.content.ContentResolver.getMasterSyncAutomatically() ? "ON" : "OFF");
+            sb.append(" このアカウントの暦同期=").append(android.content.ContentResolver.getSyncAutomatically(acc, auth) ? "ON" : "OFF");
+            int syncable = android.content.ContentResolver.getIsSyncable(acc, auth);
+            sb.append(" 同期可=").append(syncable); // 0＝このアカウントで暦は同期しない設定＝何をしても上がらない
+            sb.append(" 実行中=").append(android.content.ContentResolver.isSyncActive(acc, auth) ? 1 : 0);
+            sb.append(" 待ち=").append(android.content.ContentResolver.isSyncPending(acc, auth) ? 1 : 0);
+            return sb.toString();
+        } catch (Exception e) {
+            // 権限が無い端末でも黙らない（何が読めなかったかを出す）
+            return "同期=読めず(" + e.getClass().getSimpleName() + ")";
+        }
+    }
+
+    /**
+     * v69: その暦に**まだ Google へ上がっていない行**が何件あるか（dirty=1）。
+     * 🚨 これが**増えるだけで減らないなら、同期は動いていない**＝1つの数字で判定できる
+     *    （保存直後の `未同期=1` は正常なので、それだけでは詰まりを見分けられなかった）。
+     * 読めない端末では -1（＝不明。0 と混ぜない＝「無い」と嘘をつかない）。
+     */
+    private int dirtyCount(long calendarId) {
+        String[] proj = { CalendarContract.Events._ID };
+        String sel = CalendarContract.Events.CALENDAR_ID + "=? AND " + CalendarContract.Events.DIRTY + "=1";
+        try (Cursor c = getContext().getContentResolver().query(
+                CalendarContract.Events.CONTENT_URI, proj, sel, new String[]{ String.valueOf(calendarId) }, null)) {
+            return c == null ? -1 : c.getCount();
+        } catch (Exception e) {
+            return -1;
+        }
+    }
+
     /** JS のローカル 0時 ms → その年月日の UTC 0時 ms（終日イベント用） */
     private long utcMidnightOf(long localMs) {
         Calendar local = Calendar.getInstance(); // 端末のタイムゾーン
@@ -481,7 +534,32 @@ public class CalendarEventsPlugin extends Plugin {
         out.put("source", cal.account);
         out.put("sourceType", sourceTypeName(cal.accountType));
         out.put("auto", wanted == null || wanted.isEmpty()); // 自動で決めたのか、選ばれたものか
+        // v69: **保存できること と Google に届くことは別**（実機FB第38回）＝同期の素性と滞留件数
+        out.put("sync", syncInfo(cal));
+        out.put("pending", dirtyCount(cal.id));
+        // JS が「保存はできますが Google には上がりません」と言い切れる条件だけを true にする
+        // （読めなかった時に false ＝「大丈夫」と嘘をつかない。不明は不明のまま扱う）
+        out.put("syncBlocked", isSyncBlocked(cal));
         call.resolve(out);
+    }
+
+    /**
+     * 「このアカウントは何をしても Google へ上がらない」と**言い切れる**時だけ true。
+     * 🚨 読めなかった／判断が付かない時は false（＝警告を出さない）にする。ここで曖昧を true に
+     *    倒すと、正常な端末に嘘の警告を出すことになる（v27 の「創作しない」と同じ線）。
+     */
+    private boolean isSyncBlocked(Target cal) {
+        try {
+            if (cal.account == null || cal.account.isEmpty() || cal.accountType == null || cal.accountType.isEmpty()) return false;
+            android.accounts.Account acc = new android.accounts.Account(cal.account, cal.accountType);
+            String auth = CalendarContract.AUTHORITY;
+            if (android.content.ContentResolver.getIsSyncable(acc, auth) == 0) return true;   // 暦は同期しない設定
+            if (!android.content.ContentResolver.getMasterSyncAutomatically()) return true;   // 端末全体の自動同期がオフ
+            if (!android.content.ContentResolver.getSyncAutomatically(acc, auth)) return true; // このアカウントの暦同期がオフ
+            return false;
+        } catch (Exception e) {
+            return false;
+        }
     }
 
     /** 拒否済み権限からの復帰導線（設定アプリの本アプリのページを開く） */

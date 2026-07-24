@@ -446,6 +446,14 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
     <button id="permOpen" type="button">設定を開く</button>
   </div>
 
+  <!-- v69: 端末のカレンダー同期が止まっている告知（実機FB第38回）。**権限バナーと同じ姿**にする
+       ＝新しい視覚言語を増やさない（v46）。保存は成功するので toast では気づけない＝残す。
+       ボタンは付けない: 同期の設定はアプリの設定ページではなく OS のアカウント設定にあり、
+       そこへ確実に飛ぶ手段が端末ごとに違う＝「開く」と言って開かない嘘を作らない（v51 の教訓）。 -->
+  <div class="perm" id="syncWarn">
+    <span id="syncWarnText"></span>
+  </div>
+
   <!-- 位置情報の復帰導線（v47・実機FB第29回「一度間違えて許可をしなかった時の挙動がきになります」）。
        カレンダー（v23）と同じ形。iOS の位置情報ダイアログも初回の一度きり＝拒否されるとアプリからは
        二度と出せず、v46 までは toast と診断パネルにしか出ていなかった＝
@@ -613,20 +621,20 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
      理由: この版文字列は index.html にしかないが、ロジックは別ファイル＝別キャッシュ。
      付けないと「フッタは新しいのにパーサは古い」という嘘の状態が成立する（v9 で実際に踏んだ）。
      index.html が更新されれば src の URL も変わる → JS も必ず新しく取り直される。 -->
-<script src="engine/settings.js?v=68"></script>
-<script src="engine/schema.js?v=68"></script>
-<script src="engine/parser.js?v=68"></script>
-<script src="engine/dictionary.js?v=68"></script>
-<script src="engine/contract.js?v=68"></script>
-<script src="engine/batch.js?v=68"></script>
-<script src="engine/ai.js?v=68"></script>
-<script src="input/transcriber.js?v=68"></script>
-<script src="adapters/calendar.js?v=68"></script>
-<script src="adapters/records.js?v=68"></script>
-<script src="adapters/location.js?v=68"></script>
+<script src="engine/settings.js?v=69"></script>
+<script src="engine/schema.js?v=69"></script>
+<script src="engine/parser.js?v=69"></script>
+<script src="engine/dictionary.js?v=69"></script>
+<script src="engine/contract.js?v=69"></script>
+<script src="engine/batch.js?v=69"></script>
+<script src="engine/ai.js?v=69"></script>
+<script src="input/transcriber.js?v=69"></script>
+<script src="adapters/calendar.js?v=69"></script>
+<script src="adapters/records.js?v=69"></script>
+<script src="adapters/location.js?v=69"></script>
 <script>
 'use strict';
-const BUILD = 'v68：保存先カレンダーを選べるようにした（Android・複数アカウントで自動選択が恣意的だった）· 2026-07-24';
+const BUILD = 'v69：端末の同期が止まっていると告げる（保存できても Google に届かない）· 2026-07-24';
 console.log('BUILD:', BUILD);
 document.getElementById('build').textContent = BUILD;
 
@@ -2415,6 +2423,20 @@ function renderCalendarPicker(t) {
   }
 }
 
+/// v69: 「端末には入るが Google には上がらない」を画面に出す（実機FB第38回で実際に起きた）。
+/// 🚨 **言い切れる時だけ言う**＝ syncBlocked（同期不可・自動同期オフ）が確定した時だけ警告。
+/// 滞留件数（pending）は増えるだけで減らないなら止まっている証拠＝数字で見せる（-1＝不明は出さない）。
+function showSyncWarn(t) {
+  const el = document.getElementById('syncWarn');
+  if (!el) return;
+  if (!t.syncBlocked) { el.classList.remove('show'); return; }
+  const n = t.pending > 0 ? `未送信が ${t.pending} 件たまっています。` : '';
+  document.getElementById('syncWarnText').textContent =
+    `この端末はカレンダーの同期がオフです。保存はできますが Google には上がりません（この端末の中だけに残ります）。${n}`
+    + 'Android の「設定 → パスワードとアカウント → アカウント → アカウントの同期 → カレンダー」をオンにしてください。';
+  el.classList.add('show');
+}
+
 /// 今どこへ入るかを表示する（権限は要求しない＝設定を開いただけでダイアログを出さない）。
 async function refreshCalendarTarget() {
   const el = document.getElementById('cur-calendarTarget');
@@ -2441,14 +2463,21 @@ async function refreshCalendarTarget() {
       window.__vcCalTarget = `${who}｜${t.sourceType}${t.auto ? '（自動）' : '（選択）'}`;
       // v68: 「自動で決まった」か「自分で選んだ」かを出す＝表示に嘘をつかせない。
       // 複数候補があるのに自動のままなら、それが事故の芽だと分かる形で言う（黙って選ばない）。
-      show('set-cur', t.auto
+      const where = t.auto
         ? (t.ambiguous ? `${who} — 自動で選ばれています（他にも書き込めるカレンダーがあります）` : `${who} — 自動（OS の主カレンダー）`)
-        : `${who} — ここに入ります（選択中）`);
+        : `${who} — ここに入ります（選択中）`;
+      // v69: 🚨 **保存できること と Google に届くことは別**（実機FB第38回）。
+      // 端末側の同期が止まっていると、保存は成功し端末のカレンダーにも出るのに **Google には永久に上がらない**
+      // ＝アプリからは何も間違って見えない。**言い切れる時だけ**警告する（不明は黙る＝嘘の警告を出さない）。
+      showSyncWarn(t);
+      show(t.syncBlocked ? 'set-cur warn' : 'set-cur', where);
     }
     // v67: 端末に在る暦を**選ばれなかったものも含めて**診断へ（Android のみ返る）。
     // 「なぜそこに入ったのか」を実機の画面だけで辿れるようにする＝写真1枚で決着させる。
     if (t.candidates && t.candidates.length) {
       window.__vcNote('カレンダー候補', `${t.candidates.length}件 ／ 行き先=id=${t.id || '(なし)'}${t.auto ? '（自動）' : '（選択）'}`);
+      // v69: 同期の素性と滞留件数（**保存できたか ではなく Google に届くか** の材料）
+      if (t.sync) window.__vcNote('カレンダー同期', `${t.sync} 未送信=${t.pending < 0 ? '不明' : t.pending}`);
       t.candidates.forEach((c) => window.__vcNote('　暦', `id=${c.id}「${c.title}」${c.account}／${c.sourceType}`
         + ` 書込=${c.writable ? 1 : 0} 表示=${c.visible ? 1 : 0} 同期=${c.syncEvents ? 1 : 0}${c.primary ? ' 主' : ''}`));
     }

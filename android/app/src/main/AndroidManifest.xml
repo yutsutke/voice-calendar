@@ -47,6 +47,11 @@
          無いため READ+WRITE を要求する（READ は書き込み先カレンダーの解決だけに使う＝既存予定は読まない） -->
     <uses-permission android:name="android.permission.READ_CALENDAR" />
     <uses-permission android:name="android.permission.WRITE_CALENDAR" />
+    <!-- v69: 保存した予定が Google まで上がるかは **アカウントの同期設定** が決める（カレンダー権限とは別物）。
+         これが読めないと「端末には在るのにサーバに無い」を実機の画面から説明できない（実機FB第38回で実際に詰まった）。
+         normal permission ＝インストール時に付与・ダイアログは出ない・**設定を変更する権限ではない**（読むだけ）。 -->
+    <uses-permission android:name="android.permission.READ_SYNC_SETTINGS" />
+    <uses-permission android:name="android.permission.READ_SYNC_STATS" />
 
     <!-- Android 11+ のパッケージ可視性: これが無いと SpeechRecognizer.isRecognitionAvailable が
          音声認識サービスを見つけられず false を返す（黙って「利用できません」になる罠） -->
