@@ -624,20 +624,20 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
      理由: この版文字列は index.html にしかないが、ロジックは別ファイル＝別キャッシュ。
      付けないと「フッタは新しいのにパーサは古い」という嘘の状態が成立する（v9 で実際に踏んだ）。
      index.html が更新されれば src の URL も変わる → JS も必ず新しく取り直される。 -->
-<script src="engine/settings.js?v=70"></script>
-<script src="engine/schema.js?v=70"></script>
-<script src="engine/parser.js?v=70"></script>
-<script src="engine/dictionary.js?v=70"></script>
-<script src="engine/contract.js?v=70"></script>
-<script src="engine/batch.js?v=70"></script>
-<script src="engine/ai.js?v=70"></script>
-<script src="input/transcriber.js?v=70"></script>
-<script src="adapters/calendar.js?v=70"></script>
-<script src="adapters/records.js?v=70"></script>
-<script src="adapters/location.js?v=70"></script>
+<script src="engine/settings.js?v=71"></script>
+<script src="engine/schema.js?v=71"></script>
+<script src="engine/parser.js?v=71"></script>
+<script src="engine/dictionary.js?v=71"></script>
+<script src="engine/contract.js?v=71"></script>
+<script src="engine/batch.js?v=71"></script>
+<script src="engine/ai.js?v=71"></script>
+<script src="input/transcriber.js?v=71"></script>
+<script src="adapters/calendar.js?v=71"></script>
+<script src="adapters/records.js?v=71"></script>
+<script src="adapters/location.js?v=71"></script>
 <script>
 'use strict';
-const BUILD = 'v70：発話中に見える認識文字を大きく · 2026-07-26';
+const BUILD = 'v71：記録📝はカレンダー保存でも印を付ける · 2026-07-26';
 console.log('BUILD:', BUILD);
 document.getElementById('build').textContent = BUILD;
 
@@ -1748,8 +1748,8 @@ async function saveBatchEntries(entries, onProgress, auto) { // v59: auto=自動
         else failCount++; // カードに残る（理由は保存を1件で押せば出る）
       }
       if (valid.length) {
-        // 「両方」では記録📝にカレンダー側の印を付ける（doSave と同じ規則）
-        const calEvents = valid.map(({ event }) => (dest === 'both' && event.start.getTime() <= now.getTime())
+        // 記録📝はカレンダー側の印を付ける（saveDraftCore と同じ規則＝v71 で保存先によらず付ける）
+        const calEvents = valid.map(({ event }) => (event.start.getTime() <= now.getTime())
           ? Object.assign({}, event, { title: `📝 ${event.title}` })
           : event);
         try {
@@ -2576,9 +2576,13 @@ async function saveDraftCore(draft, now, opts) {
   if (toCal) {
     const adapter = VCAdapter.pickAdapter();
     calAdapterName = adapter.name;
-    // 「両方」のときだけ、記録📝はカレンダー側でも予定と見分けが付くようタイトルに印を付ける
-    // （既定「カレンダーのみ」では付けない: 触らない人の体験を1ミリも変えない＝v19）
-    const calEvent = (dest === 'both' && isRecord)
+    // 記録📝は**保存先によらず**カレンダー側のタイトルに印を付ける（v71・ゆう要求）。
+    // v32 は「両方」の時だけ付けていた（理由＝既定の体験を変えない・v19）。それを覆した理由:
+    //   ① 📝は「これは記録（起きたこと）／予定ではない」という**事実**であって保存先の属性ではない
+    //      ＝同じ発話が保存先の設定次第でカレンダー上の見た目を変えるのは、表示に嘘をつかせている（v20）。
+    //   ② この印は**ライフログ側が kind=実績を判定する暗黙の契約**（📝が付いた予定＝意識(実際)）
+    //      ＝「カレンダーのみ」で保存すると連携が黙って切れていた（TODO の宿題「保存先に依存せず記録に📝」）。
+    const calEvent = isRecord
       ? Object.assign({}, res.event, { title: `📝 ${res.event.title}` })
       : res.event;
     try {
