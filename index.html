@@ -126,7 +126,10 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
   .ov-btn:active { opacity: .6; }
   .ov-btn.on { border-color: var(--accent); color: var(--accent); background: var(--lock); font-weight: 600; }
   .ov-btn[hidden] { display: none; }
-  .transcript { min-height: 24px; text-align: center; color: var(--sub); font-size: 14px; margin: 2px 0 4px; overflow-wrap: anywhere; }
+  /* v70: 発話中に出る文字（途中結果「… こんにちは」・確定の「🗣 …」）を大きく（実機FBの要求）。
+     ノールックの直前に「今なんと認識されているか」を*見る*唯一の場所＝手元から離れていても読める大きさに。
+     確定（.final）も同じ要素なので一緒に大きくなる＝同じ趣旨（生テキストは認識/解釈の切り分けの起点＝来歴の 🗣 と同じもの）。 */
+  .transcript { min-height: 30px; text-align: center; color: var(--sub); font-size: 20px; line-height: 1.4; margin: 4px 0 6px; overflow-wrap: anywhere; }
   .transcript .final { color: var(--ink); }
   .notes { text-align: center; font-size: 12px; color: var(--warn); min-height: 18px; margin-bottom: 8px; }
 
@@ -621,20 +624,20 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
      理由: この版文字列は index.html にしかないが、ロジックは別ファイル＝別キャッシュ。
      付けないと「フッタは新しいのにパーサは古い」という嘘の状態が成立する（v9 で実際に踏んだ）。
      index.html が更新されれば src の URL も変わる → JS も必ず新しく取り直される。 -->
-<script src="engine/settings.js?v=69"></script>
-<script src="engine/schema.js?v=69"></script>
-<script src="engine/parser.js?v=69"></script>
-<script src="engine/dictionary.js?v=69"></script>
-<script src="engine/contract.js?v=69"></script>
-<script src="engine/batch.js?v=69"></script>
-<script src="engine/ai.js?v=69"></script>
-<script src="input/transcriber.js?v=69"></script>
-<script src="adapters/calendar.js?v=69"></script>
-<script src="adapters/records.js?v=69"></script>
-<script src="adapters/location.js?v=69"></script>
+<script src="engine/settings.js?v=70"></script>
+<script src="engine/schema.js?v=70"></script>
+<script src="engine/parser.js?v=70"></script>
+<script src="engine/dictionary.js?v=70"></script>
+<script src="engine/contract.js?v=70"></script>
+<script src="engine/batch.js?v=70"></script>
+<script src="engine/ai.js?v=70"></script>
+<script src="input/transcriber.js?v=70"></script>
+<script src="adapters/calendar.js?v=70"></script>
+<script src="adapters/records.js?v=70"></script>
+<script src="adapters/location.js?v=70"></script>
 <script>
 'use strict';
-const BUILD = 'v69：端末の同期が止まっていると告げる（保存できても Google に届かない）· 2026-07-24';
+const BUILD = 'v70：発話中に見える認識文字を大きく · 2026-07-26';
 console.log('BUILD:', BUILD);
 document.getElementById('build').textContent = BUILD;
 

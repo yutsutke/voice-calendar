@@ -1,5 +1,22 @@
 # voice-calendar — CHANGELOG（build log・最新が上）
 
+## v70 — 発話中に見える認識文字を大きく (2026-07-26)
+
+**背景（ゆう要求・実機スクショ）**
+- 録音中に出る途中結果（スクショの「… こんにちは」）が 14px ＝ **小さくて読めない**。「フォントサイズを大きくしてほしい」。
+
+**設計判断**
+- `.transcript` は**途中結果（`… …`）と確定（`🗣 …`）の両方**が出る同じ要素＝**まとめて大きくする**。確定側も「今なんと認識されたか」を見る場所（来歴の 🗣 と同じ生テキスト）＝**同じ趣旨**なので分けない（新しい要素も新しいクラスも増やさない）。
+- **14px → 20px**（`line-height: 1.4` / `min-height: 24→30px` / 上下 margin を 2/4 → 4/6px）。マイクの状態行（`.mic-state` 13px）は据え置き＝**大きいのは「認識された言葉」だけ**（主従を保つ＝v46/v63 と同じ線）。
+- `overflow-wrap: anywhere` は不変＝長い発話は折り返す（横スクロールを作らない）。
+
+**結果・観察**
+- テスト **489/489**（ロジック不変）。実ブラウザ 375px で computed を実測＝`font-size:20px` / `line-height:28px`、1行 30px・長文（30字）で 2行 56px・`body.scrollWidth == 375`（横漏れ無し）・console 0・BUILD=v70。
+- **web 完結・native の変更ゼロ**（iOS/Android とも既存ビルドの WebView がそのまま新しい見た目になる）。
+
+**ハマったところ**
+- 🚨 **PowerShell の `Get-Content | Set-Content` で index.html を壊した**（`?v=69→70` の一括置換に使った）＝ PS 5.1 の `Get-Content` は **BOM 無し UTF-8 を ANSI として読む** → 日本語が全て二重エンコード＋BOM 付与＋CRLF 化（`git diff --stat` が 767/1201 行）。`git checkout` で巻き戻し、**Edit（replace_all）でやり直した**。教訓＝**このリポの日本語ファイルを PowerShell で読み書きしない**（[[powershell-scriptfile-quirk]] の同類）。
+
 ## v69 — 端末の同期が止まっていることを画面に出す（保存できても Google に届かない） (2026-07-24)
 
 **背景（実機FB第38回）**
