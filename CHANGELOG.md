@@ -23,6 +23,11 @@
 - **Android は成果物を検分**＝ `bundleRelease` 成功・**merged manifest に位置権限2つと `versionCode=6`**・AAB 内 `base/assets/public/index.html` が `BUILD=v72` / `?v=72` ×11 / `LOCATION_ENABLED = true`・`jarsigner -verify` = `jarが検証されました`（3.27MB）。
 - **iOS は Windows でコンパイルできない**＝ **次の Codemagic ビルド（1.2）が DeviceLocation 復帰の初検証**。ただし v52 の Swift は実機FB第35回で**動作確認済みのコード**＝新規実装ではない。
 
+**🎉 実機FB第40回（Android・同日夕）＝4点すべて通過**
+- ゆう「**アンドロイドはすべて、うまくいきました**」＝ ①位置の許可ダイアログが出る ②診断の `📍 位置エンジン` が `web`（Android の正） ③保存した行に 🗺 が付く ④**OS で位置をオフ→オンした時に、アプリを開き直さずに反映される**。
+- 🔑 **④が本命**＝ 上で「**起きない見込み**」と書いた WKWebView 病（v52・実機FB第33回で iOS が踏んだ「許可状態をプロセス内に握る」）が、**Android では実測で出なかった**＝ node_modules のソースから立てた読み（`onGeolocationPermissionsShowPrompt` が要求のたびに `PermissionHelper.hasPermissions` を読み直す）が実機で裏付けられた。**見込みが実測になった**＝ Android に位置プラグインを書かない判断が正しかったことの確認。
+- ⇒ **Android の位置情報は端から端まで成立**（コード追加は manifest の権限2行だけ）。
+
 ## v71 — 記録📝はカレンダー保存でも印を付ける（保存先で見た目を変えない） (2026-07-26)
 
 **背景（ゆう要求・実機）**

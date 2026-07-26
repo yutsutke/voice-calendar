@@ -366,9 +366,12 @@
 > - **Android は AAB を再生成して成果物を検分**＝ merged manifest に位置権限2つ＋`versionCode=6`・AAB 内の同梱 web が `BUILD=v72`/`?v=72`×11/`LOCATION_ENABLED = true`・`jarsigner` 検証済み（3.27MB）。**この AAB には v70/v71 も載っている**（溜まっていた web 分がまとめて実機へ届く）。
 > - ⚠ **iOS は Windows でコンパイル不可**＝**次の Codemagic ビルド（1.2）が DeviceLocation 復帰の初検証**（v52 の Swift は実機FB第35回で動作確認済み＝新規実装ではない）。
 >
-> **▶▶ 次＝実機へ届ける（ゆうの手番）**:
-> - **Android**: `android/app/build/outputs/bundle/release/app-release.aab`（versionCode 6）を Play 内部テストへ。実機で見るのは ①位置の許可ダイアログが出るか ②診断の `📍 位置エンジン` / `📍 許可状態`（Android は `web` になるのが正）③保存した行に 🗺 が付くか ④OS で位置をオフ→オンした時に**開き直さずに**反映されるか（**iOS の v52 病が Android で出ないことの実測**）。
-> - **iOS**: Codemagic を手動 Start new build → **1.2(21)**。v63/v64（Quick Action の native 初検証）＋v66-v72 の web 分＋**DeviceLocation の復帰**が一度に載る。
+> **🎉 実機FB第40回（Android・同日夕）＝v72 の4点すべて通過**: ゆう「**アンドロイドはすべて、うまくいきました**」＝ ①許可ダイアログ ②診断 `📍 位置エンジン: web` ③🗺 が付く ④**OS で位置をオフ→オンして、開き直さずに反映される**。🔑 **④が本命**＝私が「起きない**見込み**」と書いた **WKWebView 病（v52・iOS が踏んだ「許可をプロセス内に握る」）が Android では実測で出なかった**＝ node_modules のソースから立てた読み（要求のたびに権限を読み直す）が実機で裏付けられた＝**Android に位置プラグインを書かない判断が正しかった**（追加コードは manifest の権限2行だけ）。⇒ **Android の位置情報は端から端まで成立**。
+>
+> **▶▶ セッション締め（2026-07-26 18:20・夕の回）＝位置情報の復活（v72）**: ゆう要求「位置情報をつかえるようにもどす」→ v62 で審査用に眠らせた4点セットを戻し、Android は新規対応。**Android は実機で4点通過**／**iOS は未ビルド**（ゆう「この先まとめてやります」）。push 済み・Pages 配信検証済み（`status=built`・配信 HTML が BUILD=v72 / `LOCATION_ENABLED = true` / privacy の位置記述も復帰）・テスト 489/489。
+> - **▶▶ ゆうの手番（次回）＝ iOS をまとめてビルド**: Codemagic を手動 Start new build → **1.2(21)**。載るもの＝ **v63**（オーバーライドのボタン寸法）**v64**（ホーム長押し→リスト・**native 初検証**）＋ **v66-v72 の web 分** ＋ **v72 の DeviceLocation 復帰**（Info.plist / Package.swift / package.json）。⚠ **Windows で `npx cap sync ios` を実行しないこと**（Package.swift のパスがバックスラッシュになる）＝ CI が macOS で再 sync する。
+> - ⚠ **次に App Store へ出す時の判断**: 1.2 には**位置が復活した状態で載る**＝ Guideline 2.1 のリスクが戻る。**キルスイッチは残してある**＝提出直前に `LOCATION_ENABLED=false` ＋ native 3点（package.json / Package.swift / Info.plist）を外せば v62 の姿に戻せる（TestFlight・Play 内部テストは審査無しなので実機検証には影響しない）。
+> - ⚠ **Play の本番公開の段**: 要求するのは**前景の位置のみ**（`ACCESS_BACKGROUND_LOCATION` は無し）＝「位置情報の権限に関する申告フォーム」は**背景位置がある時だけ**なので該当しない。ただし**データセーフティの申告**は見直しが要る（端末外に出さない＝「収集しない」で通る想定）。
 >
 > **▶▶ その後＝Pages で v59 を触る（実機ビルド不要）＋溜まったら次へ**:
 > 0. 🆕 **v59 の CSV**＝数日使って書き出し、**経路列でルール行 vs AI 行の訂正率**・**生テキスト×タイトル**（v58①）・**信頼度で認識/解釈の切り分け**が読めるか。読めれば v58② を「数」で判断できる。
