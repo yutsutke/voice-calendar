@@ -1,5 +1,28 @@
 # voice-calendar — CHANGELOG（build log・最新が上）
 
+## v72 — 位置情報を復活（web + iOS + Android・Android は初対応） (2026-07-26)
+
+**背景（ゆう要求）**
+- 「**位置情報をつかえるようにもどす**」。v62（2026-07-23）で **App Store 1.1 の審査面を減らすために丸ごと無効化**していた（Guideline 2.1 の前例＝AI の説明文が引き金になった経験から、位置は厳しいと判断）。
+- **1.1 は承認・公開された**（2026-07-24）＝止めていた理由（審査を通すこと）は達成済み。v62 は「**可逆**」を設計目標にしていた＝その回収。
+
+**設計判断**
+- **v62 の差分をそのまま逆にした**（`git show 4f29b73` を「戻すべき正」として使った）＝ 記憶や再設計ではなく**当時消した現物**を戻す。4点セット:
+  - `index.html` の `LOCATION_ENABLED = false → true`（設定行・🗺・取得・warm-up・復帰チェックが全部この1フラグから導出される）
+  - `package.json` に `device-location`（**ここが native の正**＝ `cap sync` が Package.swift を package.json から再生成する）＋ `Package.swift` の DeviceLocation 2行
+  - `Info.plist` の `NSLocationWhenInUseUsageDescription`
+  - `privacy.html` の位置記述（JP/EN）＝**ポリシーはアプリの実物と一致させる**（v62 は「無い機能を書かない」ために消した＝今回は逆方向に同じ原則）
+- 🔑 **キルスイッチは残す**＝次に App Store へ出す時に「審査面を減らす」判断を**もう一度できる**（false に戻すだけ＝v62 で実証済み）。コメントに 4点セットを明記＝**片方だけ戻して JS だけ生きている状態を作らない**。
+- 🆕 **Android は位置プラグインを作らない**（v52 の Java 移植をしない）。理由＝ Capacitor の `BridgeWebChromeClient` が `onGeolocationPermissionsShowPrompt` で**位置要求のたびに** `PermissionHelper.hasPermissions` を読み直し、無ければランタイムダイアログを出す実装を持っている（node_modules のソースで確認）＝ **web 経路の `navigator.geolocation` がそのまま通る**。**manifest に `ACCESS_COARSE_LOCATION` / `ACCESS_FINE_LOCATION` を足すだけ。**
+  - iOS で native プラグイン（CLLocationManager）が要ったのは **WKWebView が許可状態をプロセス内に握って OS の変更を見ない**病気があったから（v52・実機FB第33回）。**Android は要求のたびに読み直す構造なので同じ病気は起きない見込み**＝ ⚠ **見込みであって実測ではない**（実機の診断 `📍 許可状態` で確認する）。**移植先の制約をそのまま引き継がない**（v67 の教訓の逆側＝ここでは「iOS で要ったものが Android でも要るとは限らない」）。
+  - COARSE も宣言するのは Android 12+ が「おおよその位置」だけを許可できるため（精度は落ちても取れる＝取れないより良い。用途は「保存した時にいた場所」）。
+
+**結果・観察**
+- テスト **489/489**（`?v=72` の一致も version.test が強制）。
+- **実ブラウザ実測**＝ 設定行「保存時に位置情報も記録する」が復活し **既定オフ**（ロード時の `getCurrentPosition` 呼び出し **0回**）／診断 `📍 位置エンジン: web`／設定をオンにした瞬間に warm-up が**1回**・options は `{enableHighAccuracy:false, timeout:8000, maximumAge:0}`（**v50 の「切ったら本当に取らない」が生きている**）／拒否 → バナー「位置情報が許可されていません…設定を開く」（v52 の復帰導線）／座標付きの行に **🗺 地図で見る**（`query=35.68123,139.76712`＝座標ピン）／console 0・BUILD=v72。
+- **Android は成果物を検分**＝ `bundleRelease` 成功・**merged manifest に位置権限2つと `versionCode=6`**・AAB 内 `base/assets/public/index.html` が `BUILD=v72` / `?v=72` ×11 / `LOCATION_ENABLED = true`・`jarsigner -verify` = `jarが検証されました`（3.27MB）。
+- **iOS は Windows でコンパイルできない**＝ **次の Codemagic ビルド（1.2）が DeviceLocation 復帰の初検証**。ただし v52 の Swift は実機FB第35回で**動作確認済みのコード**＝新規実装ではない。
+
 ## v71 — 記録📝はカレンダー保存でも印を付ける（保存先で見た目を変えない） (2026-07-26)
 
 **背景（ゆう要求・実機）**

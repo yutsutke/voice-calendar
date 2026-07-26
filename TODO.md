@@ -360,7 +360,17 @@
 > - ⚠ **実機アプリには次のビルドで届く**（アプリは Pages でなく同梱 web を読む）。**iOS 1.2 が未ビルド**のまま溜まっている＝v63/v64（Quick Action の native 初検証）＋ v66-v71 の web 分をまとめて Codemagic で回すのが効率的。Android は Windows ローカルで AAB を作れる（versionCode は 5 の次＝6 へ）。
 > - 📌 環境メモ: `?v=` の一括置換に PowerShell を使って index.html を文字化けさせた（PS 5.1 の `Get-Content` が BOM 無し UTF-8 を ANSI 読み）→ `git checkout` で巻き戻して Edit でやり直し。**このリポの日本語ファイルを PowerShell で読み書きしない**（メモリに記録済み）。
 >
-> **▶▶ 次＝Pages で v59 を触る（実機ビルド不要）＋溜まったら次へ**:
+> **🔧 v72（2026-07-26 夕・ゆう要求）＝位置情報を復活（web + iOS + Android）**: 「位置情報をつかえるようにもどす」＝ v62 で審査用に丸ごと無効化した分の回収（**1.1 は承認・公開済み＝止めていた理由は達成済み**）。**`git show 4f29b73`（v62 の差分）を「戻すべき正」として逆に当てた**＝記憶で再設計せず当時消した現物を戻す。4点セット＝ `LOCATION_ENABLED=true` ／ `package.json` の device-location（**ここが native の正**＝cap sync が Package.swift を再生成）＋Package.swift 2行 ／ Info.plist の `NSLocationWhenInUseUsageDescription` ／ privacy.html の位置記述（JP/EN）。🔑 **キルスイッチは残した**＝次の App Store 提出前に「審査面を減らす」判断をもう一度できる（false に戻すだけ・4点セットで戻すことをコメントに明記）。
+> - 🆕 **Android は位置プラグインを作らない**＝ Capacitor の `BridgeWebChromeClient` が**位置要求のたびに** OS の権限を読み直してダイアログを出す（node_modules のソースで確認）＝ **manifest に ACCESS_COARSE/FINE_LOCATION を足すだけで web 経路が通る**。iOS で native が要ったのは WKWebView が許可を握る病気（v52）＝ **移植先の制約をそのまま引き継がない**。⚠ **「起きない見込み」であって実測ではない**（実機の診断 `📍 許可状態` で確認する）。
+> - **テスト 489/489**・実ブラウザ実測（既定オフ＝ロード時の取得0回／オンで warm-up 1回・`maximumAge:0`＝v50 が生きている／拒否でバナー／🗺 復活／console 0・BUILD=v72）。
+> - **Android は AAB を再生成して成果物を検分**＝ merged manifest に位置権限2つ＋`versionCode=6`・AAB 内の同梱 web が `BUILD=v72`/`?v=72`×11/`LOCATION_ENABLED = true`・`jarsigner` 検証済み（3.27MB）。**この AAB には v70/v71 も載っている**（溜まっていた web 分がまとめて実機へ届く）。
+> - ⚠ **iOS は Windows でコンパイル不可**＝**次の Codemagic ビルド（1.2）が DeviceLocation 復帰の初検証**（v52 の Swift は実機FB第35回で動作確認済み＝新規実装ではない）。
+>
+> **▶▶ 次＝実機へ届ける（ゆうの手番）**:
+> - **Android**: `android/app/build/outputs/bundle/release/app-release.aab`（versionCode 6）を Play 内部テストへ。実機で見るのは ①位置の許可ダイアログが出るか ②診断の `📍 位置エンジン` / `📍 許可状態`（Android は `web` になるのが正）③保存した行に 🗺 が付くか ④OS で位置をオフ→オンした時に**開き直さずに**反映されるか（**iOS の v52 病が Android で出ないことの実測**）。
+> - **iOS**: Codemagic を手動 Start new build → **1.2(21)**。v63/v64（Quick Action の native 初検証）＋v66-v72 の web 分＋**DeviceLocation の復帰**が一度に載る。
+>
+> **▶▶ その後＝Pages で v59 を触る（実機ビルド不要）＋溜まったら次へ**:
 > 0. 🆕 **v59 の CSV**＝数日使って書き出し、**経路列でルール行 vs AI 行の訂正率**・**生テキスト×タイトル**（v58①）・**信頼度で認識/解釈の切り分け**が読めるか。読めれば v58② を「数」で判断できる。
 > 1. 🆕 **v58② は測ってから**＝経路別の訂正率・「AI が記録を曖昧に倒す率」を見て、AI 契約に「記録で時刻なし→今に倒す・曖昧扱いにしない（ルールの v27 と揃える）」を教えるか判断（⚠「夕方あたり」を褒められた挙動を壊さない線を守る）。
 > 2. 🆕 **App Store 新バージョン提出**（v32-v58 を公開版へ）＝やる時に段取り。素材は [docs/appstore.md](docs/appstore.md)。

@@ -38,7 +38,7 @@
         </provider>
     </application>
 
-    <!-- Permissions（iOS の Info.plist 権限4つに対応する Android 側。位置情報は v62 で休眠中＝入れない） -->
+    <!-- Permissions（iOS の Info.plist 権限に対応する Android 側） -->
 
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- 音声入力（SpeechRecognizer）。転写はシステムの音声認識サービスが行う -->
@@ -52,6 +52,19 @@
          normal permission ＝インストール時に付与・ダイアログは出ない・**設定を変更する権限ではない**（読むだけ）。 -->
     <uses-permission android:name="android.permission.READ_SYNC_SETTINGS" />
     <uses-permission android:name="android.permission.READ_SYNC_STATS" />
+
+    <!-- v72: 位置情報（詳細設定「保存時に位置情報も記録する」＝**既定オフ**・端末の外に出さない）。
+         🔑 **Android は位置プラグインを作らない**＝ Capacitor の BridgeWebChromeClient が
+         onGeolocationPermissionsShowPrompt で **位置要求のたびに** OS の権限状態を読み直し
+         （PermissionHelper.hasPermissions）、無ければランタイムダイアログを出す実装を持っている
+         ＝ web 経路の navigator.geolocation がそのまま通る（node_modules のソースで確認）。
+         ※ iOS で native プラグイン（CLLocationManager）が要ったのは、WKWebView が許可状態を
+           プロセス内に握って OS の変更を見ない病気があったから（v52・実機FB第33回）。
+           Android は要求のたびに読み直す構造なので同じ病気は起きない**見込み**（実機で確認する）。
+         COARSE も宣言するのは Android 12+ が「おおよその位置」だけを許可できるため
+         （精度は落ちるが取れる＝取れないより良い。用途は「保存した時にいた場所」）。 -->
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
 
     <!-- Android 11+ のパッケージ可視性: これが無いと SpeechRecognizer.isRecognitionAvailable が
          音声認識サービスを見つけられず false を返す（黙って「利用できません」になる罠） -->

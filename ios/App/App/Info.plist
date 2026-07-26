@@ -45,9 +45,11 @@
 	</array>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
-	<!-- v62: 位置情報は審査用ビルドで無効化（キー除去＝審査が「位置を使うアプリ」と見なさない）。
-	     JS の LOCATION_ENABLED / package.json の device-location / Package.swift の DeviceLocation も同時に外す。
-	     復活させる時はこの NSLocationWhenInUseUsageDescription を戻す。 -->
+	<!-- v72: 位置情報を復活（v62 で審査用に外していたキーを戻した）。
+	     再び外す時は JS の LOCATION_ENABLED / package.json の device-location /
+	     Package.swift の DeviceLocation も同時に外す（4点セット＝v62 で実証済み）。 -->
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>保存した時にいた場所をアプリ内のリストに残すために使います（詳細設定でオンにした場合のみ）。位置情報は端末の外に送信されません。</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>話した内容を予定のテキストに変換するために音声認識を使います。認識は可能な限り端末内で行います。</string>
 	<key>NSMicrophoneUsageDescription</key>

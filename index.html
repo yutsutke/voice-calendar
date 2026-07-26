@@ -624,20 +624,20 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
      理由: この版文字列は index.html にしかないが、ロジックは別ファイル＝別キャッシュ。
      付けないと「フッタは新しいのにパーサは古い」という嘘の状態が成立する（v9 で実際に踏んだ）。
      index.html が更新されれば src の URL も変わる → JS も必ず新しく取り直される。 -->
-<script src="engine/settings.js?v=71"></script>
-<script src="engine/schema.js?v=71"></script>
-<script src="engine/parser.js?v=71"></script>
-<script src="engine/dictionary.js?v=71"></script>
-<script src="engine/contract.js?v=71"></script>
-<script src="engine/batch.js?v=71"></script>
-<script src="engine/ai.js?v=71"></script>
-<script src="input/transcriber.js?v=71"></script>
-<script src="adapters/calendar.js?v=71"></script>
-<script src="adapters/records.js?v=71"></script>
-<script src="adapters/location.js?v=71"></script>
+<script src="engine/settings.js?v=72"></script>
+<script src="engine/schema.js?v=72"></script>
+<script src="engine/parser.js?v=72"></script>
+<script src="engine/dictionary.js?v=72"></script>
+<script src="engine/contract.js?v=72"></script>
+<script src="engine/batch.js?v=72"></script>
+<script src="engine/ai.js?v=72"></script>
+<script src="input/transcriber.js?v=72"></script>
+<script src="adapters/calendar.js?v=72"></script>
+<script src="adapters/records.js?v=72"></script>
+<script src="adapters/location.js?v=72"></script>
 <script>
 'use strict';
-const BUILD = 'v71：記録📝はカレンダー保存でも印を付ける · 2026-07-26';
+const BUILD = 'v72：位置情報を復活（LOCATION_ENABLED=true ＋ iOS の DeviceLocation / Info.plist ＋ Android の位置権限）· 2026-07-26';
 console.log('BUILD:', BUILD);
 document.getElementById('build').textContent = BUILD;
 
@@ -1175,12 +1175,16 @@ renderHistory();
 // 台帳（adapters/records.js）から描く。予定/記録のトグルで「予定だけ・記録だけ・両方」の3通り。
 // 台帳が読み込めなくても本体（フォーム・保存）は殺さない（v13: 補助機能の失敗が本体を殺さない）。
 // ===== 位置情報（v38・設定オン時のみ）=====
-// 🔴 v62: **審査用に位置情報を丸ごと無効化するキルスイッチ**（ゆう判断＝App Store 審査で位置は厳しい）。
+// 🔑 **位置情報のキルスイッチ**（v62 で新設・v72 で ON へ戻した）。
 //   false の間: 設定行・🗺地図・取得・warm-up・復帰チェックがすべて出ない/走らない（VCLoc=null に集約）。
-//   native 側は Info.plist の位置キー・package.json の device-location・Package.swift の DeviceLocation を
-//   同時に外してある（審査が「位置を使うアプリ」と見なさない）。コード・プラグイン・テストは休眠で残す
-//   ＝将来ここを true に戻し + native 3点を戻せば復活（v38/v50/v52 の投資を捨てない）。
-const LOCATION_ENABLED = false;
+//   v62（2026-07-23）は App Store 1.1 の審査面を減らすために false にし、native 宣言（Info.plist の
+//   位置キー・package.json の device-location・Package.swift の DeviceLocation）も同時に外した。
+//   → 1.1 は承認・公開された（2026-07-24）。**v72（ゆう要求）で復活**＝ここを true に戻し、native 3点も戻した。
+//   ＋ Android は位置プラグインを作らず、manifest の ACCESS_COARSE/FINE_LOCATION で web 経路が通る
+//     （Capacitor の BridgeWebChromeClient が位置要求のたびに OS の権限を読み直してダイアログを出す）。
+//   🚨 **このスイッチは残す**＝次に App Store へ出す時に「審査面を減らす」判断をもう一度できる
+//     （false に戻すだけで web/native とも位置が消える＝v62 で実証済み）。native 3点も一緒に外すこと。
+const LOCATION_ENABLED = true;
 // 保存時にいた場所を台帳の行に残す。失敗は診断に出す（補助機能＝toast で騒がないが黙って消えない v16）。
 //
 // 🔴 **取得も許可状態も adapters/location.js 経由**（v52・実機FB第33回）＝ native は
@@ -2226,7 +2230,7 @@ function renderSettings() {
   const list = document.getElementById('settingsList');
   list.innerHTML = '';
   for (const d of settings.DEFS) {
-    if (!LOCATION_ENABLED && d.key === 'captureLocation') continue; // v62: 位置は無効化中＝設定行を出さない（死んだ設定を見せない）
+    if (!LOCATION_ENABLED && d.key === 'captureLocation') continue; // キルスイッチが false の間は設定行を出さない（死んだ設定を見せない）
     if (d.render === 'custom') continue; // v68: 選択肢が実行時に決まる（保存先カレンダー）＝下の専用行で描く
     const item = document.createElement('div');
     item.className = 'set-item';

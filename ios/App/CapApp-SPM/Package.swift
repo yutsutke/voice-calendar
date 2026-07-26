@@ -13,6 +13,7 @@ let package = Package(
     dependencies: [
         .package(url: "https://github.com/ionic-team/capacitor-swift-pm.git", exact: "8.4.2"),
         .package(name: "CalendarEvents", path: "../../../local-plugins/calendar-events"),
+        .package(name: "DeviceLocation", path: "../../../local-plugins/device-location"),
         .package(name: "SpeechRecognition", path: "../../../local-plugins/speech-recognition")
     ],
     targets: [
@@ -22,6 +23,7 @@ let package = Package(
                 .product(name: "Capacitor", package: "capacitor-swift-pm"),
                 .product(name: "Cordova", package: "capacitor-swift-pm"),
                 .product(name: "CalendarEvents", package: "CalendarEvents"),
+                .product(name: "DeviceLocation", package: "DeviceLocation"),
                 .product(name: "SpeechRecognition", package: "SpeechRecognition")
             ]
         )
