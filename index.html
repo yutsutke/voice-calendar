@@ -624,20 +624,20 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
      理由: この版文字列は index.html にしかないが、ロジックは別ファイル＝別キャッシュ。
      付けないと「フッタは新しいのにパーサは古い」という嘘の状態が成立する（v9 で実際に踏んだ）。
      index.html が更新されれば src の URL も変わる → JS も必ず新しく取り直される。 -->
-<script src="engine/settings.js?v=72"></script>
-<script src="engine/schema.js?v=72"></script>
-<script src="engine/parser.js?v=72"></script>
-<script src="engine/dictionary.js?v=72"></script>
-<script src="engine/contract.js?v=72"></script>
-<script src="engine/batch.js?v=72"></script>
-<script src="engine/ai.js?v=72"></script>
-<script src="input/transcriber.js?v=72"></script>
-<script src="adapters/calendar.js?v=72"></script>
-<script src="adapters/records.js?v=72"></script>
-<script src="adapters/location.js?v=72"></script>
+<script src="engine/settings.js?v=73"></script>
+<script src="engine/schema.js?v=73"></script>
+<script src="engine/parser.js?v=73"></script>
+<script src="engine/dictionary.js?v=73"></script>
+<script src="engine/contract.js?v=73"></script>
+<script src="engine/batch.js?v=73"></script>
+<script src="engine/ai.js?v=73"></script>
+<script src="input/transcriber.js?v=73"></script>
+<script src="adapters/calendar.js?v=73"></script>
+<script src="adapters/records.js?v=73"></script>
+<script src="adapters/location.js?v=73"></script>
 <script>
 'use strict';
-const BUILD = 'v72：位置情報を復活（LOCATION_ENABLED=true ＋ iOS の DeviceLocation / Info.plist ＋ Android の位置権限）· 2026-07-26';
+const BUILD = 'v73：同期の警告を「設定フラグ」から「実際に上がったか（syncId）」へ · 2026-07-29';
 console.log('BUILD:', BUILD);
 document.getElementById('build').textContent = BUILD;
 
@@ -2431,16 +2431,21 @@ function renderCalendarPicker(t) {
 }
 
 /// v69: 「端末には入るが Google には上がらない」を画面に出す（実機FB第38回で実際に起きた）。
-/// 🚨 **言い切れる時だけ言う**＝ syncBlocked（同期不可・自動同期オフ）が確定した時だけ警告。
-/// 滞留件数（pending）は増えるだけで減らないなら止まっている証拠＝数字で見せる（-1＝不明は出さない）。
+/// 🚨 **言い切れる時だけ言う**＝ syncStalled（自分が保存した行が一定時間たっても上がっていない）だけが根拠。
+///
+/// 🔴 v73: v69 は**設定フラグ**（同期可 / 暦同期 / 端末の自動同期）で警告していたが、実機で嘘だった
+///    （`同期可=0 暦同期=OFF` と読める端末で、保存した行は約1分後に Google のサーバへ届いていた）。
+///    ＝ フラグは「上がるか」を表していない → 判定は native の uploadProof（syncId が付いたか）へ移した。
+///    **原因は断定しない**（設定かもしれないし、そうでないかもしれない）＝観測した事実だけを述べて確認を促す。
 function showSyncWarn(t) {
   const el = document.getElementById('syncWarn');
   if (!el) return;
-  if (!t.syncBlocked) { el.classList.remove('show'); return; }
-  const n = t.pending > 0 ? `未送信が ${t.pending} 件たまっています。` : '';
+  if (!t || !t.syncStalled) { el.classList.remove('show'); return; }
+  const age = t.unsentMin > 0 ? `${t.unsentMin}分たっても ` : '';
+  const n = t.pending > 1 ? `（未送信 ${t.pending} 件）` : '';
   document.getElementById('syncWarnText').textContent =
-    `この端末はカレンダーの同期がオフです。保存はできますが Google には上がりません（この端末の中だけに残ります）。${n}`
-    + 'Android の「設定 → パスワードとアカウント → アカウント → アカウントの同期 → カレンダー」をオンにしてください。';
+    `保存した予定が ${age}Google に上がっていません${n}。この端末の中には入っています。`
+    + 'Android の「設定 → パスワードとアカウント → アカウント → アカウントの同期 → カレンダー」がオフだと上がりません（確認してください）。';
   el.classList.add('show');
 }
 
@@ -2459,6 +2464,11 @@ async function refreshCalendarTarget() {
   try {
     const t = await adapter.getTarget({ calendarId: settings.get('targetCalendarId') });
     renderCalendarPicker(t);
+    // v69: 🚨 **保存できること と Google に届くことは別**（実機FB第38回）。
+    // 端末側の同期が止まっていると、保存は成功し端末のカレンダーにも出るのに **Google には上がらない**
+    // ＝アプリからは何も間違って見えない。**言い切れる時だけ**警告する（不明は黙る＝嘘の警告を出さない）。
+    // v73: どの枝でも必ず通す＝**条件が消えたのにバナーが残る**を作らない（前は found の枝でしか呼ばれなかった）。
+    showSyncWarn(t);
     if (!t.authorized) {
       window.__vcCalTarget = '(未許可＝保存時に確認)';
       show('set-cur', 'まだカレンダーの許可がありません。保存するときに確認します。');
@@ -2473,11 +2483,7 @@ async function refreshCalendarTarget() {
       const where = t.auto
         ? (t.ambiguous ? `${who} — 自動で選ばれています（他にも書き込めるカレンダーがあります）` : `${who} — 自動（OS の主カレンダー）`)
         : `${who} — ここに入ります（選択中）`;
-      // v69: 🚨 **保存できること と Google に届くことは別**（実機FB第38回）。
-      // 端末側の同期が止まっていると、保存は成功し端末のカレンダーにも出るのに **Google には永久に上がらない**
-      // ＝アプリからは何も間違って見えない。**言い切れる時だけ**警告する（不明は黙る＝嘘の警告を出さない）。
-      showSyncWarn(t);
-      show(t.syncBlocked ? 'set-cur warn' : 'set-cur', where);
+      show(t.syncStalled ? 'set-cur warn' : 'set-cur', where);
     }
     // v67: 端末に在る暦を**選ばれなかったものも含めて**診断へ（Android のみ返る）。
     // 「なぜそこに入ったのか」を実機の画面だけで辿れるようにする＝写真1枚で決着させる。
@@ -2492,6 +2498,7 @@ async function refreshCalendarTarget() {
     // 取れないこと自体を表に出す（黙って空欄にしない＝v16）
     window.__vcCalTarget = `エラー: ${(err && err.message) || err}`;
     show('set-cur warn', `⚠ 保存先を確認できません: ${(err && err.message) || err}`);
+    showSyncWarn(null); // 何も確かめられなかった＝古い警告を出したままにしない（v73）
   }
   window.__vcRenderDiag();
 }

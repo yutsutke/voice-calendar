@@ -202,6 +202,8 @@ public class CalendarEventsPlugin extends Plugin {
                 return;
             }
             long eventId = ContentUris.parseId(uri);
+            // v73: **この行が Google へ上がったか**を後から事実で確かめるために覚えておく（rememberSaved 参照）
+            rememberSaved(eventId, cal.id);
             // **どこに入れたかを返す**＝JS が保存 toast に出す（「入ったが見つからない」を防ぐ）
             JSObject out = new JSObject();
             out.put("id", String.valueOf(eventId));
@@ -358,6 +360,118 @@ public class CalendarEventsPlugin extends Plugin {
         } catch (Exception e) {
             return -1;
         }
+    }
+
+    // ---- v73: 「上がったか」は**設定フラグではなく実際の行**で判定する（実機FB第41回） ----
+    //
+    // 🔴 v69 の判定（getIsSyncable / getMasterSyncAutomatically / getSyncAutomatically）は
+    //    **ゆうの端末で嘘だった**: 診断が `同期可=0 このアカウントの暦同期=OFF` と読めているのに、
+    //    その瞬間に保存した行（📝 サンプル1 07:59）は**約1分後に Google のサーバに乗っていた**
+    //    （接続済みアカウントを直接照会して確認）。Google のカレンダー同期は legacy の
+    //    `com.android.calendar` 同期アダプタ設定を経由しないことがある＝**フラグは実態を表さない**。
+    //    → フラグは**診断の材料へ降格**し、警告は**観測できる事実**だけから出す。
+    //
+    // 事実として読めるもの（v67 の readBack で既に読んでいた）:
+    //   `_SYNC_ID` が付いた＝**サーバ側の id が振られた＝上がった実績**／`DIRTY=1` のまま＝まだ上がっていない。
+    // 同じ診断が「掃ける端末かどうか」も示していた（`未送信=1`＝溜まっていない＝同期アダプタが書き戻している）。
+    private static final String PREF = "vc_calendar";
+    private static final String K_ID = "lastUnsentEventId";
+    private static final String K_CAL = "lastUnsentCalendarId";
+    private static final String K_AT = "lastUnsentAtMs";
+    /** これだけ経っても上がっていなければ「停滞」と言う（分）。遅れて届く端末を誤警報しない幅 */
+    private static final int STALL_MIN = 30;
+
+    private android.content.SharedPreferences prefs() {
+        return getContext().getSharedPreferences(PREF, android.content.Context.MODE_PRIVATE);
+    }
+
+    /**
+     * 保存した行を「まだ上がっていない1件」として覚える。
+     * 🚨 **既に覚えている行がまだ未送信なら、そちらを残す**（上書きしない）＝保存のたびに時計を
+     *    巻き戻すと、話し続けている間は経過時間が伸びず**本物の詰まりを永久に見逃す**。
+     */
+    private void rememberSaved(long eventId, long calendarId) {
+        try {
+            android.content.SharedPreferences sp = prefs();
+            long prevId = sp.getLong(K_ID, -1);
+            long prevCal = sp.getLong(K_CAL, -1);
+            if (prevId >= 0 && prevCal == calendarId) {
+                Row prev = rowSyncState(prevId);
+                if (prev != null && prev.knownDirty && prev.dirty && !prev.syncId) return; // 古い未送信を残す
+            }
+            sp.edit().putLong(K_ID, eventId).putLong(K_CAL, calendarId)
+                .putLong(K_AT, System.currentTimeMillis()).apply();
+        } catch (Exception ignored) { /* 覚えられなくても保存は成功のまま（補助機能が本体を殺さない） */ }
+    }
+
+    /** 行の同期状態（読めなかったことを「読めた 0」と混ぜないため knownDirty を持つ） */
+    private static class Row { boolean knownDirty; boolean dirty; boolean syncId; }
+
+    private Row rowSyncState(long eventId) {
+        Row wide = rowWith(eventId, new String[]{
+            CalendarContract.Events._ID, CalendarContract.Events.DIRTY,
+            CalendarContract.Events._SYNC_ID, CalendarContract.Events.DELETED });
+        if (wide != null) return wide;
+        // 同期列を projection に入れると落ちる端末がある → 行の存在だけ確かめる（knownDirty=false＝不明）
+        return rowWith(eventId, new String[]{ CalendarContract.Events._ID });
+    }
+
+    private Row rowWith(long eventId, String[] proj) {
+        Uri uri = ContentUris.withAppendedId(CalendarContract.Events.CONTENT_URI, eventId);
+        try (Cursor c = getContext().getContentResolver().query(uri, proj, null, null, null)) {
+            if (c == null || !c.moveToFirst()) return null;
+            if ("1".equals(str(c, CalendarContract.Events.DELETED))) return null; // 人が消した行は追わない
+            Row r = new Row();
+            String d = str(c, CalendarContract.Events.DIRTY);
+            r.knownDirty = d != null;
+            r.dirty = "1".equals(d);
+            String sid = str(c, CalendarContract.Events._SYNC_ID);
+            r.syncId = sid != null && !sid.isEmpty();
+            return r;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /** 覚えている1件を読み返した結果（text は診断へ・stalled だけが警告の根拠） */
+    private static class Proof {
+        String text = "上がった実績=追跡なし";
+        boolean stalled = false;
+        int unsentMin = -1;
+    }
+
+    /**
+     * 🚨 **言い切れる時だけ true**（v69 の原則は正しい。間違っていたのは「何で判定するか」だった）。
+     * 読めない・分からない・そもそも同期しない暦＝**黙る**（正常な端末に嘘の警告を出す方が悪い）。
+     */
+    private Proof uploadProof(Target cal) {
+        Proof p = new Proof();
+        try {
+            android.content.SharedPreferences sp = prefs();
+            long id = sp.getLong(K_ID, -1);
+            long calId = sp.getLong(K_CAL, -1);
+            long at = sp.getLong(K_AT, 0);
+            if (id < 0 || at <= 0) return p;                       // まだ1件も保存していない
+            if (calId != cal.id) { p.text = "上がった実績=追跡は別の暦(id=" + calId + ")"; return p; }
+            if (CalendarContract.ACCOUNT_TYPE_LOCAL.equals(cal.accountType)) {
+                // 端末内カレンダーには同期アダプタが無い＝永久に dirty のまま＝停滞ではない
+                p.text = "上がった実績=対象外（端末内のカレンダー）";
+                return p;
+            }
+            Row r = rowSyncState(id);
+            if (r == null) { p.text = "上がった実績=不明（追跡した行が読めない）"; return p; }
+            int min = (int) ((System.currentTimeMillis() - at) / 60000L);
+            if (min < 0) min = 0;                                   // 端末の時計が戻った時に負を出さない
+            if (r.syncId) { p.text = "上がった実績=✓（" + min + "分前の保存に syncId）"; return p; }
+            if (!r.knownDirty) { p.text = "上がった実績=不明（同期列が読めない）"; return p; }
+            if (!r.dirty) { p.text = "上がった実績=不明（未同期=0 だが syncId 無し）"; return p; }
+            p.unsentMin = min;
+            p.stalled = min >= STALL_MIN;
+            p.text = "上がった実績=✗ 未送信のまま " + min + "分" + (p.stalled ? "（停滞）" : "（待機中）");
+        } catch (Exception e) {
+            p.text = "上がった実績=読めず(" + e.getClass().getSimpleName() + ")";
+        }
+        return p;
     }
 
     /** JS のローカル 0時 ms → その年月日の UTC 0時 ms（終日イベント用） */
@@ -535,18 +649,27 @@ public class CalendarEventsPlugin extends Plugin {
         out.put("sourceType", sourceTypeName(cal.accountType));
         out.put("auto", wanted == null || wanted.isEmpty()); // 自動で決めたのか、選ばれたものか
         // v69: **保存できること と Google に届くことは別**（実機FB第38回）＝同期の素性と滞留件数
-        out.put("sync", syncInfo(cal));
+        // v73: それに**実際に上がったかの実績**を足す（フラグは実機で嘘だった＝uploadProof の説明）
+        Proof proof = uploadProof(cal);
+        out.put("sync", syncInfo(cal) + " " + proof.text);
         out.put("pending", dirtyCount(cal.id));
-        // JS が「保存はできますが Google には上がりません」と言い切れる条件だけを true にする
-        // （読めなかった時に false ＝「大丈夫」と嘘をつかない。不明は不明のまま扱う）
-        out.put("syncBlocked", isSyncBlocked(cal));
+        // 🚨 v73: 警告の根拠は**これだけ**＝自分が保存した行が STALL_MIN 分たっても上がっていない、という観測事実。
+        out.put("syncStalled", proof.stalled);
+        out.put("unsentMin", proof.unsentMin);
+        // v73: フラグ由来の判定は**診断の材料**へ降格（名前も変えた＝警告の根拠に戻さない）
+        out.put("syncFlagsBlocked", isSyncBlocked(cal));
         call.resolve(out);
     }
 
     /**
-     * 「このアカウントは何をしても Google へ上がらない」と**言い切れる**時だけ true。
-     * 🚨 読めなかった／判断が付かない時は false（＝警告を出さない）にする。ここで曖昧を true に
-     *    倒すと、正常な端末に嘘の警告を出すことになる（v27 の「創作しない」と同じ線）。
+     * 同期設定のフラグから見た「塞がっている」。
+     *
+     * 🔴 **v73: これを警告の根拠にしてはいけない**（実機FB第41回で嘘だと確定した）。
+     *    ゆうの端末は `同期可=0` かつ `暦同期=OFF` と読めるのに、その瞬間に保存した行は
+     *    約1分後に Google のサーバへ届いていた（サーバを直接照会して確認）。
+     *    ＝ Google の同期は legacy の `com.android.calendar` 同期アダプタ設定を経由しないことがある。
+     *    → 判定は uploadProof（実際に syncId が付いたか）へ移した。**ここは診断に出す材料**であり、
+     *      `syncFlagsBlocked` という名前で JS へ渡す（誤って警告の条件に戻さないため）。
      */
     private boolean isSyncBlocked(Target cal) {
         try {

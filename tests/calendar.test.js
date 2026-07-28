@@ -211,22 +211,56 @@ t('🚨【v69】同期の素性と未送信件数を落とさない（保存成�
   await withCapacitor(nativeCap({
     getTarget: async () => ({
       authorized: true, found: true, id: '2', title: 'a@example.com',
-      sync: '端末の自動同期=ON このアカウントの暦同期=OFF 同期可=1 実行中=0 待ち=0',
-      pending: 7, syncBlocked: true,
+      sync: '端末の自動同期=ON このアカウントの暦同期=OFF 同期可=1 実行中=0 待ち=0 上がった実績=✓（1分前の保存に syncId）',
+      pending: 7, syncStalled: false,
     }),
   }), async () => {
     const t2 = await eventKitAdapter.getTarget();
     eq(t2.pending, 7, '未送信の滞留件数＝増えるだけで減らないなら止まっている証拠');
-    eq(t2.syncBlocked, true, '「何をしても上がらない」と言い切れる時だけ true');
     ok(t2.sync.includes('暦同期=OFF'), '素性の文字列をそのまま診断へ運ぶ');
+    ok(t2.sync.includes('上がった実績=✓'), 'v73: 実績も同じ1行で診断へ運ぶ');
   });
 });
 
-t('🚨【v69】同期が読めない環境で「大丈夫」と嘘をつかない', async () => {
+// ===== v73: 警告の根拠を「設定フラグ」から「実際に上がったか」へ（実機FB第41回） =====
+// 実測: 診断が `同期可=0 このアカウントの暦同期=OFF` と読める端末で、その瞬間に保存した行
+//       （📝 サンプル1 07:59）は**約1分後に Google のサーバに在った**（接続済みアカウントを直接照会）。
+//       ＝ v69 のフラグ判定は嘘をつく → 「上がった実績（syncId）」だけを根拠にする。
+t('🚨【v73】フラグが「塞がっている」と言っても、それだけでは警告しない（実機で嘘だった）', async () => {
+  await withCapacitor(nativeCap({
+    getTarget: async () => ({
+      authorized: true, found: true, id: '2', title: 'a@example.com',
+      sync: '同期可=0 このアカウントの暦同期=OFF 上がった実績=✓（1分前の保存に syncId）',
+      pending: 1, syncFlagsBlocked: true, syncStalled: false,
+    }),
+  }), async () => {
+    const t2 = await eventKitAdapter.getTarget();
+    eq(t2.syncStalled, false, '実際に上がっているなら黙る（ゆうの端末で起きていた誤警報）');
+    eq(t2.syncFlagsBlocked, true, 'フラグは診断の材料としては運ぶ');
+    eq(t2.syncBlocked, undefined, '🚫 警告の根拠だった syncBlocked は復活させない');
+  });
+});
+
+t('🚨【v73】上がっていない事実（経過時間）は落とさない＝本物の詰まりは見逃さない', async () => {
+  await withCapacitor(nativeCap({
+    getTarget: async () => ({
+      authorized: true, found: true, id: '2', title: 'a@example.com',
+      sync: '上がった実績=✗ 未送信のまま 47分（停滞）', pending: 5,
+      syncStalled: true, unsentMin: 47, syncFlagsBlocked: false,
+    }),
+  }), async () => {
+    const t2 = await eventKitAdapter.getTarget();
+    eq(t2.syncStalled, true, '観測事実（syncId が付かないまま時間が経った）だけが警告の根拠');
+    eq(t2.unsentMin, 47, '何分たったかを数字で出す（v15/v16「数字を診断に出す」）');
+  });
+});
+
+t('🚨【v69/v73】同期が読めない環境で「大丈夫」とも「駄目」とも嘘をつかない', async () => {
   await withCapacitor(nativeCap({ getTarget: async () => ({ authorized: true, found: true, title: '個人' }) }), async () => {
     const t2 = await eventKitAdapter.getTarget();
     eq(t2.pending, -1, '不明は -1（0 と混ぜない＝「未送信は無い」と言わない）');
-    eq(t2.syncBlocked, false, '判断が付かない時は警告を出さない（正常な端末に嘘の警告を出す方が悪い）');
+    eq(t2.syncStalled, false, '判断が付かない時は警告を出さない（正常な端末に嘘の警告を出す方が悪い）');
+    eq(t2.unsentMin, -1, '不明は -1（0 分と混ぜない）');
     eq(t2.sync, '', '素性が無ければ空');
   });
 });
@@ -331,6 +365,36 @@ t('🚨【v66】保存の必須チェックは「どれが欠けたか」を出�
   ok(!/call\.reject\s*\(\s*"title \/ startMs \/ endMs/.test(src), '一括の文言だと「タイトルが空」と「型で落ちた」が区別できない（v66 の診断が詰まった原因）');
   ok(/タイトルが空です/.test(src) && /開始が未入力です/.test(src) && /終了を作れませんでした/.test(src), '3つを別々の言葉で出す');
   ok(/startMs=/.test(src), '実際に来た値と型を添える（v15/v16「数字を診断に出す」）');
+});
+
+// ===== 不変条件7: 同期の警告は「観測事実」から作る（v73・実機FB第41回） =====
+//
+// v69 は設定フラグ（getIsSyncable / getMasterSyncAutomatically / getSyncAutomatically）で
+// 「Google には上がりません」と言い切っていた。ゆうの端末はそのフラグが塞がっていると読めるのに
+// **保存した行は約1分後にサーバへ届いていた**＝正常な端末に嘘の警告を出し続けていた。
+// JS 側からは native がどの値で判定しているか見えない（不変条件2 は名前しか見ない）→ Java の構造で縛る。
+t('🚨【v73】警告 syncStalled は uploadProof（実際に上がったか）から作る＝フラグから作らない', () => {
+  const src = readFileSync(ANDROID_CAL_JAVA, 'utf8');
+  ok(/out\.put\("syncStalled",\s*proof\.stalled\)/.test(src), '警告の根拠は uploadProof の観測結果だけ');
+  ok(!/out\.put\("syncBlocked"/.test(src), '🚫 フラグ由来の syncBlocked を JS の警告条件に戻さない');
+  const flagUses = src.match(/isSyncBlocked\(cal\)/g) || [];
+  eq(flagUses.length, 1, 'フラグ判定の使い道は診断（syncFlagsBlocked）1箇所だけ');
+  ok(/out\.put\("syncFlagsBlocked",\s*isSyncBlocked\(cal\)\)/.test(src), '材料としては残す（消すと次に同じ疑いが出た時に見られない）');
+});
+
+t('🚨【v73】上がった実績は _SYNC_ID で見る／同期しない暦では警告しない', () => {
+  const src = readFileSync(ANDROID_CAL_JAVA, 'utf8');
+  ok(/private Proof uploadProof\(/.test(src), '判定は1箇所に集約する');
+  ok(/_SYNC_ID/.test(src), 'サーバ側 id が振られた＝上がった実績（推測ではない）');
+  ok(/ACCOUNT_TYPE_LOCAL\.equals\(cal\.accountType\)/.test(src), '端末内カレンダーは同期アダプタが無い＝永久に dirty＝停滞ではない');
+  ok(/knownDirty/.test(src), '読めなかったことを「読めて 0」と混ぜない（不明は不明のまま＝黙る）');
+});
+
+t('🚨【v73】保存のたびに追跡を上書きしない（詰まりの経過時間が巻き戻ると永久に気づけない）', () => {
+  const src = readFileSync(ANDROID_CAL_JAVA, 'utf8');
+  ok(/private void rememberSaved\(/.test(src), '保存した行を覚える場所');
+  ok(/prev\.knownDirty && prev\.dirty && !prev\.syncId\) return;/.test(src),
+    '既に覚えている行がまだ未送信なら**そちらを残す**（話し続けている間に時計が巻き戻らない）');
 });
 
 // ===== buildIcs（v39 で複数 VEVENT 対応・単一の回帰を先に固定） =====

@@ -240,11 +240,15 @@
         // 今の行き先が「自動で決まった」のか「選ばれたもの」なのか（表示に嘘をつかせない）
         auto: res.auto === undefined ? true : !!res.auto,
         // v69: **保存できること と Google に届くことは別**（実機FB第38回）。
-        // sync=同期設定の素性 / pending=まだ上がっていない件数（-1＝不明。0 と混ぜない）
-        // syncBlocked=「何をしても上がらない」と言い切れる時だけ true（不明は false＝嘘の警告を出さない）
+        // sync=同期設定の素性＋上がった実績 / pending=まだ上がっていない件数（-1＝不明。0 と混ぜない）
         sync: res.sync || '',
         pending: typeof res.pending === 'number' ? res.pending : -1,
-        syncBlocked: !!res.syncBlocked,
+        // 🚨 v73: 警告の根拠は**観測事実だけ**＝自分が保存した行が一定時間たっても上がっていない。
+        // v69 の設定フラグ（同期可/暦同期/自動同期）は実機で嘘だった（`OFF` と読めるのに届いていた）
+        // ＝ syncFlagsBlocked として**診断の材料**にだけ運ぶ（`syncBlocked` は復活させない）。
+        syncStalled: !!res.syncStalled,
+        unsentMin: typeof res.unsentMin === 'number' ? res.unsentMin : -1,
+        syncFlagsBlocked: !!res.syncFlagsBlocked,
       };
     },
 

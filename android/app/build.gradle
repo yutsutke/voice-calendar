@@ -25,7 +25,7 @@ android {
         //   4 / "1.2" = v68（保存先カレンダーを選べるように・Android）
         //   5 / "1.2" = v69（端末の同期が止まっていると告げる）
         //   6 / "1.2" = v70-v72（認識文字を大きく／記録📝を保存先によらず／位置情報の復活）
-        versionCode 6
+        versionCode 7
         versionName "1.2"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
