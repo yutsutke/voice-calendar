@@ -29,6 +29,11 @@
   - console 0・BUILD=v74。
 - **web 完結・native の変更ゼロ**。⚠ **実機アプリは同梱 web を読む**＝ iOS は次の Codemagic ビルド、Android は次の AAB/APK で届く（Pages は即時）。
 
+**🎉 実機で両方通過（同日・ゆう・Android versionCode 8）**
+- 「**保存の件、治りました**」＋「**✏️ → 手直し → 🔤 辞書に登録して更新 が改正volN を付けて台帳を差し替える／診断が `📍 位置エンジン: web（Android は web 経路が正…）` になる＝両方ともなおってます**」。
+- Android の AAB を焼いて成果物を検分（**versionCode 8**・同梱 web が `BUILD=v74` / `?v=74`×11 / `function runSave` 在り / **旧 `doSave())` の直呼びは消滅** / `location.js` に `designNote` と「Android は web 経路が正」・`jarsigner -verify` = jar verified・3.27MB）。**Java/native の変更はゼロ**（web だけの修正）。
+- ⚠ **iOS には未到達**（同梱 web を読む＝Codemagic 1.2 待ち）。Pages では即時＝iPhone Safari で確認できる状態。
+
 **教訓**
 - 🔑 **「入口を1つ足す」より「分岐を1つ増やす」方が危ない**。v44（ボタン追加）と v54（分岐追加）はどちらも単体で正しくテストも通っていたが、**後から入れた分岐が既存の入口に配線されていない**ことは誰も検知できなかった（ユニットテストは index.html の配線を見ない）。**分岐は複製せず1箇所に持つ**のが唯一の構造的な防御＝v28「個々に正しい判断の積が事故になる」の配線版。
 - 🔑 **計器の文言も「言い切れる時だけ言う」**（v69→v73 の教訓は診断行にも効く）。「失敗」と書けるのは失敗の時だけ。
