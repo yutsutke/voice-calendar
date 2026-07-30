@@ -77,13 +77,24 @@
 
     let plugin = null;
     let failure = null;
+    let design = null;   // v74: 「native なのに web 経路」が**設計どおり**の時の理由（失敗と混ぜない）
     if (C && C.isNativePlatform && C.isNativePlatform()) {
+      const platform = (typeof C.getPlatform === 'function' && C.getPlatform()) || '';
       try {
         plugin = nativePlugin(C, 'DeviceLocation');
-        if (!plugin) failure = 'DeviceLocation プラグインが native に登録されていません';
+        if (!plugin) {
+          // 🚨 v74（ゆう指摘）: **Android にはこのプラグインを作っていない**（v72）＝ここへ来るのが正しい。
+          //   Capacitor の BridgeWebChromeClient が位置要求のたびに OS の権限を読み直すので、
+          //   iOS の WKWebView 病（許可をプロセス内に握る）が起きない＝実機で確認済み（実機FB第40回）。
+          //   なのに診断は「native 失敗」と書いていた＝**正常な端末を疑わせる文言**
+          //   （v73 で同じ形の誤警報を直したばかり＝計器が嘘をつくと切り分けの向きが狂う）。
+          //   → Android は失敗ではなく **設計の説明**として出す。iOS は従来どおり「失敗」（本物のバグ）。
+          if (platform === 'android') design = 'Android は web 経路が正（DeviceLocation は iOS 専用・v72）';
+          else failure = 'DeviceLocation プラグインが native に登録されていません';
+        }
       } catch (e) {
         plugin = null;                                  // 取得で throw しても本体は生かす（v13）
-        failure = (e && e.message) || String(e);
+        failure = (e && e.message) || String(e);        // 例外は platform を問わず失敗（設計ではない）
       }
     }
     // native で取れなければ web の geolocation へ落ちる（何も無いよりは動く）。
@@ -181,6 +192,7 @@
     return {
       engine,                                  // 'native' | 'web' | 'none'
       nativeFailure: () => failure,            // 診断に出す（native なのに web に落ちた理由）
+      designNote: () => design,                // v74: web 経路が設計どおりの時の説明（Android）
       detail: () => detail,                    // 直近に許可状態を読んだ経路と生値
       getPermission, getCurrent, requestPermission, onPermissionChange,
       _webPermStatus: () => webPermStatus,     // テスト用（参照が保たれているか）

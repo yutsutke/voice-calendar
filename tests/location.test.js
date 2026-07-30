@@ -16,6 +16,8 @@
 //   4. maximumAge は 0（v50: キャッシュを許すと「オフにしたのに 60 秒は記録され続ける」）
 //   5. 何があっても throw しない（v13: 補助機能の失敗が本体＝フォームと保存を殺さない）
 //   6. 黙って捨てない（v16: 値が読めなければ成功にせずエラーとして表に出す）
+//   7. 診断の文言は**失敗と設計どおりを混ぜない**（v74: Android は web 経路が正＝v72。
+//      「native 失敗」と書くと正常な端末を疑わせる＝v73 の誤警報と同じ形）
 'use strict';
 const VCLocation = require('../adapters/location.js');
 
@@ -67,6 +69,47 @@ t('native なのにプラグイン未登録 → web へ落ちるが理由は残�
   });
   eq(loc.engine, 'web');
   ok(/登録されていません/.test(loc.nativeFailure() || ''), `理由が残る / 実際 ${loc.nativeFailure()}`);
+});
+
+// v74（ゆう指摘）: Android には DeviceLocation を**作っていない**（v72）＝ web 経路が正。
+// それを「native 失敗」と診断に書くと**正常な端末を疑わせる**（v73 の誤警報と同じ形）。
+// 失敗（本物のバグ）と設計どおりを書き分けることを、両方向で固定する。
+t('v74: android でプラグイン未登録は「失敗」ではなく設計の説明（web 経路が正）', () => {
+  const loc = VCLocation.create({
+    capacitor: { isNativePlatform: () => true, getPlatform: () => 'android', Plugins: {} },
+    navigator: webNav({ getCurrentPosition: () => {} }),
+  });
+  eq(loc.engine, 'web');
+  eq(loc.nativeFailure(), null, 'Android では失敗扱いにしない');
+  ok(/Android/.test(loc.designNote() || ''), `設計の説明が出る / 実際 ${loc.designNote()}`);
+});
+
+t('v74: ios でプラグイン未登録は今までどおり「失敗」（黙らせない v16）', () => {
+  const loc = VCLocation.create({
+    capacitor: { isNativePlatform: () => true, getPlatform: () => 'ios', Plugins: {} },
+    navigator: webNav({ getCurrentPosition: () => {} }),
+  });
+  eq(loc.engine, 'web');
+  eq(loc.designNote(), null, 'iOS で「設計どおり」と言ってはいけない');
+  ok(/登録されていません/.test(loc.nativeFailure() || ''), '失敗理由が残る');
+});
+
+t('v74: android でも例外は失敗（設計で塗り潰さない）', () => {
+  const loc = VCLocation.create({
+    capacitor: {
+      isNativePlatform: () => true, getPlatform: () => 'android',
+      registerPlugin: () => { throw new Error('proxy 爆発'); },
+    },
+    navigator: webNav({ getCurrentPosition: () => {} }),
+  });
+  ok(/proxy 爆発/.test(loc.nativeFailure() || ''), '例外は platform を問わず失敗');
+  eq(loc.designNote(), null);
+});
+
+t('v74: web だけの環境（Capacitor 無し）は designNote も無い', () => {
+  const loc = VCLocation.create({ capacitor: null, navigator: webNav({ getCurrentPosition: () => {} }) });
+  eq(loc.designNote(), null);
+  eq(loc.nativeFailure(), null);
 });
 
 t('プラグイン取得が throw しても create は throw しない（v13）', () => {

@@ -624,20 +624,20 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
      理由: この版文字列は index.html にしかないが、ロジックは別ファイル＝別キャッシュ。
      付けないと「フッタは新しいのにパーサは古い」という嘘の状態が成立する（v9 で実際に踏んだ）。
      index.html が更新されれば src の URL も変わる → JS も必ず新しく取り直される。 -->
-<script src="engine/settings.js?v=73"></script>
-<script src="engine/schema.js?v=73"></script>
-<script src="engine/parser.js?v=73"></script>
-<script src="engine/dictionary.js?v=73"></script>
-<script src="engine/contract.js?v=73"></script>
-<script src="engine/batch.js?v=73"></script>
-<script src="engine/ai.js?v=73"></script>
-<script src="input/transcriber.js?v=73"></script>
-<script src="adapters/calendar.js?v=73"></script>
-<script src="adapters/records.js?v=73"></script>
-<script src="adapters/location.js?v=73"></script>
+<script src="engine/settings.js?v=74"></script>
+<script src="engine/schema.js?v=74"></script>
+<script src="engine/parser.js?v=74"></script>
+<script src="engine/dictionary.js?v=74"></script>
+<script src="engine/contract.js?v=74"></script>
+<script src="engine/batch.js?v=74"></script>
+<script src="engine/ai.js?v=74"></script>
+<script src="input/transcriber.js?v=74"></script>
+<script src="adapters/calendar.js?v=74"></script>
+<script src="adapters/records.js?v=74"></script>
+<script src="adapters/location.js?v=74"></script>
 <script>
 'use strict';
-const BUILD = 'v73：同期の警告を「設定フラグ」から「実際に上がったか（syncId）」へ · 2026-07-29';
+const BUILD = 'v74：辞書に登録して保存が「更新」を通る（保存の分岐を1箇所に） · 2026-07-30';
 console.log('BUILD:', BUILD);
 document.getElementById('build').textContent = BUILD;
 
@@ -1196,7 +1196,10 @@ const LOCATION_ENABLED = true;
 // ※ v50 の maximumAge:0（オフにしたら本当に取らない）はアダプタ側の GEO_OPTS に移した
 //   ＝「速さと電池は、切ったのに記録される、と引き換えにしてよいものではない」は不変。
 const VCLoc = (LOCATION_ENABLED && window.VCLocation && window.VCLocation.create) ? window.VCLocation.create() : null;
+// v74: Android は web 経路が正（v72）＝それを「native 失敗」と書くと正常な端末を疑わせる（ゆう指摘）。
+//   設計どおり（designNote）と本物の失敗（nativeFailure）を診断でも書き分ける。
 window.__vcDebugNote(`📍 位置エンジン: ${VCLoc ? VCLoc.engine : 'なし'}`
+  + ((VCLoc && VCLoc.designNote && VCLoc.designNote()) ? `（${VCLoc.designNote()}）` : '')
   + ((VCLoc && VCLoc.nativeFailure()) ? ` / native 失敗: ${VCLoc.nativeFailure()}` : ''));
 // 拒否バナーの文言は1か所に（保存時・設定オン時・復帰時の3経路が同じことを言う）
 const GEO_DENIED_MSG = '位置情報が許可されていません。「設定を開く」→ 位置情報 を許可してください。保存そのものは今までどおり動きます。';
@@ -2517,6 +2520,11 @@ let editingRec = null;
 function updateSaveLabel() {
   const dest = settings.get('recordDest');
   // v54: 直している最中は行き先も動きも違う（新規を作らず既存の行を差し替える）＝ラベルもそう言う
+  // v74: 2つ目の保存ボタン（v44 の「辞書に登録して保存」）も**同じ道**を通る＝ラベルも同じことを言う
+  //   （実機FB第42回で、押した時の実際の動きと文字が食い違っていた＝v20「表示と操作結果が食い違うなら
+  //    ラベルで説明せず設計を直す」の両輪＝分岐を1つにした上で、文字も揃える）
+  document.getElementById('saveLearn').textContent =
+    editingRec ? '🔤 辞書に登録して更新' : '🔤 辞書に登録して保存';
   if (editingRec) {
     document.getElementById('save').textContent =
       editingRec.dest === 'both' ? '更新して保存（カレンダーにも追加）' : '更新して保存';
@@ -2804,7 +2812,19 @@ document.getElementById('editCancel').addEventListener('click', () => {
   toast('直すのをやめました（リストはそのままです）');
 });
 
-document.getElementById('save').addEventListener('click', () => (editingRec ? saveEditedRecord() : doSave()));
+// 🚨 v74（実機FB第42回）: **保存の分岐はここ1箇所だけ**。
+//   v54 で「保存」ボタンにだけ `editingRec ? 更新 : 新規` を入れ、v44 の2つ目の保存ボタン
+//   （🔤 辞書に登録して保存）は `doSave()` を直呼びしたまま残っていた ＝ 直している最中に
+//   辞書ボタンで保存すると **新規保存が走る**:
+//     ・カレンダーに「（改正volN）」が付かない（そのまま入る）
+//     ・台帳の行が差し替わらず **新しい行が増える**（元の行はそのまま残る）
+//     ・endEditRecord() を通らないので **「更新して保存」ボタンと編集バナーが残る**
+//       （store は reset 済み＝そのまま押すと空フォームで「直せませんでした」）
+//   ゆうの報告（「そのまま保存されて VO2 がでない」「更新して保存ボタンがのこる」）と完全に一致。
+//   → **保存の入口が増えても分岐は1つ**（runSave）＝この形の事故は構造的に起きない。
+function runSave(opts) { return editingRec ? saveEditedRecord() : doSave(opts); }
+
+document.getElementById('save').addEventListener('click', () => runSave());
 
 // ===== v44: 「辞書に登録して保存」（実機FB第26回・ユーザー設計） =====
 // 音声が書いたテキスト欄を人が直した時だけ、2つ目の保存ボタンを出す。
@@ -2875,7 +2895,7 @@ document.getElementById('saveLearn').addEventListener('click', () => {
       toast(`⚠ 辞書に登録できませんでした: ${(e && e.message) || e}`);
     }
   }
-  doSave();
+  runSave(); // v74: 「保存」ボタンと同じ門（直している最中なら更新＝改正volN・行の差し替え・編集モード終了）
 });
 
 document.getElementById('clear').addEventListener('click', () => {
