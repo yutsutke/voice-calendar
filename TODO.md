@@ -403,6 +403,7 @@
 > - 🆕 **`tests/wiring.test.js` を新設（8本）**＝ v74 の真因「**ユニットテストは index.html の配線を見ない**」への構造的な手当て。保存の分岐は `runSave` 1箇所／`editingRec` を立てるのは `startEditRecord` だけ／来歴の ✏️ は同じ道を通る／`markHistorySaved` は at で名指す、を機械が守る。**わざと3通り壊して落ちることを確認済み**（v10 の流儀）。
 > - **テスト 511/511**（records +5・wiring 8 新規）・**実ブラウザ E2E 13項目 ✓**（Chromium を CDP で直叩き＝依存ゼロ・ハーネスはリポ外／自動保存の行から直せる・カレンダーのみでは ✏️ が出ない・× で消した発話の保存が別の行に刻まれない・↩/× 無退行・console 0）・BUILD=v75。**web 完結・native の変更ゼロ**。
 > - ⚠ **実機アプリには次のビルドで届く**（同梱 web を読む）＝ iOS は Codemagic 1.2、Android は次の AAB。**Pages は push 後すぐ iPhone Safari で触れる**。
+> - 📌 **Pages の検証（v19 の運用）＝ビルドは確認・配信 HTML は未確認**: `pages build and deployment` が **該当コミット `99c45a9` で completed success**（Actions API で確認）。ただし**このセッションの実行環境から `yutsutke.github.io` へ到達できず**（outbound が遮断・HTTP 000）、**配信 HTML の BUILD 文字列を自分の目で見ていない**。⇒ **iPhone でフッタが `v75` になっているかを最初に見る**（違えば CDN の 10分キャッシュ／それでも違えばオリジンを直接叩く＝v10 の手順）。
 >
 > **▶▶ その後＝Pages で v59 を触る（実機ビルド不要）＋溜まったら次へ**:
 > 0. 🆕 **v59 の CSV**＝数日使って書き出し、**経路列でルール行 vs AI 行の訂正率**・**生テキスト×タイトル**（v58①）・**信頼度で認識/解釈の切り分け**が読めるか。読めれば v58② を「数」で判断できる。
