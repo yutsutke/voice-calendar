@@ -224,6 +224,14 @@
     return loadAll().sort((a, b) => (a.startMs - b.startMs) || (a.savedAt - b.savedAt));
   }
 
+  // v75: id で1行だけ引く（来歴からも保存済みを直せるようにしたので、**行の現物を名指しで取る**道が要る）。
+  // 来歴の行は保存した行の id を控えているだけ＝その行が今も在るとは限らない（× で消した・上限で溢れた）。
+  // **無ければ null**＝呼び出し側が「もうありません」と言う（黙って別の行を直さない＝v16 の裏＝黙って作らない）。
+  function find(id) {
+    if (!id) return null;
+    return loadAll().find((r) => r.id === String(id)) || null;
+  }
+
   function remove(id) {
     const all = loadAll().filter((r) => r.id !== String(id));
     persist(all);
@@ -318,7 +326,7 @@
     return (Number.isFinite(n) && n >= 2) ? `${base}（改正vol${n}）` : base;
   }
 
-  const api = { add, update, list, remove, clear, attachGeo, revTitle, toCsv, KEY, CAP };
+  const api = { add, update, find, list, remove, clear, attachGeo, revTitle, toCsv, KEY, CAP };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else global.VCRecords = api;
 })(typeof window !== 'undefined' ? window : globalThis);

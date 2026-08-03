@@ -175,6 +175,12 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
   .history-list .h-undo { margin-top: 6px; padding: 6px 12px; border: 1px solid var(--line); border-radius: 8px;
     background: transparent; color: var(--accent); font-size: 12px; cursor: pointer; font-family: inherit; }
   .history-list .h-undo:active { opacity: .6; }
+  /* v75: 保存に繋がった発話から、その保存済みの記録を直す。来歴の中で「押すと何かが起きる」姿は
+     ↩ と同じ（枠線のボタン）＝**同じ場所の同じ種類の操作は同じ見た目**（v46/v47 の流儀）。
+     リストの ✏️ が記号だけなのは横並びの行の右端だから＝場所が違えば姿も違ってよい。 */
+  .history-list .h-edit { margin-top: 6px; margin-left: 6px; padding: 6px 12px; border: 1px solid var(--line); border-radius: 8px;
+    background: transparent; color: var(--accent); font-size: 12px; cursor: pointer; font-family: inherit; }
+  .history-list .h-edit:active { opacity: .6; }
   /* 発話の扱いモード（v21）: 🆕 新規 / 🎯 欄指定 が一目で分かる。
      色は 16進+アルファ（このファイルの既存流儀。color-mix は古い iOS Safari で効かない） */
   .history-list .h-badge { display: inline-block; margin: 4px 0 2px; padding: 2px 8px; border-radius: 6px;
@@ -624,20 +630,20 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
      理由: この版文字列は index.html にしかないが、ロジックは別ファイル＝別キャッシュ。
      付けないと「フッタは新しいのにパーサは古い」という嘘の状態が成立する（v9 で実際に踏んだ）。
      index.html が更新されれば src の URL も変わる → JS も必ず新しく取り直される。 -->
-<script src="engine/settings.js?v=74"></script>
-<script src="engine/schema.js?v=74"></script>
-<script src="engine/parser.js?v=74"></script>
-<script src="engine/dictionary.js?v=74"></script>
-<script src="engine/contract.js?v=74"></script>
-<script src="engine/batch.js?v=74"></script>
-<script src="engine/ai.js?v=74"></script>
-<script src="input/transcriber.js?v=74"></script>
-<script src="adapters/calendar.js?v=74"></script>
-<script src="adapters/records.js?v=74"></script>
-<script src="adapters/location.js?v=74"></script>
+<script src="engine/settings.js?v=75"></script>
+<script src="engine/schema.js?v=75"></script>
+<script src="engine/parser.js?v=75"></script>
+<script src="engine/dictionary.js?v=75"></script>
+<script src="engine/contract.js?v=75"></script>
+<script src="engine/batch.js?v=75"></script>
+<script src="engine/ai.js?v=75"></script>
+<script src="input/transcriber.js?v=75"></script>
+<script src="adapters/calendar.js?v=75"></script>
+<script src="adapters/records.js?v=75"></script>
+<script src="adapters/location.js?v=75"></script>
 <script>
 'use strict';
-const BUILD = 'v74：辞書に登録して保存が「更新」を通る（保存の分岐を1箇所に） · 2026-07-30';
+const BUILD = 'v75：来歴からも保存済みを直せる（💾 の行に ✏️） · 2026-08-03';
 console.log('BUILD:', BUILD);
 document.getElementById('build').textContent = BUILD;
 
@@ -830,9 +836,10 @@ function applyRuleResult({ rule, text, rawText, dictHits, meta, aiFbNote }) {
   // cleared では判定できない: 1件目の発話は新規でも消すものが無く cleared が空になる＝
   // **副作用ではなく「適用したモード」そのもの**を記録する。設定でオフなら新規扱いにならない。
   const isNew = !targeted && !!settings.get('plainUtteranceIsNew');
-  logHistory({ at: Date.now(), text: rawText, dict: dictHits, conf: meta && meta.confidence, fb: !!(meta && meta.fallback), tg: targeted, nw: isNew, aiFb: !!aiFbNote, patch, notes, skipped, cleared, err: null, after: changed ? store.snapshot() : null });
+  const utterAt = logHistory({ at: Date.now(), text: rawText, dict: dictHits, conf: meta && meta.confidence, fb: !!(meta && meta.fallback), tg: targeted, nw: isNew, aiFb: !!aiFbNote, patch, notes, skipped, cleared, err: null, after: changed ? store.snapshot() : null });
   // v59: この発話を計測メタの直近値に（下の自動保存でそのまま焼かれる）。path='rule'＝AI 失敗の受け皿もルール解釈が正
-  lastUtterance = { text: rawText, conf: meta && meta.confidence, path: 'rule', targeted, isNew, dict: dictHits, fallback: !!(meta && meta.fallback), notes, err: null };
+  // v75: at ＝この発話の来歴行の名前。保存できたら markHistorySaved がこの行に 💾/✏️ を刻む
+  lastUtterance = { at: utterAt, text: rawText, conf: meta && meta.confidence, path: 'rule', targeted, isNew, dict: dictHits, fallback: !!(meta && meta.fallback), notes, err: null };
 
   if (shouldAutoSave({ changed, targeted, notes, patch, text })) doSave({ auto: true });
 }
@@ -904,8 +911,8 @@ async function interpretByAI({ text, rawText, dictHits, meta, rule, seq }) {
     renderBatch();
     const note = `🤖 複数の予定（${events.length}件）を読み取りました → 「まとめて入力」で確認して保存`;
     notesEl.textContent = note;
-    // 来歴は先に積む（💾 は「直前の行」に刻むため＝v33 と同じ順番）
-    logHistory({ at: Date.now(), text: rawText, dict: dictHits, conf: meta && meta.confidence, fb: !!(meta && meta.fallback), tg: false, nw: false, ai: true, aiMulti: events.length, patch: {}, notes: [note].concat(warnings), skipped: [], cleared: [], err: null, after: null });
+    // 来歴は先に積む（💾 はこの行に刻むため）。v75: 戻り値の at でその行を名指す（先頭決め打ちをやめた）
+    const utterAt = logHistory({ at: Date.now(), text: rawText, dict: dictHits, conf: meta && meta.confidence, fb: !!(meta && meta.fallback), tg: false, nw: false, ai: true, aiMulti: events.length, patch: {}, notes: [note].concat(warnings), skipped: [], cleared: [], err: null, after: null });
     // v53: 設定オンなら確認を挟まずここで保存する（オフなら下の else ＝v42 の挙動そのまま）
     // v61: 「この録音だけ 自動登録OFF」なら複数件も自動保存せず「まとめて入力」で確認（autoSaveBatch オフと同じ扱い）。
     const auto = recOverride.noAutoSave
@@ -914,7 +921,8 @@ async function interpretByAI({ text, rawText, dictHits, meta, rule, seq }) {
     if (auto.ran) {
       notesEl.textContent = `🤖 複数の予定（${events.length}件）を読み取り、${auto.savedCount}件を自動保存しました`
         + (auto.holdCount ? `（${auto.holdCount}件は確認が要るのでカードに残しています）` : '');
-      markHistoryAutoSaved(`自動保存 ${auto.savedCount}件（まとめて入力）`);
+      // 複数件＝台帳の1行に紐づかない＝ ✏️ は出さない（recId 無し）。どの行を直すかはリストで選ぶ
+      markHistorySaved(`自動保存 ${auto.savedCount}件（まとめて入力）`, { at: utterAt });
       document.getElementById('historyBox').open = true; // v33: 自動保存の内容がすぐ見える
       if (auto.holdCount) document.getElementById('batchBox').open = true; // 残した分は見せる
     } else {
@@ -939,9 +947,9 @@ async function interpretByAI({ text, rawText, dictHits, meta, rule, seq }) {
   noteProvDiag(patch, ev.prov);
   const changed = a.skipped.length !== Object.keys(patch).length || a.cleared.length > 0;
   const isNew = !!settings.get('plainUtteranceIsNew');
-  logHistory({ at: Date.now(), text: rawText, dict: dictHits, conf: meta && meta.confidence, fb: !!(meta && meta.fallback), tg: false, nw: isNew, ai: true, patch, notes, skipped: a.skipped, cleared: a.cleared, err: null, after: changed ? store.snapshot() : null });
+  const utterAt = logHistory({ at: Date.now(), text: rawText, dict: dictHits, conf: meta && meta.confidence, fb: !!(meta && meta.fallback), tg: false, nw: isNew, ai: true, patch, notes, skipped: a.skipped, cleared: a.cleared, err: null, after: changed ? store.snapshot() : null });
   // v59: この発話を計測メタの直近値に（path='ai'＝1件を AI で解釈してフォームへ）。下の自動保存でそのまま焼かれる
-  lastUtterance = { text: rawText, conf: meta && meta.confidence, path: 'ai', targeted: false, isNew, dict: dictHits, fallback: !!(meta && meta.fallback), notes, err: null };
+  lastUtterance = { at: utterAt, text: rawText, conf: meta && meta.confidence, path: 'ai', targeted: false, isNew, dict: dictHits, fallback: !!(meta && meta.fallback), notes, err: null };
   // AI 経路の自動保存（v47・設定 autoSaveAI・既定オフ＝v42-v46 は呼んでいなかった）。
   // v42 で塞いだ理由＝「ルールパーサは決定的＝patch に日時が在る＝実際に言った、が保証されるが、
   // AI は創作し得る。保存は不可逆（読めない＝消せない）」。**その時に「精度を実機で見てから再検討」と
@@ -1008,18 +1016,31 @@ const HISTORY_KEY = 'vc_history_v1';
 const HISTORY_VISIBLE = 5; // v33: 来歴は直近5件だけ見せる（残りは「もっと見る」＝一覧が長くなり過ぎない）
 let historyShowAll = false;
 function loadHistory() { try { return JSON.parse(localStorage.getItem(HISTORY_KEY)) || []; } catch { return []; } }
+// 積んだ行の識別子（at）を返す＝呼び出し側が「この発話」を後から名指せる（v75）。
 function logHistory(entry) {
+  const at = entry.at || Date.now();
   const h = loadHistory();
-  h.unshift(entry);
+  h.unshift(Object.assign({}, entry, { at }));
   try { localStorage.setItem(HISTORY_KEY, JSON.stringify(h.slice(0, 30))); } catch {}
   renderHistory();
+  return at;
 }
-// 自動保存の結果を、その発話の来歴行に刻む（v33「自動記録の内容がみれて便利」）。
-// 来歴は解釈直後（logHistory）に積まれ、自動保存はその直後に走る＝先頭行がその発話。
-function markHistoryAutoSaved(text) {
+// 保存の結果を、その発話の来歴行に刻む（v33「自動記録の内容がみれて便利」＝💾）。
+// v75: 刻む相手を **at で名指す**ようになった。v33-v74 は「先頭行＝その発話」と決め打っていたが、
+//   ①来歴の × で先頭を消せる（v47）②手動保存は発話から時間が空く ③保存は await を挟む＝
+//   その間に次の発話が積まれ得る ＝ 先頭が別の発話になっている経路が3つある。名指しなら
+//   **その行が無ければ何もしない**＝別の発話に嘘の 💾／✏️ を付けない（v52 の「黙って作らない」）。
+// recId: 台帳（リスト）に残した行の id。これが在る行だけ、後から ✏️ で直せる（保存先が
+//   「カレンダーのみ」なら台帳に行が無い＝id も無い＝直す対象が実在しない）。
+function markHistorySaved(text, opts) {
+  const at = opts && opts.at;
+  const recId = opts && opts.recId;
   const h = loadHistory();
   if (!h.length) return;
-  h[0].saved = text;
+  const i = at ? h.findIndex((e) => e.at === at) : 0;
+  if (i < 0) return; // その発話の行はもう来歴に無い（消された・30件から溢れた）＝黙って他の行に刻まない
+  h[i].saved = text;
+  if (recId) h[i].savedId = recId;
   try { localStorage.setItem(HISTORY_KEY, JSON.stringify(h)); } catch {}
   renderHistory();
 }
@@ -1048,6 +1069,10 @@ function renderHistory() {
     return;
   }
   const shown = historyShowAll ? h : h.slice(0, HISTORY_VISIBLE); // 直近だけ（v33）
+  // v75: 保存に繋がった行の ✏️ を出すために台帳を**1回だけ**読む（行ごとに読まない）。
+  // 台帳が読めない環境でも来歴は死なせない（v13: 補助機能の失敗が本体を殺さない）＝空で続ける。
+  let recById = new Map();
+  try { if (window.VCRecords) recById = new Map(VCRecords.list().map((r) => [r.id, r])); } catch {}
   // shown は h の先頭からの切り出し＝**添字は h と一致する**（削除はこの添字で行う・v47）
   shown.forEach((e, idx) => {
     const item = document.createElement('div');
@@ -1120,6 +1145,22 @@ function renderHistory() {
       undo.addEventListener('click', () => restoreTo(e));
       item.appendChild(undo);
     }
+    // ✏️ この発話が保存した記録を直す（v75・ゆう要求「リストからだけでなく、来歴から修正したい」）。
+    // 自動保存（v28/v47）は**話しただけで入る**＝間違いに気づく場所が来歴の 💾 行そのもの
+    // ＝そこから直せるのが自然（リストを開いて同じ行を探し直すのは二度手間）。
+    // 🔑 行き先は **startEditRecord＝リストの ✏️ と同じ道**（v74 の教訓: 入口が増えても分岐は増やさない）。
+    // 台帳に現存する行だけボタンを出す（消した行の ✏️ は出さない＝押せるのに直せないを作らない）。
+    const savedRec = e.savedId ? recById.get(e.savedId) : null;
+    if (savedRec) {
+      const ed = document.createElement('button');
+      ed.type = 'button';
+      ed.className = 'h-edit';
+      // ラベルに**台帳の今のタイトル**を出す＝押した後にフォームへ載るものと一致する（v20）。
+      // 直した後（改正volN）も台帳を引き直すので、行の見た目が古い版のまま残らない。
+      ed.textContent = `✏️ 保存した「${savedRec.title || '（タイトルなし）'}」を直す`;
+      ed.addEventListener('click', () => editSavedFromHistory(e.savedId));
+      item.appendChild(ed);
+    }
     // × この行だけ消す（v47・実機FB第29回「来歴、リストどちらも一件ごとの削除機能が欲しい」）。
     // リストの × と**同じ見た目・同じ位置づけ**にする（新しい語彙を増やさない・v46 の流儀）。
     // 確認ダイアログは出さない（背骨②）＝消えたことは toast で告げる。
@@ -1152,6 +1193,19 @@ function removeHistoryAt(i, label) {
   try { localStorage.setItem(HISTORY_KEY, JSON.stringify(h)); } catch (e) { toast(`削除に失敗: ${(e && e.message) || e}`); return; }
   renderHistory();
   toast(`来歴から「${label || ''}」を削除しました（保存した予定は消えません）`);
+}
+
+// v75: 来歴の ✏️ ＝**保存済みの記録を直す**（↩ とは別物: ↩ はフォームの状態を戻すだけで台帳に触れない）。
+// 描画の後に台帳から消えている可能性があるので、**押した時にもう一度現物を引く**（find が唯一の道）。
+// 直す本体は startEditRecord ＝ リストの ✏️ とまったく同じ（改正volN も台帳の差し替えも1箇所のまま）。
+function editSavedFromHistory(id) {
+  const r = window.VCRecords ? VCRecords.find(id) : null;
+  if (!r) {
+    toast('この記録はもうリストにありません（先に削除されたようです）');
+    renderHistory(); // 消えた行の ✏️ を残さない＝表示と実体を合わせる
+    return;
+  }
+  startEditRecord(r);
 }
 
 // 来歴からの巻き戻し。フォーカスを外してから復元する＝ロック中の欄を描画がスキップして
@@ -1298,7 +1352,15 @@ const recShowRecord = document.getElementById('recShowRecord');
     recShowRecord.checked = v.record !== false;
   } catch { /* 壊れた表示状態は既定（両方オン）で動く */ }
 })();
+// v75: 台帳が変わったら**来歴の ✏️ も撮り直す**（ラベルは台帳のタイトル・消えた行はボタンごと消える）。
+// 🔑 ここ1箇所に置く＝台帳を書き換える入口（保存・更新・削除・全消し・位置付与）は全部 renderRecords を
+//    通るので、入口が増えても付け忘れが起きない（v74「分岐は複製せず1箇所に持つ」の描画版）。
+//    描画本体を分けてあるのは早期 return（読込失敗・0件）でも来歴を撮り直すため＝**全消しの直後が正にそれ**。
 function renderRecords() {
+  renderRecordsList();
+  renderHistory();
+}
+function renderRecordsList() {
   const listEl = document.getElementById('recordsList');
   listEl.innerHTML = '';
   if (!window.VCRecords) { // 読込失敗でもフォームと保存は生かす（v13）。原因は診断に出ている
@@ -2652,6 +2714,9 @@ function saveDestLabels(r) {
 async function doSave(opts) {
   const auto = !!(opts && opts.auto);
   const now = new Date();
+  // v75: この保存を形作った発話（来歴の行の名前）を**始まる前に**控える。await（カレンダー保存）を
+  //   挟む間に次の発話が来ると lastUtterance は書き換わる＝後から読むと別の発話に 💾 を刻んでしまう。
+  const utterAt = lastUtterance && lastUtterance.at;
   const info = provInfoFromStore();
   info.save = { auto }; // v59: 保存操作（自動/手動）を計測 CSV へ
   const r = await saveDraftCore(store.get(), now, { info });
@@ -2675,10 +2740,19 @@ async function doSave(opts) {
       if (r.warnings.length) msg += `（${r.warnings.join('・')}）`;
       if (r.listDropped) msg += `（古い記録${r.listDropped}件を上限${VCRecords.CAP}件で削除）`;
       toast(msg);
+      // 来歴のその発話の行に「何がどこへ入ったか」を刻む（v33 の 💾）。
+      // v75: 手動保存でも刻むようになった＝**来歴からも保存済みを直せる**ようにするため（ゆう要求）。
+      //   台帳の行 id（listRec）を一緒に控える＝その行だけが ✏️ の対象になる。
+      //   発話が無い保存（手入力だけ／編集ロード後）は utterAt が null ＝ 刻まない（発話を創作しない）。
+      const recId = r.listRec && r.listRec.id;
       if (auto) {
         // v33: 自動保存の内容がすぐ見える＝来歴に💾を刻んでパネルを自動で開く（「内容がみれて便利」）
-        markHistoryAutoSaved(`自動保存 → ${dests.join('・')}`);
+        markHistorySaved(`自動保存 → ${dests.join('・')}`, { at: utterAt, recId });
         document.getElementById('historyBox').open = true;
+      } else if (utterAt) {
+        // 手動保存はパネルを勝手に開かない（自分で押した＝結果は toast で見えている。
+        // v33 が開いたのは「ノールックだと気づけない」自動保存だから＝理由が違えば挙動も違ってよい）
+        markHistorySaved(`保存 → ${dests.join('・')}`, { at: utterAt, recId });
       }
     }
     lastUtterance = null; // v59: 保存し切った＝次の手入力に古い発話メタを引きずらない

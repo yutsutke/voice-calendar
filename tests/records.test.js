@@ -495,5 +495,44 @@ t('v59: 保存操作は自動/手動を書き分ける（ノールックの直�
   eq(c[h.indexOf('保存操作')], '手動');
 });
 
+// ===== v75: find(id) ＝来歴からも保存済みを直せるようにしたので「行を名指しで取る」道が要る =====
+// 🚨 ここが null を返すべき時に何かを返すと、**来歴の ✏️ が別の記録を直してしまう**（黙って作らない）。
+t('v75: find は id で1行だけ返す', () => {
+  const a = R.add(ev('会議', 20000), 'list', D(10000));
+  const b = R.add(ev('歯医者', 30000), 'list', D(10000));
+  eq(R.find(a.id).title, '会議');
+  eq(R.find(b.id).title, '歯医者');
+});
+
+t('v75: 消えた行の find は null（来歴の ✏️ が幽霊を直さない）', () => {
+  const a = R.add(ev('会議', 20000), 'list', D(10000));
+  R.remove(a.id);
+  eq(R.find(a.id), null);
+});
+
+t('v75: 空・null・未知の id は null（先頭行に落とさない）', () => {
+  R.add(ev('会議', 20000), 'list', D(10000));
+  eq(R.find(''), null);
+  eq(R.find(null), null);
+  eq(R.find(undefined), null);
+  eq(R.find('r-存在しない'), null);
+});
+
+t('v75: 直した後も同じ id で引ける（rev が上がってもタイトルは最新）', () => {
+  const a = R.add(ev('会議', 20000), 'both', D(10000));
+  R.update(a.id, ev('打ち合わせ', 20000), D(11000));
+  const got = R.find(a.id);
+  eq(got.title, '打ち合わせ', '来歴の ✏️ のラベルは常に台帳の今の値');
+  eq(got.rev, 2);
+});
+
+t('v75: 台帳が壊れていても find は落ちない（読める行だけで答える）', () => {
+  const a = R.add(ev('会議', 20000), 'list', D(10000));
+  const raw = JSON.parse(mem.get(R.KEY));
+  raw.push(null, 'ゴミ', { title: 'id なし' });
+  mem.set(R.KEY, JSON.stringify(raw));
+  eq(R.find(a.id).title, '会議');
+});
+
 console.log(`\nrecords.test: ${pass} passed, ${fail} failed`);
 if (failures.length) { console.log('\n' + failures.join('\n\n')); process.exit(1); }
