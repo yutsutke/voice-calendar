@@ -134,22 +134,34 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
   .notes { text-align: center; font-size: 12px; color: var(--warn); min-height: 18px; margin-bottom: 8px; }
 
   /* ---- 開発用: テキストで発話 ---- */
-  .sim { display: flex; gap: 8px; margin-bottom: 18px; }
-  .sim input { flex: 1; padding: 9px 12px; border: 1px solid var(--line); border-radius: 10px; font-size: 15px; background: var(--card); color: var(--ink); }
-  .sim button { padding: 9px 14px; border: none; border-radius: 10px; background: var(--card); color: var(--accent); font-size: 14px; cursor: pointer; border: 1px solid var(--line); white-space: nowrap; }
+  /* v76: 縦積み＋2行（実機FB第43回「発話として送るの段が長くて横スクロールになる」）。
+     真因＝横並びの flex で **入力欄の min-width が auto**（size=20 由来の固有最小幅より縮まない）＋
+     **ボタンが nowrap で縮まない** ＝ 文字を大きくした端末で合計が画面幅を超え、**ページ全体が横スクロール**した
+     （実測: 15px で +2px / 18px で +49px / 22px で +127px / 26px で +202px）。
+     🔑 同じ罠はフォーム側 .row では min-width:0 で既に塞いであったのに、ここだけ配線されていなかった
+     ＝ v74「対策は1箇所に持つ／既存の入口を見落とさない」の CSS 版。
+     縦積みにすれば**幅の取り合いが消える＝構造的に溢れない**（文字が何倍になっても）。 */
+  .sim { display: flex; flex-direction: column; gap: 8px; margin-bottom: 18px; }
+  .sim textarea { width: 100%; box-sizing: border-box; min-width: 0; padding: 9px 12px; border: 1px solid var(--line); border-radius: 10px; font-size: 15px; font-family: inherit; line-height: 1.45; background: var(--card); color: var(--ink); resize: vertical; }
+  .sim button { align-self: flex-end; max-width: 100%; padding: 9px 14px; border-radius: 10px; background: var(--card); color: var(--accent); font-size: 14px; cursor: pointer; border: 1px solid var(--line); }
 
   /* ---- フォーム（単一の真実の描画） ---- */
   form.card { background: var(--card); border-radius: 16px; padding: 6px 16px; box-shadow: 0 1px 3px rgb(0 0 0 / .06); }
-  .row { display: flex; align-items: center; gap: 10px; padding: 11px 0; border-bottom: 1px solid var(--line); position: relative; }
+  /* v76: flex-wrap（実機FB第43回の横スクロール調査で発見）。文字を大きくした端末では
+     日付+時刻の2つ（開始/終了）が入り切らず **画面外へ出ていた**（実測 1.5倍で f-startTime / f-endTime が右へはみ出す）。
+     ＝ 見えない欄は無いのと同じ（v45）。入り切らない control は次の行へ折り返す（v48 の .set-head と同じ手）。 */
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 11px 0; border-bottom: 1px solid var(--line); position: relative; }
   .row:last-child { border-bottom: none; }
   .row label.name { flex: 0 0 4.5em; font-size: 14px; color: var(--sub); }
   .row .req { color: var(--accent); font-size: 11px; margin-left: 2px; }
   .row input[type="text"], .row textarea { flex: 1; border: none; background: transparent; font-size: 16px; color: var(--ink); outline: none; min-width: 0; }
   .row input[type="date"], .row input[type="time"] { border: none; background: transparent; font-size: 16px; color: var(--ink); outline: none; font-family: inherit; }
   .row textarea { resize: vertical; min-height: 24px; }
-  /* v60: メモは4行既定（話した気分を全文で残す用途 v58①）。多行なのでラベルは上揃え。 */
-  .row[data-field="note"] { align-items: flex-start; }
-  .row[data-field="note"] label.name { padding-top: 3px; }
+  /* v60: メモは4行既定（話した気分を全文で残す用途 v58①）。多行なのでラベルは上揃え。
+     v76: タイトルも3行（実機FB第43回「長く喋ることも増えた」）＝同じ扱い。
+     ⚠ input→textarea に替えても store との配線は不変（読み書きは el.value・ロックは activeElement 由来）。 */
+  .row[data-field="note"], .row[data-field="title"] { align-items: flex-start; }
+  .row[data-field="note"] label.name, .row[data-field="title"] label.name { padding-top: 3px; }
   .row .lockmark { position: absolute; right: 0; top: 6px; font-size: 11px; color: var(--warn); opacity: 0; transition: opacity .15s; pointer-events: none; }
   .row.locked { background: var(--lock); border-radius: 8px; }
   .row.locked .lockmark { opacity: 1; }
@@ -378,14 +390,17 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
   <div class="notes" id="notes"></div>
 
   <div class="sim">
-    <input id="simText" type="text" placeholder="テキストで発話を試す（例: 明日15時に歯医者）" autocomplete="off">
+    <!-- v76: 2行（実機FB第43回）。Enter は今までどおり「送る」・改行は Shift+Enter（挙動を変えない） -->
+    <textarea id="simText" rows="2" placeholder="テキストで発話を試す（例: 明日15時に歯医者）" autocomplete="off"></textarea>
     <button id="simSend" type="button">発話として送る</button>
   </div>
 
   <form class="card" id="form" autocomplete="off" onsubmit="return false">
     <div class="row" data-field="title">
       <label class="name" for="f-title">タイトル<span class="req">●</span></label>
-      <input type="text" id="f-title" placeholder="なんの予定？">
+      <!-- v76: 3行（実機FB第43回「長く喋ることも増えた」）。長いタイトルが1行で切れて読めないのを解消。
+           input→textarea だが store との配線は不変（el.value / activeElement）＝背骨①「フォームが単一の真実」は不変。 -->
+      <textarea id="f-title" rows="3" placeholder="なんの予定？"></textarea>
       <span class="lockmark">✋ 編集中 — 音声は書き込みません</span>
     </div>
     <div class="row" data-field="startDate" data-field2="startTime">
@@ -630,20 +645,20 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
      理由: この版文字列は index.html にしかないが、ロジックは別ファイル＝別キャッシュ。
      付けないと「フッタは新しいのにパーサは古い」という嘘の状態が成立する（v9 で実際に踏んだ）。
      index.html が更新されれば src の URL も変わる → JS も必ず新しく取り直される。 -->
-<script src="engine/settings.js?v=75"></script>
-<script src="engine/schema.js?v=75"></script>
-<script src="engine/parser.js?v=75"></script>
-<script src="engine/dictionary.js?v=75"></script>
-<script src="engine/contract.js?v=75"></script>
-<script src="engine/batch.js?v=75"></script>
-<script src="engine/ai.js?v=75"></script>
-<script src="input/transcriber.js?v=75"></script>
-<script src="adapters/calendar.js?v=75"></script>
-<script src="adapters/records.js?v=75"></script>
-<script src="adapters/location.js?v=75"></script>
+<script src="engine/settings.js?v=76"></script>
+<script src="engine/schema.js?v=76"></script>
+<script src="engine/parser.js?v=76"></script>
+<script src="engine/dictionary.js?v=76"></script>
+<script src="engine/contract.js?v=76"></script>
+<script src="engine/batch.js?v=76"></script>
+<script src="engine/ai.js?v=76"></script>
+<script src="input/transcriber.js?v=76"></script>
+<script src="adapters/calendar.js?v=76"></script>
+<script src="adapters/records.js?v=76"></script>
+<script src="adapters/location.js?v=76"></script>
 <script>
 'use strict';
-const BUILD = 'v75：来歴からも保存済みを直せる（💾 の行に ✏️） · 2026-08-03';
+const BUILD = 'v76：タイトル3行・発話テキスト2行・横スクロールを構造的に解消 · 2026-08-04';
 console.log('BUILD:', BUILD);
 document.getElementById('build').textContent = BUILD;
 
@@ -2282,7 +2297,9 @@ document.addEventListener('visibilitychange', () => {
 // フォームが本体・音声は補助。v13 の教訓）
 const simText = document.getElementById('simText');
 document.getElementById('simSend').addEventListener('click', send);
-simText.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); send(); } });
+// v76: 2行の textarea になったが **Enter=送るは変えない**（今までの手が変わらない）。
+// 改行したい時だけ Shift+Enter＝textarea にした意外性（Enter が効かない/改行だけになる）を両方潰す。
+simText.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } });
 function send() {
   const t = String(simText.value || '').trim();
   if (!t) return;
