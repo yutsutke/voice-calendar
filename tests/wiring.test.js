@@ -123,5 +123,53 @@ t('台帳の描画は来歴も撮り直す（消えた行の ✏️ を残さな
   ok(/renderRecordsList\s*\(/.test(body), '描画本体が分かれていない＝早期 return で来歴が取り残される');
 });
 
+// ===== 5. 録音も「入口2つ・道1本」（v77 で下の固定マイクバーが増えた） =====
+// v77 で録音の入口が2つになった（上の丸いマイク／下の固定バー）＝ v74 の実バグ（保存の入口が2つで
+// 道が2本あり、後から足した分岐が片方に配線されていなかった）とまったく同じ形が作れる場所になった。
+// 数え方は「関数の本体に何回あるか」と「ソース全体に何回あるか」の一致で見る
+// （行の一致だと `function f() { ... }` の1行書きで body に行全体が入らず誤検知する＝実際に踏んだ）
+const inBody = (name, re) => ((bodyOf(name).match(re) || []).length);
+
+t('録音の開始/停止は toggleMic 1本（transcriber.toggle を直呼びしない）', () => {
+  const all = countOf(/transcriber\.toggle\s*\(/g);
+  ok(all > 0, 'transcriber.toggle が消えている（名前を変えたならこのテストも直す）');
+  const inside = inBody('toggleMic', /transcriber\.toggle\s*\(/g);
+  ok(all === inside, `transcriber.toggle を toggleMic の外で呼んでいる（外に ${all - inside} 箇所）`);
+  ok(countOf(/toggleMic\b/g) >= 3, '録音の入口（上のマイク・下のバー）が toggleMic を通っていない');
+});
+
+t('「やめる」も cancelMic 1本（入口が増えても取り消しの中身は複製しない）', () => {
+  const all = countOf(/transcriber\.cancel\s*\(\s*\)/g);
+  ok(all > 0, 'transcriber.cancel が消えている（名前を変えたならこのテストも直す）');
+  const inside = inBody('cancelMic', /transcriber\.cancel\s*\(\s*\)/g);
+  ok(all === inside, `transcriber.cancel を cancelMic の外で呼んでいる（外に ${all - inside} 箇所）`);
+  ok(countOf(/cancelMic\b/g) >= 3, '「やめる」の入口（上・下）が cancelMic を通っていない');
+});
+
+// 🚨 v77 の肝: 録音中の**見た目**も1箇所。v76 までは onState と「やめる」の2箇所で同じ見た目を
+//   書いていた＝下のバーが増えた時点で「片方だけ直して食い違う」（上は録音中の赤、下は待機中の顔）
+//   が成立する。見た目の食い違いは v3（store と画面のズレ）と同じ種類の事故＝画面が嘘をつく。
+t('録音中の見た目を触るのは renderMicState だけ', () => {
+  ok(/function renderMicState/.test(code), 'renderMicState が無い（見た目の反映が散っている）');
+  const body = bodyOf('renderMicState');
+  for (const [label, re] of [['micCancelBtn.hidden', /micCancelBtn\.hidden\s*=/g], ["mic の listening", /micBtn\.classList\.toggle\s*\(\s*'listening'/g]]) {
+    const all = countOf(re), inside = (body.match(re) || []).length;
+    ok(all === inside, `${label} を renderMicState の外で書いている（外に ${all - inside} 箇所）`);
+  }
+  // 下のバーも同じ関数の中で一緒に切り替わる（上だけ赤い、を作らない）
+  ok(/dockMic/.test(body) && /dockCancel/.test(body), 'renderMicState が下の固定バーを切り替えていない');
+});
+
+t('下の固定バーは「上のマイクが画面外の時だけ」出す（判定は1箇所）', () => {
+  ok(countOf(/micDock\.hidden\s*=/g) === 1,
+    '下のバーの表示を書いている場所が1箇所でない＝条件が食い違う');
+  ok(/micBtn\.getBoundingClientRect/.test(bodyOf('syncDock')),
+    'syncDock が上のマイクの位置を見ていない＝2つのマイクが同時に見える／どこにも出ない');
+  // きっかけは2つとも残す。IO だけにすると IO が効かない環境で出なくなり、scroll だけにすると
+  // スクロールのたびに JS が走る。**判定は syncDock 1箇所**なので、きっかけが増えても食い違わない。
+  ok(/IntersectionObserver\(syncDock/.test(code), 'IntersectionObserver から syncDock を呼んでいない');
+  ok(/addEventListener\('scroll', syncDock/.test(code), 'スクロールで見直していない＝出たきり／出ないままになる');
+});
+
 console.log(`\nwiring.test: ${pass} passed, ${fail.length} failed`);
 if (fail.length) { console.log('\n' + fail.join('\n\n')); process.exit(1); }

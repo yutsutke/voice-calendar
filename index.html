@@ -89,7 +89,8 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
   }
   * { box-sizing: border-box; }
   body {
-    margin: 0; padding: calc(var(--sat) + 12px) 16px calc(var(--sab) + 24px);
+    /* v77: 下の余白は「固定マイクバーの高さ分」を含む＝バーが最下部の内容（フッタ）に被らない */
+    margin: 0; padding: calc(var(--sat) + 12px) 16px calc(var(--sab) + 88px);
     background: var(--bg); color: var(--ink);
     font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic UI", sans-serif;
     font-size: 16px; line-height: 1.5;
@@ -129,6 +130,26 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
   /* v70: 発話中に出る文字（途中結果「… こんにちは」・確定の「🗣 …」）を大きく（実機FBの要求）。
      ノールックの直前に「今なんと認識されているか」を*見る*唯一の場所＝手元から離れていても読める大きさに。
      確定（.final）も同じ要素なので一緒に大きくなる＝同じ趣旨（生テキストは認識/解釈の切り分けの起点＝来歴の 🗣 と同じもの）。 */
+  /* v77: 下に固定のマイクバー（ゆう要求・参照は Alexa の「Alexaに聞く」）。
+     リストや設定を見ている最中に思いついても、**上まで戻らずに話せる**＝ノールックの延長。
+     🔑 上のマイクが見えている間は出さない（同じ機能のボタンを2つ同時に見せない）＝表示の判定は
+     syncDock 1箇所、押した後の道は toggleMic/cancelMic ＝ **入口は増えても道は1本**（v74）。 */
+  .dock { position: fixed; left: 12px; right: 12px; bottom: calc(var(--sab) + 12px); z-index: 40;
+    display: flex; gap: 8px; justify-content: center; pointer-events: none; }
+  .dock[hidden] { display: none; }
+  .dock > * { pointer-events: auto; }
+  .dock-btn { flex: 1; max-width: 420px; display: flex; align-items: center; justify-content: center; gap: 10px;
+    padding: 13px 18px; border-radius: 999px; border: 1px solid var(--line);
+    background: var(--card); color: var(--ink); font-size: 15px; font-family: inherit; cursor: pointer;
+    box-shadow: 0 6px 22px rgb(0 0 0 / .18); }
+  .dock-btn:active { opacity: .7; }
+  .dock-btn.listening { border-color: #ff375f; color: #ff375f; background: var(--card); }
+  .dock-ico { font-size: 19px; }
+  .dock-cancel { border: 1px solid #ff375f; border-radius: 999px; padding: 13px 16px;
+    background: var(--card); color: #ff375f; font-size: 14px; font-family: inherit; cursor: pointer;
+    white-space: nowrap; box-shadow: 0 6px 22px rgb(0 0 0 / .18); }
+  .dock-cancel[hidden] { display: none; }
+
   .transcript { min-height: 30px; text-align: center; color: var(--sub); font-size: 20px; line-height: 1.4; margin: 4px 0 6px; overflow-wrap: anywhere; }
   .transcript .final { color: var(--ink); }
   .notes { text-align: center; font-size: 12px; color: var(--warn); min-height: 18px; margin-bottom: 8px; }
@@ -168,11 +189,29 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
   .row.flash { animation: flashbg 1.2s ease-out; }
   @keyframes flashbg { 0% { background: var(--flash); border-radius: 8px; } 100% { background: transparent; } }
 
-  details.optional { margin-top: 10px; }
-  details.optional > summary { list-style: none; cursor: pointer; color: var(--sub); font-size: 13px; padding: 6px 4px; user-select: none; }
-  details.optional > summary::before { content: '▸ '; }
-  details.optional[open] > summary::before { content: '▾ '; }
-  details.optional .card2 { background: var(--card); border-radius: 16px; padding: 2px 16px; box-shadow: 0 1px 3px rgb(0 0 0 / .06); }
+  /* v77: 畳み8個を「浮いたカード」に（ゆう要求「いまはやりの階層的な UI」・参照は Alexa のホーム画面）。
+     v76 まで**見出し（summary）はカードの外**の小さな灰色文字で、中身だけが面だった＝ 同じ姿が8個並び、
+     どれが何なのか一目で分からなかった。見出しをカードの中へ入れて「**1枚のカード＝1つの機能**」にする。
+     🔑 **開閉の仕組み（details/summary）は変えない**＝操作も配線も v76 のまま＝**見た目だけの変更**。
+     ノールックの主動線（マイク→フォーム→保存）には触れていない（SPEC §2 の背骨②「仲介者を消す」）。 */
+  details.optional {
+    margin-top: 10px; background: var(--card); border-radius: 16px;
+    box-shadow: 0 1px 3px rgb(0 0 0 / .06); overflow: hidden;
+  }
+  details.optional > summary {
+    list-style: none; cursor: pointer; user-select: none;
+    display: flex; align-items: center; gap: 8px;
+    color: var(--ink); font-size: 14px; font-weight: 600; padding: 13px 16px;
+  }
+  details.optional > summary::before { content: '▸'; color: var(--sub); font-weight: 400; font-size: 12px; }
+  details.optional[open] > summary::before { content: '▾'; }
+  details.optional > summary:active { opacity: .6; }
+  /* 中身はカードの内側＝面を二重にしない（v46: 新しい視覚語彙を増やさない） */
+  details.optional .card2 { background: transparent; border-radius: 0; box-shadow: none; padding: 0 16px 14px; }
+  @media (prefers-color-scheme: dark) {
+    /* ダークでは影が見えない＝**縁のわずかな明るさ**で層を出す（Alexa のホームと同じ手） */
+    details.optional { box-shadow: none; border: 1px solid #ffffff14; }
+  }
 
   /* ---- 来歴 ---- */
   .history-list { font-size: 13px; }
@@ -412,7 +451,8 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
   </form>
 
   <details class="optional" id="optional">
-    <summary>任意の項目（終了・終日・場所・メモ）</summary>
+    <!-- v77: カードの見出しにアイコンを1つ（絵文字は既にこの製品の語彙＝📝📅🔤💾。新しい語彙を増やさない） -->
+    <summary>➕ 任意の項目（終了・終日・場所・メモ）</summary>
     <div class="card2">
       <div class="row" data-field="endDate" data-field2="endTime">
         <label class="name">終了</label>
@@ -492,7 +532,7 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
        v33: リストより上に配置（ユーザー要望）・直近5件だけ表示（残りは「もっと見る」）・
        自動保存が走った発話は💾を刻んでこのパネルを自動で開く（「自動記録の内容がみれて便利」） -->
   <details class="optional" id="historyBox">
-    <summary>来歴（最近の発話と解釈）</summary>
+    <summary>🕘 来歴（最近の発話と解釈）</summary>
     <div class="card2">
       <div id="historyList" class="history-list"></div>
       <div class="history-actions"><button id="historyClear" type="button">来歴を消す</button></div>
@@ -503,7 +543,7 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
        （書き込み専用＝v23-v26）ため、保存時に端末内へ残した控え（adapters/records.js）を表示する。
        出るのは保存先を「リスト」か「両方」にして保存した分だけ（カレンダーのみはカレンダーアプリで見る） -->
   <details class="optional" id="recordsBox">
-    <summary>リスト（記録📝と予定📅）<span class="rec-count" id="recCount"></span></summary>
+    <summary>📋 リスト（記録📝と予定📅）<span class="rec-count" id="recCount"></span></summary>
     <div class="card2">
       <div class="rec-filters">
         <label><input type="checkbox" id="recShowPlan" checked> 📅 予定</label>
@@ -519,7 +559,7 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
        一度入り、人が確認してから保存する（直接保存しない）。音声の短文経路（ルールベース・自動保存 v28）は
        ここと独立＝一切変えない -->
   <details class="optional" id="batchBox">
-    <summary>まとめて入力（長文・AI・JSON）<span class="rec-count" id="batchCount"></span></summary>
+    <summary>📥 まとめて入力（長文・AI・JSON）<span class="rec-count" id="batchCount"></span></summary>
     <div class="card2">
       <div class="batch-hint">長い文章から複数の予定・記録をまとめて取り込めます。手順: ① 下の欄に文章を貼る → ②「AI用の指示をコピー」を押して、お使いのチャットAI（Claude / ChatGPT / Gemini など）に貼り付ける → ③ 返ってきた JSON をこの欄に貼り直して「JSONとして取り込み」。取り込んだ予定は下に一度並び、<b>確認してから保存</b>します（勝手に保存されません）。保存の控えは「リスト」に残ります（来歴は音声の記録＝ここからの取り込みは載りません）。⚠ コピーした文面は貼り付け先の AI に渡ります（辞書の言い回しは展開後の実文字列が入ります）。</div>
       <textarea id="batchText" rows="5" placeholder="長い文章（メール・議事録など）か、AI が返した JSON をここに貼る"></textarea>
@@ -540,7 +580,7 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
   <!-- 詳細設定（v19）: 実機FBで「人によって望む挙動が違う」と分かった決定だけを露出する。
        既定は全部これまでの実挙動＝触らない人の体験は変わらない -->
   <details class="optional" id="settingsBox">
-    <summary>詳細設定</summary>
+    <summary>⚙️ 詳細設定</summary>
     <div class="card2">
       <div id="settingsList"></div>
       <div class="history-actions"><button id="settingsReset" type="button">既定に戻す</button></div>
@@ -566,7 +606,7 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
        展開は解釈の前＝欄指定（「メモ 僕のメールアドレス」）でも効く。何が置き換わったかは来歴に 🔤 で
        残す（黙って置換しない＝v16）。登録は端末内 localStorage のみ（外部送信しない＝ローカル完結） -->
   <details class="optional" id="dictBox">
-    <summary>辞書（言い回しの置き換え）<span class="rec-count" id="dictCount"></span></summary>
+    <summary>🔤 辞書（言い回しの置き換え）<span class="rec-count" id="dictCount"></span></summary>
     <div class="card2">
       <div class="dict-hint">話した言葉の中の「言い回し」を、登録した文字に置き換えてから解釈します。例: 「メモ 僕のメールアドレス」→ メモ欄に実際のアドレスが入る。<b>長い言い回しほど安全</b>です（短い言葉は他の言葉の中に現れて誤変換します。例: 「メモ」を登録すると「メモリアルホール」が壊れます）。置き換えた内容は来歴に 🔤 で表示されます。登録内容はこの端末の中だけに保存され、外部には送信されません。</div>
       <div id="dictList"></div>
@@ -581,7 +621,7 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
   <!-- 診断（v13）: 実機（iPhone）にコンソールが無いので、環境・層の読込・エラーを画面に出す。
        エラーがあれば自動で開く＝黙って壊れない -->
   <details class="optional" id="diagBox">
-    <summary>診断（環境・エラー）</summary>
+    <summary>🩺 診断（環境・エラー）</summary>
     <div class="card2">
       <div id="diagList" class="history-list"></div>
     </div>
@@ -591,7 +631,7 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
        パーサ実測で裏取り済み（ドキュメントが嘘をつかない＝v10）。欄指定は空白なしでも通る。
        「今」より「現在」が確実、は v27 の区切りガードの帰結（「今」は後ろに区切りが無いと日時にならない） -->
   <details class="optional" id="examplesBox">
-    <summary>使い方の事例（予定と記録）</summary>
+    <summary>💡 使い方の事例（予定と記録）</summary>
     <div class="card2">
       <div class="ex-head">📅 予定として使う</div>
       <div class="ex-item">
@@ -639,26 +679,33 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
 
   <footer id="build"></footer>
 </main>
+<!-- v77: 下に固定のマイクバー（ゆう要求「いまはやりの階層的な UI」の相談から・参照は Alexa の「Alexaに聞く」）。
+     **上の大きなマイクが画面外に出た時だけ**現れる＝同じ機能のボタンが2つ同時に見える混乱を作らない。
+     押した後の道は上のマイクとまったく同じ（toggleMic / cancelMic）＝ v74「入口が増えても分岐は増やさない」。 -->
+<div class="dock" id="micDock" hidden>
+  <button class="dock-btn" id="dockMic" type="button"><span class="dock-ico">🎤</span><span id="dockText">話しかける</span></button>
+  <button class="dock-cancel" id="dockCancel" type="button" hidden>✕ やめる</button>
+</div>
 <div class="toast" id="toast"></div>
 
 <!-- ?v= は BUILD と必ず同じ版にする（tests/version.test.js が強制）。
      理由: この版文字列は index.html にしかないが、ロジックは別ファイル＝別キャッシュ。
      付けないと「フッタは新しいのにパーサは古い」という嘘の状態が成立する（v9 で実際に踏んだ）。
      index.html が更新されれば src の URL も変わる → JS も必ず新しく取り直される。 -->
-<script src="engine/settings.js?v=76"></script>
-<script src="engine/schema.js?v=76"></script>
-<script src="engine/parser.js?v=76"></script>
-<script src="engine/dictionary.js?v=76"></script>
-<script src="engine/contract.js?v=76"></script>
-<script src="engine/batch.js?v=76"></script>
-<script src="engine/ai.js?v=76"></script>
-<script src="input/transcriber.js?v=76"></script>
-<script src="adapters/calendar.js?v=76"></script>
-<script src="adapters/records.js?v=76"></script>
-<script src="adapters/location.js?v=76"></script>
+<script src="engine/settings.js?v=77"></script>
+<script src="engine/schema.js?v=77"></script>
+<script src="engine/parser.js?v=77"></script>
+<script src="engine/dictionary.js?v=77"></script>
+<script src="engine/contract.js?v=77"></script>
+<script src="engine/batch.js?v=77"></script>
+<script src="engine/ai.js?v=77"></script>
+<script src="input/transcriber.js?v=77"></script>
+<script src="adapters/calendar.js?v=77"></script>
+<script src="adapters/records.js?v=77"></script>
+<script src="adapters/location.js?v=77"></script>
 <script>
 'use strict';
-const BUILD = 'v76：タイトル3行・発話テキスト2行・横スクロールを構造的に解消 · 2026-08-04';
+const BUILD = 'v77：畳みをカードの層に＋下に固定のマイクバー · 2026-08-04';
 console.log('BUILD:', BUILD);
 document.getElementById('build').textContent = BUILD;
 
@@ -747,6 +794,24 @@ const micCancelBtn = document.getElementById('micCancel');
 const ovBox = document.getElementById('micOverrides');
 const ovNoAuto = document.getElementById('ovNoAuto');
 const ovAI = document.getElementById('ovAI');
+// v77: 下の固定マイクバー（上のマイクが画面外の時だけ出る）
+const micDock = document.getElementById('micDock');
+const dockMic = document.getElementById('dockMic');
+const dockText = document.getElementById('dockText');
+const dockCancel = document.getElementById('dockCancel');
+
+// v77: 録音中の見た目を触るのは**この1関数だけ**（上のマイク・下のバー・「やめる」・一時オーバーライドの行）。
+// v76 までは onState と「やめる」の中の2箇所で同じ見た目を書いており、入口（下のバー）が増えた時点で
+// **片方だけ直して食い違う**形になっていた＝v74 の「分岐は複製せず1箇所」を状態の反映にも適用する。
+function renderMicState(on) {
+  micBtn.classList.toggle('listening', on);
+  micState.textContent = on ? '聞いています…（もう一度押すと停止）' : '';
+  micCancelBtn.hidden = !on;                       // v49: 「やめる」は録音中だけ＝押せる時にだけ在る
+  if (dockMic) dockMic.classList.toggle('listening', on);
+  if (dockText) dockText.textContent = on ? '聞いています…' : '話しかける';
+  if (dockCancel) dockCancel.hidden = !on;
+  if (ovBox) ovBox.hidden = !on;                   // v61: 一時オーバーライドも録音中だけ
+}
 
 function onUtterance(text, meta) {
   // v37: 辞書（言い換え）展開＝**解釈より前**に生テキストへ適用（欄指定「メモ 僕のメールアドレス」でも効く）。
@@ -2189,12 +2254,10 @@ const transcriber = VCTranscriber.createTranscriber({
   onDebug(msg) { window.__vcDebugNote(`🎙 ${msg}`); }, // Swift 内部の出来事 → 診断（v15）
   onState(s) {
     const on = s === 'listening';
-    micBtn.classList.toggle('listening', on);
-    micState.textContent = on ? '聞いています…（もう一度押すと停止）' : '';
-    micCancelBtn.hidden = !on; // v49: 「やめる」は録音中だけ＝押せる時にだけ在る
+    renderMicState(on);        // v77: 見た目は1関数に集約（上のマイク・下のバー・やめる・オーバーライド）
     // v61: 一時オーバーライドは「この録音だけ」＝録音開始でリセット・録音中だけ出す。
     if (on) resetRecOverride();
-    if (ovBox) { ovBox.hidden = !on; if (on) renderOverrideButtons(); }
+    if (on && ovBox) renderOverrideButtons();
   },
   onError(e) {
     if (e === 'no-speech') { micState.textContent = ''; return; } // web の「無言」は正常系
@@ -2221,19 +2284,45 @@ function micOpts() {
   return { silenceMs: settings.get('silenceMs'), hints };
 }
 
+// v77: 録音の操作は**この2関数だけ**が行う。入口は2つ（上の丸いマイク／下の固定バー）だが道は1本
+// ＝ v74 の実バグ（保存の入口が2つで道が2本あり、片方だけ更新経路を通らなかった）と同じ形を作らない。
+function toggleMic() { transcriber.toggle(micOpts()); }
+// v77: 下のバーを出すか決めるのは**この1関数だけ**（上のマイクが1pxでも見えていれば出さない
+// ＝同じ機能のボタンが2つ同時に見える状態を作らない）。読み取りは1回＝スクロール中も軽い。
+function syncDock() {
+  if (!micDock) return;
+  const r = micBtn.getBoundingClientRect();
+  micDock.hidden = r.bottom > 0 && r.top < window.innerHeight;
+}
+// v49: 言い間違えの取り消し。**止めるだけでなく、この発話を解釈へ流さない**（transcriber.cancel）。
+// 途中結果の表示も消す＝画面から言い間違えが消える。黙って消さないよう toast で告げる（v16）。
+function cancelMic() {
+  if (typeof transcriber.cancel !== 'function') { transcriber.stop(); return; } // 古い転写層でも止まる
+  transcriber.cancel();
+  renderMicState(false);      // v77: 見た目の後始末も1箇所（上・下・やめる・オーバーライドが一度に戻る）
+  transcriptEl.textContent = '';
+  toast('🎤 やめました（何も入力していません）');
+}
+
 if (transcriber.available) {
-  micBtn.addEventListener('click', () => transcriber.toggle(micOpts()));
-  // v49: 言い間違えの取り消し。**止めるだけでなく、この発話を解釈へ流さない**（transcriber.cancel）。
-  // 途中結果の表示も消す＝画面から言い間違えが消える。黙って消さないよう toast で告げる（v16）。
-  micCancelBtn.addEventListener('click', () => {
-    if (typeof transcriber.cancel !== 'function') { transcriber.stop(); return; } // 古い転写層でも止まる
-    transcriber.cancel();
-    micCancelBtn.hidden = true;
-    if (ovBox) ovBox.hidden = true; // v61: やめたら一時オーバーライドの行も隠す
-    transcriptEl.textContent = '';
-    micState.textContent = '';
-    toast('🎤 やめました（何も入力していません）');
-  });
+  micBtn.addEventListener('click', toggleMic);
+  micCancelBtn.addEventListener('click', cancelMic);
+  if (dockMic) dockMic.addEventListener('click', toggleMic);
+  if (dockCancel) dockCancel.addEventListener('click', cancelMic);
+  // v77: 下のバーは「上のマイクが画面から出た時だけ」出す。音声が使えない環境では最初から出さない
+  // ＝押せるのに動かないボタンを作らない（v75 の ✏️ と同じ筋）。失敗しても本体は動く（v13）。
+  // 🔑 きっかけは2つ・判定は1つ: IntersectionObserver（省電力＝スクロール中に JS を走らせない）と
+  //   scroll（IO が効かない環境の保険）の両方から **同じ syncDock を呼ぶ**。呼び出しが二重でも
+  //   syncDock は「今の位置を見て hidden を決める」だけ＝何回呼ばれても結果は同じ（冪等）。
+  //   ⚠ **どちらも描画していない環境（開発時のプレビュー）では発火しない**＝実測で確認済み
+  //   （自前の observer も scroll リスナも 0 回。syncDock() を手で呼べば正しく切り替わる）
+  //   ＝ **「実際に切り替わるか」の最終確認は実機（Pages）でしかできない**。
+  try {
+    if ('IntersectionObserver' in window) new IntersectionObserver(syncDock, { threshold: 0 }).observe(micBtn);
+    window.addEventListener('scroll', syncDock, { passive: true });
+    window.addEventListener('resize', syncDock);
+    syncDock();  // 初期状態も同じ関数で決める（開いた直後だけ食い違う、を作らない）
+  } catch (e) { window.__vcNote('下のマイクバー', (e && e.message) || String(e)); }
   // v61: この録音だけの一時オーバーライド（実機FBの要求＝詳細設定へ行かず1回だけ切替）。
   // 設定(localStorage)は変えない・録音開始でリセット（onState）。
   ovNoAuto.addEventListener('click', () => {
