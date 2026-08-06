@@ -108,6 +108,50 @@ Google カレンダーに入れたい時は、iOS の「設定 → カレンダ�
 引き続き、声だけ・画面を見ずに予定を入れられます。ご要望をお待ちしています。
 ```
 
+### リリースノート（What's New・v1.2＝公開 1.1 → v63-v78）
+> 公開版 1.1（≈v62）からの差分。**iOS で見えるものだけ**（v65-v69・v73 は Android 専用なので書かない）。
+> ⚠ **位置情報は「復活」と書かない**＝公開ユーザーの 1.1 には**存在しなかった**機能なので、彼らにとっては新機能（v62 で消したのは開発側の事情）。
+```
+バージョン1.2では、話している最中の画面を作り直しました。
+
+■ 録音中は専用画面に
+・話し始めると画面いっぱいの録音画面になり、認識中の文字が大きく表示されます。長く話しても、続きを追いながら話せます。
+・その場で「やめる（入力しない）」「この録音だけ 自動登録しない」「この録音だけ AIで解釈」を選べます。
+・話し終われば自動で閉じて、いつものフォームに戻ります。
+
+■ 画面まわりの整理
+・各パネルをカードにまとめました。下の方を見ている時も、画面下のマイクからそのまま話せます。
+・長いタイトルが3行まで見えるようになり、文字を大きく設定している端末でも横にはみ出さなくなりました。
+・発話中に見える認識文字を大きくしました。
+
+■ 記録まわり
+・「来歴」からも、保存済みの予定・記録をその場で直せるようになりました。
+・記録（📝）の印が、保存先の設定にかかわらず付くようになりました。
+・ホーム画面のアイコンを長押しして「リスト」を直接開けます。
+
+■ 位置情報（任意・既定はオフ）
+・設定でオンにすると、保存した時にいた場所をアプリ内のリストに残し、地図で開けます。位置情報は端末の中だけに保存され、外部へは送信しません。
+
+■ 修正
+・手直しした内容を「辞書に登録して保存」した時に、編集中の予定が新規保存になってしまう問題を修正しました。
+
+ご意見・ご要望をお待ちしています。
+```
+
+### 4-b. 説明（1.2 で差し替える案・§4 は 1.0 のまま＝リスト/辞書/まとめて入力/AI/位置に触れていない）
+> 📌 1.2 の素材をまとめておくため、§4 の直後ではなく**ここ**に置いてある。
+> §4 の本文の **■ こんなアプリです の後ろ**にこの3ブロックを足し、末尾はそのまま。文字数は上限 4000 に余裕あり。
+```
+■ 残す・見返す
+保存した予定と記録は、アプリ内の時系列リストにも残せます（保存先は「カレンダー／リスト／両方」から選べます）。CSV で書き出せます。
+
+■ 長い文章からまとめて
+メールや議事録のような長文から、複数の予定をまとめて取り込めます。取り込んだ内容は保存する前に必ず確認できます。
+
+■ 自分の AI で解釈（任意・既定はオフ）
+自分の API キー（Anthropic / Google）を設定すると、あいまいな言い方や長文も AI が下書きにします。キーが無ければ一切通信しません。キーは端末内にのみ保存され、開発者は受け取りません。
+```
+
 ## 6. URL 類
 | フィールド | 値 |
 |---|---|
@@ -200,6 +244,63 @@ This key is capped for review use only and will be revoked after review.
 
 ---
 
+### 8-c. App Review メモ（v1.2・位置情報あり＋録音中の専用画面）＝ 今回の提出はこちらを貼る
+
+> 8-b（1.1）との違いは3つ。**どれも「聞かれる前に言う」**（Guideline 2.1 は**事前に開示していなかったこと**が引き金だった＝1.1 は先回りで通った）:
+> ① 🚨 **位置情報が在る**。1.1 のメモには `Location: NOT used` と書いた＝**その一文が 1.2 では嘘になる**。前回の記述を自分から取り消して説明する。
+> ② 🚨 **起動すると全画面の録音画面が出る**（v24 の自動録音＋v78 の専用画面）＝審査担当が「画面が固まった／何も押せない」と誤解しうる**新しい面**。閉じ方を先に書く。
+> ③ ホーム画面長押しの Quick Action（v64）＝ Siri インテントではないことを明記。
+> 🔑 **キーの貼り場所は2つ**: (A) 下の `[PASTE ...]` に実キー → 英文まるごとを ASC「App Review Information → メモ」へ。(B) 審査官はアプリ内 **⚙️ 詳細設定 →「AI 設定」→「API キー」** に貼る（手順は本文が案内する）。
+
+```
+This app adds calendar events from Japanese voice input. No account or login is required. The developer has no server and collects no data.
+
+WHAT CHANGED SINCE VERSION 1.1 (disclosed up front):
+1) Optional location capture exists again in this version. Our review notes for 1.1 stated "Location: NOT used" - that sentence is no longer accurate for 1.2. Please see the LOCATION section below. It is OFF by default and the data never leaves the device.
+2) While the microphone is active, the app now shows a full-screen "listening" view. Because the app can start recording automatically on launch, you may see this view immediately after opening the app. It closes by itself; see the next section.
+
+IF A FULL-SCREEN RECORDING VIEW APPEARS ON LAUNCH:
+The app starts recording automatically when it is opened with an empty form (this is the core "no-look" use case). The full-screen view shows what is being heard. It closes by itself after about 6 seconds of silence, or you can tap the red microphone (stop) or "やめる（入力しない）" (= cancel, discard). Nothing is saved by this view.
+
+CORE FEATURE (works with NO API key):
+- Tap the microphone and speak a schedule in Japanese, e.g. "明日15時に歯医者" (= dentist tomorrow at 3pm). On-device Japanese speech recognition (SFSpeechRecognizer) fills a form. Tap "カレンダーに保存" (Save) to add the event to the device's default calendar via EventKit.
+
+HOW TO TEST WITHOUT SPEAKING JAPANESE:
+1. Launch the app; grant Microphone, Speech Recognition, and Calendar (write-only) when prompted. If the full-screen recording view appears, wait ~6 seconds or tap "やめる（入力しない）" to return to the form.
+2. On the main screen there is a text field that simulates an utterance. Type: 明日15時に歯医者  then tap the button below it ("発話として送る" = send as utterance).
+3. The form fills (date / time / title). Tap "カレンダーに保存" (Save). The event is added to the device's default calendar.
+(If you can speak Japanese, tap the microphone button and say the same phrase.)
+
+PERMISSIONS:
+- Microphone + Speech Recognition: to capture and transcribe the spoken schedule (on-device where supported).
+- Calendars (write-only, iOS 17 write-only access): to ADD events only. The app does NOT read existing calendar data.
+- Location (When In Use): OPTIONAL and OFF BY DEFAULT - see below.
+
+LOCATION (optional, off by default, never transmitted):
+The app can record where an entry was saved, so the user can later see the place in the app's own local list and open it in Maps. Nothing is requested or captured unless the user turns on "保存時に位置情報も記録する" in ⚙️詳細設定 (Settings). The coordinates are stored only on the device (local storage) alongside that entry, are never sent anywhere, and the developer operates no server and receives nothing. Turning the setting off stops capture immediately. For this reason our App Privacy answers remain "Data Not Collected".
+
+SIRI: "Hey Siri, ボイカレ開いて" simply opens the app (standard launch via INAlternativeAppNames). There is no custom Siri intent.
+
+HOME SCREEN QUICK ACTION: Long-pressing the app icon offers "リスト" (list), which opens the app and expands its local list of saved entries. This is a standard UIApplicationShortcutItem, not a Siri intent.
+
+OPTIONAL AI FEATURE (off by default, "bring your own key"):
+The app can parse long free text into draft events using a third-party AI service (Anthropic Claude or Google Gemini). It is OFF by default and does nothing unless the user enters their OWN API key in the app's settings. Without a key, no AI request is ever made and nothing the user types or speaks leaves the device (aside from Apple's own OS speech service and EventKit, described above). The developer operates no server and receives nothing; the API key is stored only on the device. The AI result is always shown to the user for review before anything is saved. This was first shipped in version 1.1 and is unchanged in behavior.
+
+HOW TO TEST THE OPTIONAL AI (a spend-capped test key is provided below):
+1. Scroll to "⚙️ 詳細設定" (Settings) and expand it; find "AI 設定".
+2. プロバイダ (Provider): select "Anthropic（Claude）".
+3. API キー (API key): paste the test key below, tap 保存 (Save), then テスト送信 (Test send). It should report a successful connection.
+4. Open the "📥 まとめて入力" (Batch input) panel, paste any text containing a schedule, and tap the AI interpret button. Draft events appear for you to review before saving.
+
+TEST API KEY (Anthropic, monthly spend limited to about US$1 - please do not share):
+[PASTE YOUR sk-ant-... KEY HERE]
+
+This key is capped for review use only and will be revoked after review.
+```
+- **デモアカウント: 不要**（Sign-in は OFF のまま・キーは Notes に書く）。
+
+---
+
 ## 9. スクリーンショット構成案
 
 **必須サイズ（現行 App Store・2025 時点）**
@@ -208,6 +309,10 @@ This key is capped for review use only and will be revoked after review.
 - **iPad 12.9型**: **2048 × 2732 px**（縦）← iPad タブの要求。※タブで数字を要確認（2064×2752 の可能性も）
 - スクショは**透過なし・PNG**。インストールシートに出るのは**最初の3枚**＝1枚目に一番良いものを置く。
 - App アイコン 1024² は build から取得。端末フレーム＋キャプション重ねは任意。
+
+> 🚨 **1.2 でスクショは古くなった**（2026-08-06）。掲載中のスクショは **1.0 提出時（≈v31）の画面**で、その後 **v77（各パネルがカード＋下の固定マイクバー）と v78（録音中は全画面の専用画面）で見た目が変わった**＝**今のアプリと違う絵が出ている**。差し替え推奨（審査で落ちる類ではないが、「実物と違う」は指摘されうるし、何より**新しい録音画面が一番の売り**）。
+> - 差し替えるなら**最低1枚目だけでも**＝一覧に出るのは先頭3枚。**1枚目を「録音中の専用画面（大きな認識文字）」**にすると、このアプリの主張がそのまま絵になる。
+> - サイズは前回と同じ **iPhone 6.5型 1242×2688 / iPad 12.9型 2048×2732**（ASC が画面に出す数字が正）。
 
 **各カットの狙い（5枚案）**
 | # | 見せるもの | キャプション案 |
@@ -378,3 +483,40 @@ Yusuke Tanaka
 **⚠️ 見張り事項（今すぐ直さない・却下されたら対応）＝ Guideline 5.1.2（AI への送信同意）**
 - 現状の同意の担保＝**既定オフ＋利用者が自分のキーを入れる（明示的な有効化）＋設定に「文章は選んだ AI 社へ直接送信される」と明記＋取り込み前に必ず内容確認**。これは十分に強い opt-in と考えられる。
 - ただし 5.1.2 は 2025 後半に AI を明記する形へ更新＝**厳しい審査官は「送信直前の1文の同意」を求める可能性**。要求されたら**送信前に一度だけ確認を出す**小改修（＝新ビルド）で対応。**今回は現状のまま出して様子を見る**のが妥当（すでにビルド添付済み・同意の筋も通っている）。
+
+---
+
+### 11-3. 1.2 提出（v63-v78・位置情報あり）＝ 準備中（2026-08-06）
+
+**この版に載るもの**（公開版 1.1 ≈ v62 からの差分・**iOS で見えるものだけ**）
+| | 内容 | 審査への影響 |
+|---|---|---|
+| v63 | 録音中の一時オーバーライドのボタン寸法を揃えた | なし |
+| v64 | **ホーム画面長押し（Quick Action）→「リスト」** | メモに1行（Siri インテントではない） |
+| v70 | 発話中に見える認識文字を大きく | なし |
+| v71 | 記録📝を保存先によらず付ける | なし |
+| **v72** | 🚨 **位置情報の復活**（任意・既定オフ・端末内のみ） | **メモの書き換えが必須**（1.1 で `Location: NOT used` と書いた） |
+| v74 | 「辞書に登録して保存」が更新経路を通る（不具合修正） | なし |
+| v75 | 来歴からも保存済みを直せる | なし |
+| v76 | タイトル3行・横スクロール解消 | なし |
+| v77 | 各パネルをカードに＋下の固定マイクバー | **スクショが古くなる** |
+| **v78** | 🚨 **録音中は全画面の専用画面** | **メモに閉じ方を書く**（起動＝即録音と重なり、開いた直後に全画面が出る） |
+> v65-v69・v73 は **Android 専用**＝ iOS のリリースノートには書かない（Play 側 versionCode 9 で配信済み）。
+
+**ASC で触る場所（この順で）**
+1. **バージョン 1.2 を作成** → TestFlight の **1.2(N)** ビルドを添付（`MARKETING_VERSION = 1.2`・repo は既に 1.2）。
+2. **このバージョンの新機能** ← §5 の「What's New・v1.2」を貼る。
+3. **App Review Information → メモ** ← **§8-c**（8-b ではない）。`[PASTE ...]` に $1 上限のテストキー。**Sign-in required = OFF**。
+4. **スクリーンショット** ← v77/v78 で画面が変わった＝差し替え推奨（§9 の注記）。**1枚目を録音中の専用画面に**。
+5. **説明** ← 任意。1.0 のままなのでリスト/まとめて入力/AI に触れていない → §4-b の3ブロックを足せる。
+6. **プロモーションテキスト** ← 審査不要でいつでも変更可（今回は据え置きで可）。
+
+**変えなくてよい場所（確認済み・2026-08-06）**
+- **App プライバシー＝「データを収集していません」のまま**。位置情報は**端末の外に出ない**＝ Apple の「収集（collect）」の定義（端末外へ送信し開発者/提携先が参照できる状態）に当たらない。§8-c にも同じ理由を書いてある。
+- **プライバシーポリシー URL / サポート URL** ＝ 変更不要。`privacy.html` には位置情報の記述が **JP/EN とも在る**（v62 で消し v72 で戻した＝**実物と一致**）。
+- **輸出コンプライアンス** ＝ Info.plist で恒久回答済み（質問は出ない）。
+- **カテゴリ・年齢レーティング 4+・価格** ＝ 変更なし。
+
+**⚠️ 見張り事項（据え置き）**
+- **Guideline 5.1.2（AI 送信の同意）** ＝ 11-2 の記述のまま。1.1 は通った＝現状の担保（既定オフ＋自分のキー＋設定に明記＋取り込み前の確認）で出す。
+- **今回の新しい面 = 起動時の全画面録音**。審査担当が「開いた瞬間に全画面が出て操作できない」と読む可能性がある（実際は6秒で閉じる／✕で閉じる）＝ §8-c の冒頭で先に説明してある。もし 2.1 が来たら**この点**を疑う。
