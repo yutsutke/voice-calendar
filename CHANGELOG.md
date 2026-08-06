@@ -38,6 +38,10 @@
 - 🔑 **画面を覆う機能には、必ず「自分で閉じる」道を用意して、それを実際に発火させて見る**。今回は環境にマイクが無いことが**逆に良い試験**になった（`not-allowed` で本当に閉じた）。v13 の教訓「補助機能の失敗が本体を殺さない」は、**覆う UI では文字どおり致命的**になる。
 - 🔑 **新しい機能を測ると、前の機能のバグが落ちてくる**（v77 の初回だけ判定が外れる件）。**触った周辺は必ず一度は数字で見る**。
 
+**成果物（同日・Play 内部テスト向け）**
+- **署名付き AAB `versionCode 9` / versionName 1.2**（`android/app/build/outputs/bundle/release/app-release.aab`・3.13MB）＝ **v75-v78 の web 分**を Android の実機へ運ぶ（**Java/native の変更はゼロ**）。
+- 検分: `bundleRelease assembleDebug` **BUILD SUCCESSFUL 33s**／`jarsigner -verify` **exit 0**（自己署名の警告は従来どおり）／merged manifest `versionCode="9"` `versionName="1.2"`／**AAB 内の `base/assets/public/index.html` が `BUILD=v78`・`?v=78` ×11・`id="micStage"` と `body.recording` の両方在り**（＝専用画面が本当に同梱されている）。debug APK も同時生成（4.49MB・adb 用）。
+
 **残課題**
 - ⚠ **実機でしか分からないもの**: ①下の固定バー（v77）が**開いた直後に消えているか**（今回の `load` 修正の効き目）②専用画面の**縦の配分**（文字起こしが上・マイクが下）が実際に話しながら見て良いか ③文字起こしの**左揃え**（何行にもなる前提で変えた。普段の1行表示は中央のまま）。
 - ⚠ **native の起動＝即録音（v24）と重なると、アプリを開いた瞬間から専用画面になる**（白紙の時だけ・6秒無音で自動的に閉じる）＝**設計どおりだが、実機の体感はゆうの目で見る必要がある**。
