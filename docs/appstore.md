@@ -250,52 +250,45 @@ This key is capped for review use only and will be revoked after review.
 > ① 🚨 **位置情報が在る**。1.1 のメモには `Location: NOT used` と書いた＝**その一文が 1.2 では嘘になる**。前回の記述を自分から取り消して説明する。
 > ② 🚨 **起動すると全画面の録音画面が出る**（v24 の自動録音＋v78 の専用画面）＝審査担当が「画面が固まった／何も押せない」と誤解しうる**新しい面**。閉じ方を先に書く。
 > ③ ホーム画面長押しの Quick Action（v64）＝ Siri インテントではないことを明記。
-> 🔑 **キーの貼り場所は2つ**: (A) 下の `[PASTE ...]` に実キー → 英文まるごとを ASC「App Review Information → メモ」へ。(B) 審査官はアプリ内 **⚙️ 詳細設定 →「AI 設定」→「API キー」** に貼る（手順は本文が案内する）。
+> 🔑 **キーの貼り場所は2つ**: (A) 下の `[PASTE ...]` に実キー → 英文まるごとを ASC「App Review Information → メモ」へ。(B) 審査官はアプリ内 **詳細設定 →「AI 設定」→「API キー」** に貼る（手順は本文が案内する）。
+> 🚨 **ASC のメモ欄は 4000 字が上限**（2026-08-06・ゆうが実際に弾かれて判明）。下の本文は **3,578 字**＝実キー（≈108字）を入れて約 **3,654 字**・残り約 350 字。**次に足す時はこの数字から引く**（初稿は 4,546 字で入らなかった）。削ったのは重複だけ＝**①位置の開示 ②全画面録音の閉じ方 ③日本語なしで試す手順 ④AI のテスト手順とキー**は全部残してある。
 
 ```
-This app adds calendar events from Japanese voice input. No account or login is required. The developer has no server and collects no data.
+This app adds calendar events from Japanese voice input. No account or login. The developer has no server and collects no data.
 
-WHAT CHANGED SINCE VERSION 1.1 (disclosed up front):
-1) Optional location capture exists again in this version. Our review notes for 1.1 stated "Location: NOT used" - that sentence is no longer accurate for 1.2. Please see the LOCATION section below. It is OFF by default and the data never leaves the device.
-2) While the microphone is active, the app now shows a full-screen "listening" view. Because the app can start recording automatically on launch, you may see this view immediately after opening the app. It closes by itself; see the next section.
+TWO THINGS TO KNOW UP FRONT (both are changes since version 1.1):
 
-IF A FULL-SCREEN RECORDING VIEW APPEARS ON LAUNCH:
-The app starts recording automatically when it is opened with an empty form (this is the core "no-look" use case). The full-screen view shows what is being heard. It closes by itself after about 6 seconds of silence, or you can tap the red microphone (stop) or "やめる（入力しない）" (= cancel, discard). Nothing is saved by this view.
+1) LOCATION IS BACK IN THIS VERSION. Our review notes for 1.1 said "Location: NOT used" - that sentence is no longer accurate for 1.2. See LOCATION below: it is off by default and never leaves the device.
 
-CORE FEATURE (works with NO API key):
-- Tap the microphone and speak a schedule in Japanese, e.g. "明日15時に歯医者" (= dentist tomorrow at 3pm). On-device Japanese speech recognition (SFSpeechRecognizer) fills a form. Tap "カレンダーに保存" (Save) to add the event to the device's default calendar via EventKit.
+2) A FULL-SCREEN "LISTENING" VIEW MAY APPEAR RIGHT AFTER LAUNCH. The app starts recording automatically when it is opened with an empty form (this is the core hands-free use case). It is not frozen: it closes by itself after about 6 seconds of silence, or tap the red microphone (stop) or the cancel button "やめる（入力しない）". Nothing is saved by this view.
 
 HOW TO TEST WITHOUT SPEAKING JAPANESE:
-1. Launch the app; grant Microphone, Speech Recognition, and Calendar (write-only) when prompted. If the full-screen recording view appears, wait ~6 seconds or tap "やめる（入力しない）" to return to the form.
-2. On the main screen there is a text field that simulates an utterance. Type: 明日15時に歯医者  then tap the button below it ("発話として送る" = send as utterance).
-3. The form fills (date / time / title). Tap "カレンダーに保存" (Save). The event is added to the device's default calendar.
-(If you can speak Japanese, tap the microphone button and say the same phrase.)
+1. Launch the app; grant Microphone, Speech Recognition and Calendar (write-only) when prompted. If the full-screen listening view appears, wait ~6 seconds or tap "やめる（入力しない）".
+2. On the main screen there is a text field that simulates an utterance. Type: 明日15時に歯医者 (= dentist tomorrow at 3pm) and tap the button below it, "発話として送る" (send as utterance).
+3. The form fills in (date / time / title). Tap "カレンダーに保存" (save). The event is added to the device's default calendar via EventKit.
+(If you speak Japanese: tap the microphone and say the same phrase. On-device recognition, SFSpeechRecognizer, fills the same form.)
 
 PERMISSIONS:
 - Microphone + Speech Recognition: to capture and transcribe the spoken schedule (on-device where supported).
-- Calendars (write-only, iOS 17 write-only access): to ADD events only. The app does NOT read existing calendar data.
-- Location (When In Use): OPTIONAL and OFF BY DEFAULT - see below.
+- Calendars (iOS 17 write-only access): to ADD events only. The app does NOT read existing calendar data.
+- Location (When In Use): optional, off by default - see below.
 
 LOCATION (optional, off by default, never transmitted):
-The app can record where an entry was saved, so the user can later see the place in the app's own local list and open it in Maps. Nothing is requested or captured unless the user turns on "保存時に位置情報も記録する" in ⚙️詳細設定 (Settings). The coordinates are stored only on the device (local storage) alongside that entry, are never sent anywhere, and the developer operates no server and receives nothing. Turning the setting off stops capture immediately. For this reason our App Privacy answers remain "Data Not Collected".
+The app can record where an entry was saved, so the user can see that place later in the app's own local list and open it in Maps. Nothing is requested or captured unless the user turns on "保存時に位置情報も記録する" in the settings panel "詳細設定". Coordinates are stored only on the device, are never sent anywhere, and we operate no server and receive nothing. Turning the setting off stops capture immediately. This is why our App Privacy answers remain "Data Not Collected".
 
-SIRI: "Hey Siri, ボイカレ開いて" simply opens the app (standard launch via INAlternativeAppNames). There is no custom Siri intent.
+SIRI / HOME SCREEN: "Hey Siri, ボイカレ開いて" simply opens the app (INAlternativeAppNames). Long-pressing the app icon offers "リスト", which opens the app's local list (UIApplicationShortcutItem). Neither uses a custom Siri intent.
 
-HOME SCREEN QUICK ACTION: Long-pressing the app icon offers "リスト" (list), which opens the app and expands its local list of saved entries. This is a standard UIApplicationShortcutItem, not a Siri intent.
+OPTIONAL AI (off by default, bring your own key - unchanged from 1.1):
+The app can turn long free text into draft events using a third-party AI service (Anthropic Claude or Google Gemini). It does nothing unless the user enters their OWN API key. Without a key no AI request is ever made, and nothing typed or spoken leaves the device (aside from Apple's OS speech service and EventKit above). We operate no server and receive nothing; the key is stored only on the device; AI results are always shown to the user for review before anything is saved.
 
-OPTIONAL AI FEATURE (off by default, "bring your own key"):
-The app can parse long free text into draft events using a third-party AI service (Anthropic Claude or Google Gemini). It is OFF by default and does nothing unless the user enters their OWN API key in the app's settings. Without a key, no AI request is ever made and nothing the user types or speaks leaves the device (aside from Apple's own OS speech service and EventKit, described above). The developer operates no server and receives nothing; the API key is stored only on the device. The AI result is always shown to the user for review before anything is saved. This was first shipped in version 1.1 and is unchanged in behavior.
+TO TEST THE AI (a spend-capped test key is provided below):
+1. Expand "詳細設定" (settings) near the bottom and find "AI 設定".
+2. プロバイダ (provider): choose "Anthropic（Claude）".
+3. API キー (API key): paste the key below, tap 保存 (save), then テスト送信 (test send) - it should report a successful connection.
+4. Open "まとめて入力" (batch input), paste any text containing a schedule, and tap the AI button. Drafts appear for you to review before saving.
 
-HOW TO TEST THE OPTIONAL AI (a spend-capped test key is provided below):
-1. Scroll to "⚙️ 詳細設定" (Settings) and expand it; find "AI 設定".
-2. プロバイダ (Provider): select "Anthropic（Claude）".
-3. API キー (API key): paste the test key below, tap 保存 (Save), then テスト送信 (Test send). It should report a successful connection.
-4. Open the "📥 まとめて入力" (Batch input) panel, paste any text containing a schedule, and tap the AI interpret button. Draft events appear for you to review before saving.
-
-TEST API KEY (Anthropic, monthly spend limited to about US$1 - please do not share):
+TEST API KEY (Anthropic, capped at about US$1 per month, revoked after review - please do not share):
 [PASTE YOUR sk-ant-... KEY HERE]
-
-This key is capped for review use only and will be revoked after review.
 ```
 - **デモアカウント: 不要**（Sign-in は OFF のまま・キーは Notes に書く）。
 
@@ -506,7 +499,7 @@ Yusuke Tanaka
 **ASC で触る場所（この順で）**
 1. **バージョン 1.2 を作成** → TestFlight の **1.2(N)** ビルドを添付（`MARKETING_VERSION = 1.2`・repo は既に 1.2）。
 2. **このバージョンの新機能** ← §5 の「What's New・v1.2」を貼る。
-3. **App Review Information → メモ** ← **§8-c**（8-b ではない）。`[PASTE ...]` に $1 上限のテストキー。**Sign-in required = OFF**。
+3. **App Review Information → メモ** ← **§8-c**（8-b ではない）。**⚠ この欄は 4000 字上限**（§8-c 本文は 3,578 字＋キー ≈108 字）。`[PASTE ...]` に $1 上限のテストキー。**Sign-in required = OFF**。
 4. **スクリーンショット** ← v77/v78 で画面が変わった＝差し替え推奨（§9 の注記）。**1枚目を録音中の専用画面に**。
 5. **説明** ← 任意。1.0 のままなのでリスト/まとめて入力/AI に触れていない → §4-b の3ブロックを足せる。
 6. **プロモーションテキスト** ← 審査不要でいつでも変更可（今回は据え置きで可）。
