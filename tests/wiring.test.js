@@ -171,5 +171,42 @@ t('下の固定バーは「上のマイクが画面外の時だけ」出す（�
   ok(/addEventListener\('scroll', syncDock/.test(code), 'スクロールで見直していない＝出たきり／出ないままになる');
 });
 
+// ===== 6. 録音中の「専用画面」（v78・ゆう要求） =====
+// 専用画面はフォームを完全に覆う＝ここで配線が2本に割れると、
+// ①専用画面のボタンだけ古い挙動 ②閉じ忘れてフォームに戻れない、という**本体を殺す**壊れ方をする（v13）。
+// だから「同じノードを化けさせているだけ」であることを構造として固定する。
+t('専用画面は同じノードを化けさせる（ボタンを複製していない）', () => {
+  ok(/id="micStage"/.test(html), '#micStage が無い（専用画面の器が消えている）');
+  const from = html.indexOf('id="micStage"');
+  const to = html.indexOf('<div class="notes"');
+  ok(to > from, '#micStage の後に notes が無い＝構造が変わった（このテストも直す）');
+  const inner = html.slice(from, to);
+  for (const id of ['id="mic"', 'id="micCancel"', 'id="ovNoAuto"', 'id="ovAI"', 'id="transcript"']) {
+    ok(inner.includes(id), `${id} が専用画面の中に無い＝録音中に見えない／別物を出している`);
+    ok(html.split(id).length - 1 === 1,
+      `${id} が2つある＝専用画面用に複製している（配線が2本＝v74 と同じ形の事故）`);
+  }
+});
+
+t('専用画面の出し入れは renderMicState だけ（上のマイク・下のバーと必ず同時）', () => {
+  const re = /classList\.toggle\(\s*'recording'/g;
+  ok(countOf(re) === 1, '専用画面を付け外ししている場所が1箇所でない＝赤いのに画面が出ない等の食い違いを作れる');
+  ok(re.test(bodyOf('renderMicState')) || /classList\.toggle\(\s*'recording'/.test(bodyOf('renderMicState')),
+    '専用画面の付け外しが renderMicState の外にある');
+});
+
+t('専用画面が出ている間は下の固定バーを出さない（判定は syncDock 1箇所のまま）', () => {
+  ok(/'recording'/.test(bodyOf('syncDock')),
+    'syncDock が録音中を見ていない＝専用画面の上に下のバーが重なる（同じ操作が2つ見える）');
+  ok(/syncDock\s*\(\s*\)/.test(bodyOf('renderMicState')),
+    'renderMicState が syncDock を呼んでいない＝専用画面を出してもバーが残る');
+});
+
+// 🚨 専用画面はフォームを覆う＝閉じる道が壊れると本体（保存・手入力）に届かなくなる（v13 の再来）。
+t('録音が死んだら専用画面を閉じる（フォームに閉じ込めない）', () => {
+  ok(/if\s*\(!transcriber\.isListening\(\)\)\s*renderMicState\(false\)/.test(code),
+    'エラー時に専用画面を閉じる保険が無い＝録音が死ぬとフォームへ戻れない');
+});
+
 console.log(`\nwiring.test: ${pass} passed, ${fail.length} failed`);
 if (fail.length) { console.log('\n' + fail.join('\n\n')); process.exit(1); }

@@ -152,6 +152,27 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
 
   .transcript { min-height: 30px; text-align: center; color: var(--sub); font-size: 20px; line-height: 1.4; margin: 4px 0 6px; overflow-wrap: anywhere; }
   .transcript .final { color: var(--ink); }
+
+  /* ---- v78: 録音中の専用画面（ゆう要求）----
+     普段の #micStage（マイク＋文字起こし）を、録音中だけ画面いっぱいの層にする。
+     🚫 中身は増やさない・複製しない＝ここは**見た目だけの規則**（配線は普段と同じ1本）。
+     ・文字起こしを上へ大きく取り、**文字の大きさは普段と同じ 20px**（ゆう指定）
+       ＝長くなったら「入り切らない」ではなく**スクロールで続きが見える**（黙って捨てない・v16）
+     ・マイクと3つのボタンは下＝親指の届く位置（下の固定バー v77 と同じ考え）
+     ・録音が終われば（listening が落ちれば）自動で閉じてフォームに戻る＝タップは増えない（背骨②） */
+  body.recording { overflow: hidden; }              /* 裏の画面をスクロールさせない */
+  body.recording #micStage {
+    position: fixed; inset: 0; z-index: 60; background: var(--bg);
+    display: flex; flex-direction: column;
+    padding: calc(var(--sat) + 18px) 16px calc(var(--sab) + 22px);
+  }
+  body.recording #micStage .transcript {
+    order: -1;                 /* DOM はマイクが先・画面では文字起こしを上に */
+    flex: 1; min-height: 0; overflow-y: auto;
+    text-align: left;          /* 何行にもなる前提＝中央揃えだと読みにくい（普段の1行表示は中央のまま） */
+    margin: 0 0 18px; padding: 2px;
+  }
+  body.recording #micStage .mic-wrap { margin-bottom: 0; }
   .notes { text-align: center; font-size: 12px; color: var(--warn); min-height: 18px; margin-bottom: 8px; }
 
   /* ---- 開発用: テキストで発話 ---- */
@@ -412,6 +433,13 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
 <main>
   <h1>🎤 ボイスカレンダー</h1>
 
+  <!-- v78: 録音中はここが**画面いっぱいの専用画面**になる（ゆう要求）。
+       話している最中に見たいのは「今なにが聞こえているか」だけ＝他を隠して、文字起こし・やめる・
+       この録音だけの2つの切替を大きく出す。
+       🔑 中身は普段とまったく同じノード＝**ボタンを複製していない**＝押した先の道は普段と同一
+          （v74「分岐は複製しない」／v77「入口が増えても道は1本」）。化けさせるのは CSS（body.recording）
+          だけで、その付け外しは renderMicState 1箇所（＝上のマイク・下のバーと必ず同時に切り替わる）。 -->
+  <div id="micStage">
   <div class="mic-wrap">
     <button id="mic" type="button" aria-label="録音">🎤</button>
     <div class="mic-state" id="micState"></div>
@@ -426,6 +454,7 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
     </div>
   </div>
   <div class="transcript" id="transcript"></div>
+  </div><!-- /#micStage -->
   <div class="notes" id="notes"></div>
 
   <div class="sim">
@@ -692,20 +721,20 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
      理由: この版文字列は index.html にしかないが、ロジックは別ファイル＝別キャッシュ。
      付けないと「フッタは新しいのにパーサは古い」という嘘の状態が成立する（v9 で実際に踏んだ）。
      index.html が更新されれば src の URL も変わる → JS も必ず新しく取り直される。 -->
-<script src="engine/settings.js?v=77"></script>
-<script src="engine/schema.js?v=77"></script>
-<script src="engine/parser.js?v=77"></script>
-<script src="engine/dictionary.js?v=77"></script>
-<script src="engine/contract.js?v=77"></script>
-<script src="engine/batch.js?v=77"></script>
-<script src="engine/ai.js?v=77"></script>
-<script src="input/transcriber.js?v=77"></script>
-<script src="adapters/calendar.js?v=77"></script>
-<script src="adapters/records.js?v=77"></script>
-<script src="adapters/location.js?v=77"></script>
+<script src="engine/settings.js?v=78"></script>
+<script src="engine/schema.js?v=78"></script>
+<script src="engine/parser.js?v=78"></script>
+<script src="engine/dictionary.js?v=78"></script>
+<script src="engine/contract.js?v=78"></script>
+<script src="engine/batch.js?v=78"></script>
+<script src="engine/ai.js?v=78"></script>
+<script src="input/transcriber.js?v=78"></script>
+<script src="adapters/calendar.js?v=78"></script>
+<script src="adapters/records.js?v=78"></script>
+<script src="adapters/location.js?v=78"></script>
 <script>
 'use strict';
-const BUILD = 'v77：畳みをカードの層に＋下に固定のマイクバー · 2026-08-04';
+const BUILD = 'v78：録音中は専用画面（文字起こし・やめる・この録音だけの切替） · 2026-08-06';
 console.log('BUILD:', BUILD);
 document.getElementById('build').textContent = BUILD;
 
@@ -811,6 +840,10 @@ function renderMicState(on) {
   if (dockText) dockText.textContent = on ? '聞いています…' : '話しかける';
   if (dockCancel) dockCancel.hidden = !on;
   if (ovBox) ovBox.hidden = !on;                   // v61: 一時オーバーライドも録音中だけ
+  // v78: 録音中は専用画面（#micStage が画面いっぱいの層になる）。**付け外しはここだけ**
+  // ＝上のマイク・下のバー・やめる・一時オーバーライドと必ず同時に切り替わる（食い違いを作れない）。
+  document.body.classList.toggle('recording', on);
+  syncDock();                                      // 専用画面が出ている間は下のバーを出さない（判定は syncDock 1箇所）
 }
 
 function onUtterance(text, meta) {
@@ -2249,7 +2282,12 @@ window.__vcRegisterWebMcp = function () {
 window.__vcRegisterWebMcp();
 
 const transcriber = VCTranscriber.createTranscriber({
-  onInterim(t) { transcriptEl.textContent = `… ${t}`; },
+  onInterim(t) {
+    transcriptEl.textContent = `… ${t}`;
+    // v78: 専用画面では長い発話が入り切らなくなる＝**いま言ったところ（末尾）が見える**ように追従。
+    // 上に隠れた前半はスクロールで読める＝切り捨てない（v16「黙って捨てない」の表示版）。
+    transcriptEl.scrollTop = transcriptEl.scrollHeight;
+  },
   onFinal(t, meta) { onUtterance(t, meta); },
   onDebug(msg) { window.__vcDebugNote(`🎙 ${msg}`); }, // Swift 内部の出来事 → 診断（v15）
   onState(s) {
@@ -2263,6 +2301,9 @@ const transcriber = VCTranscriber.createTranscriber({
     if (e === 'no-speech') { micState.textContent = ''; return; } // web の「無言」は正常系
     toast(`音声認識エラー: ${e}`);
     window.__vcNote('音声', e); // toast は消える＝診断にも残す（v16）
+    // v78: 専用画面はフォームを覆う＝**録音が死んだ時に閉じ込めない**（補助機能の失敗が本体を殺さない・v13）。
+    // 聞き続けている時は閉じない（一時的なエラーで画面が飛ばない）＝判定は転写層に聞く。
+    if (!transcriber.isListening()) renderMicState(false);
   },
 });
 
@@ -2292,7 +2333,9 @@ function toggleMic() { transcriber.toggle(micOpts()); }
 function syncDock() {
   if (!micDock) return;
   const r = micBtn.getBoundingClientRect();
-  micDock.hidden = r.bottom > 0 && r.top < window.innerHeight;
+  const micVisible = r.bottom > 0 && r.top < window.innerHeight;
+  // v78: 録音中は専用画面が全部を覆う＝バーは出さない。**書き込みは1行のまま**＝条件が2箇所に割れない。
+  micDock.hidden = micVisible || document.body.classList.contains('recording');
 }
 // v49: 言い間違えの取り消し。**止めるだけでなく、この発話を解釈へ流さない**（transcriber.cancel）。
 // 途中結果の表示も消す＝画面から言い間違えが消える。黙って消さないよう toast で告げる（v16）。
@@ -2322,6 +2365,10 @@ if (transcriber.available) {
     window.addEventListener('scroll', syncDock, { passive: true });
     window.addEventListener('resize', syncDock);
     syncDock();  // 初期状態も同じ関数で決める（開いた直後だけ食い違う、を作らない）
+    // v78: 実測で **初回だけ判定が外れる**（レイアウト前は getBoundingClientRect が 0 を返し、
+    // 「マイクは画面外」と読めてしまう＝上のマイクが見えているのに下のバーも出る）。
+    // レイアウトが済んでからもう一度同じ関数を呼ぶ＝きっかけを足すだけ（判定は syncDock 1箇所のまま）。
+    window.addEventListener('load', syncDock);
   } catch (e) { window.__vcNote('下のマイクバー', (e && e.message) || String(e)); }
   // v61: この録音だけの一時オーバーライド（実機FBの要求＝詳細設定へ行かず1回だけ切替）。
   // 設定(localStorage)は変えない・録音開始でリセット（onState）。
