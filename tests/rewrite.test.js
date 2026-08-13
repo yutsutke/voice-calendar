@@ -94,5 +94,60 @@ t('短い文にはボタンを出さない（判定は engine 側）', () => {
   ok(!R.isLongEnough(null), 'null で落ちる／出てしまう');
 });
 
+// ===== 5. v84: 推敲画面（長文はフォームの前に一度手元で直せる） =====
+t('推敲画面を挟む敷居は「整えるボタン」より高い（割り込みは提案より重い）', () => {
+  ok(R.REVIEW_MIN_CHARS > R.MIN_CHARS,
+    '画面を挟む長さがボタンを出す長さ以下＝普段の一本道に割り込む');
+  ok(!R.needsReview('明日15時に歯医者'), '1件の予定で画面が挟まる＝ノールックが死ぬ');
+  ok(!R.needsReview('あ'.repeat(R.REVIEW_MIN_CHARS - 1)), '境目の1文字手前で挟まる');
+  ok(R.needsReview('あ'.repeat(R.REVIEW_MIN_CHARS)), '境目ちょうどで挟まらない');
+  ok(!R.needsReview(''), '空で挟まる');
+  ok(!R.needsReview(null), 'null で落ちる／挟まる');
+});
+
+t('要約の指示文が創作を禁じている（いちばん緊張する操作）', () => {
+  const p = R.buildPrompt('summarize');
+  for (const must of ['足さない', '推測で補わない', '事実', '結論・評価・助言']) {
+    ok(p.includes(must), `要約の指示文に「${must}」が無い＝AI が書き足す余地が残る`);
+  }
+  ok(/予定や約束/.test(p), '要約で日時・場所・相手が落ちうる（この製品でいちばん失ってはいけない情報）');
+  ok(/要約した本文だけを返す/.test(p), '出力の形を指定していない＝前置きが混ざる');
+});
+
+// 🚨 実測で気づいた: ラベルは辞書形（「整える」）なので、そのまま「ました」を足すと
+//    「整えるました」になる。**画面に出る日本語はテストで固定する**（コードは動くので誰も落ちない）。
+t('モードごとに「押すラベル」と「終わった時の言い方」を別に持つ', () => {
+  for (const k of Object.keys(R.MODES)) {
+    const m = R.MODES[k];
+    ok(m.label && m.done, `${k}: label / done が揃っていない`);
+    ok(/ました$/.test(m.done), `${k}: 終わった時の言い方が過去形でない（${m.done}）`);
+    ok(!/(する|える|む|く)ました/.test(m.done + 'X'.slice(0, 0) + m.done), `${k}: 「${m.done}」が壊れた日本語`);
+  }
+  ok(R.MODES.tidy.done === '整えました' && R.MODES.summarize.done === '要約しました', '文言が変わった（意図的なら直す）');
+});
+
+t('モードを指定しなければ従来どおり「整える」（v80 の呼び出しを壊さない）', () => {
+  ok(R.buildPrompt() === R.buildPrompt('tidy'), '既定が整えるでない');
+  ok(R.buildPrompt() === R.buildPrompt('存在しないモード'), '未知のモードで落ちる／別物になる');
+});
+
+t('要約は「短くなる」のが正しい＝整えると受け入れ幅が違う', () => {
+  const before = 'あ'.repeat(200);
+  const short = 'い'.repeat(40); // 0.2倍
+  ok(!R.check(before, short, 'tidy').ok, '整えるで 0.2倍を通している＝要約が黙って通る');
+  ok(R.check(before, short, 'summarize').ok, '要約で 0.2倍を落としている＝要約が成立しない');
+  // 逆に、要約なのに伸びたら異常
+  ok(!R.check(before, 'い'.repeat(190), 'summarize').ok, '要約なのに 0.95倍を通している');
+  ok(R.check(before, 'い'.repeat(180), 'summarize').ok, '要約の上限ちょうど(0.9)を落としている');
+});
+
+t('落とす理由はモードごとに言い方が変わる（そのまま画面に出せる）', () => {
+  const before = 'あ'.repeat(200);
+  const r = R.check(before, 'い'.repeat(5), 'summarize');
+  ok(!r.ok && /要点まで落ちている/.test(r.problem), `要約の理由になっていない: ${r.problem}`);
+  const r2 = R.check(before, 'い'.repeat(199), 'summarize');
+  ok(!r2.ok && /要約なのに長く/.test(r2.problem), `要約の理由になっていない: ${r2.problem}`);
+});
+
 console.log(`\nrewrite.test: ${pass} passed, ${failures.length} failed`);
 if (failures.length) { console.log('\n' + failures.join('\n\n')); process.exit(1); }

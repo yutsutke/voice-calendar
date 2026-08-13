@@ -175,6 +175,32 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
   body.recording #micStage .mic-wrap { margin-bottom: 0; }
   .notes { text-align: center; font-size: 12px; color: var(--warn); min-height: 18px; margin-bottom: 8px; }
 
+  /* ---- v84: 推敲画面（長文はフォームの前に一度手元で直す）----
+     🚫 新しい視覚言語を増やさない（v46）＝ v78 の専用画面と**同じ形**（画面いっぱいの層・本文が上に
+     大きく・操作は下＝親指の位置）。違いは「本文が読むものでなく**触れるもの**（textarea）」だけ。
+     z-index は専用画面(60)の上＝録音が何かの拍子に生きていても、推敲が隠れない。 */
+  #reviewStage { position: fixed; inset: 0; z-index: 61; background: var(--bg);
+    display: flex; flex-direction: column; padding: calc(var(--sat) + 18px) 16px calc(var(--sab) + 22px); }
+  #reviewStage[hidden] { display: none; }
+  .rv-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px;
+    font-size: 12px; color: var(--sub); margin-bottom: 10px; }
+  .rv-count { white-space: nowrap; }
+  /* 本文＝この画面の主役。20px は v70/v78 でゆうが選んだ大きさに揃える（読みながら直せる） */
+  #reviewText { flex: 1; min-height: 0; width: 100%; box-sizing: border-box; resize: none;
+    font-size: 20px; line-height: 1.6; padding: 12px; border-radius: 12px;
+    border: 1px solid var(--line); background: var(--card); color: var(--ink); }
+  .rv-note { font-size: 12px; color: var(--warn); min-height: 18px; margin: 8px 2px 0; line-height: 1.5; }
+  .rv-ai { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+  .rv-ai[hidden] { display: none; }
+  .rv-go { display: flex; gap: 10px; margin-top: 12px; }
+  .rv-go button { flex: 1; border: none; border-radius: 12px; font-size: 16px; font-weight: 600;
+    padding: 15px 12px; cursor: pointer; }
+  #reviewGo { background: var(--accent); color: var(--accent-ink); }        /* 主行動＝保存と同じ塗り */
+  #reviewCancel { flex: 0 0 auto; background: var(--card); color: var(--sub);
+    border: 1px solid var(--line); font-weight: 500; font-size: 14px; }     /* 捨てるは控えめ＝誤爆させない */
+  .rv-go button:active { opacity: .8; }
+  body.reviewing { overflow: hidden; }
+
   /* ---- 開発用: テキストで発話 ---- */
   /* v76: 縦積み＋2行（実機FB第43回「発話として送るの段が長くて横スクロールになる」）。
      真因＝横並びの flex で **入力欄の min-width が auto**（size=20 由来の固有最小幅より縮まない）＋
@@ -487,6 +513,33 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
   </div>
   <div class="transcript" id="transcript"></div>
   </div><!-- /#micStage -->
+
+  <!-- 🆕 v84（ゆう要求）: 「長い文章の時にはそれに対応した UI を一つ挟む。長い文章をそのまま表示して
+       修正できる。AIで要約／文章を整える などのボタンを押した文章が整い、再度 AI の文章を修正できる
+       ようにして、その後いつもの録音後の画面にもどる」。
+       ⚠ これは背骨②「仲介者を消す」への**意図した例外**＝長い時だけ（80字以上）。短い発話の一本道
+       （話す→フォーム→保存）は1ミリも変わらない。挟むのは「長文はそもそもノールックで完走する種類の
+       入力ではない」から＝メモを吐き出して読み返す用途（実機FB第19回で見つかった用途）。
+       🚫 閉じ込めない（v78 の不変条件）＝出口は常に2つ「進む」「捨てる」。AI が失敗しても文章は残る。 -->
+  <div id="reviewStage" hidden>
+    <div class="rv-head">
+      <span id="reviewHead">長い発話です。直してから進めます</span>
+      <span class="rv-count" id="reviewCount"></span>
+    </div>
+    <!-- 話したままを、そのまま出す（要求①）。ここで直せる（要求②） -->
+    <textarea id="reviewText" spellcheck="false"></textarea>
+    <div class="rv-note" id="reviewNote"></div>
+    <div class="rv-ai" id="reviewAi">
+      <button id="reviewTidy" type="button" class="ov-btn">✍️ 文章を整える</button>
+      <button id="reviewSum" type="button" class="ov-btn">📝 要約する</button>
+      <button id="reviewUndo" type="button" class="ov-btn" hidden>↩ AIの前に戻す</button>
+    </div>
+    <div class="rv-go">
+      <button id="reviewGo" type="button">進む</button>
+      <button id="reviewCancel" type="button">✕ 捨てる</button>
+    </div>
+  </div>
+
   <div class="notes" id="notes"></div>
 
   <div class="sim">
@@ -786,22 +839,22 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
      理由: この版文字列は index.html にしかないが、ロジックは別ファイル＝別キャッシュ。
      付けないと「フッタは新しいのにパーサは古い」という嘘の状態が成立する（v9 で実際に踏んだ）。
      index.html が更新されれば src の URL も変わる → JS も必ず新しく取り直される。 -->
-<script src="engine/settings.js?v=83"></script>
-<script src="engine/schema.js?v=83"></script>
-<script src="engine/parser.js?v=83"></script>
-<script src="engine/dictionary.js?v=83"></script>
-<script src="engine/contract.js?v=83"></script>
-<script src="engine/batch.js?v=83"></script>
-<script src="engine/ai.js?v=83"></script>
-<script src="engine/rewrite.js?v=83"></script>
-<script src="input/transcriber.js?v=83"></script>
-<script src="adapters/calendar.js?v=83"></script>
-<script src="adapters/records.js?v=83"></script>
-<script src="adapters/location.js?v=83"></script>
-<script src="engine/geomap.js?v=83"></script>
+<script src="engine/settings.js?v=84"></script>
+<script src="engine/schema.js?v=84"></script>
+<script src="engine/parser.js?v=84"></script>
+<script src="engine/dictionary.js?v=84"></script>
+<script src="engine/contract.js?v=84"></script>
+<script src="engine/batch.js?v=84"></script>
+<script src="engine/ai.js?v=84"></script>
+<script src="engine/rewrite.js?v=84"></script>
+<script src="input/transcriber.js?v=84"></script>
+<script src="adapters/calendar.js?v=84"></script>
+<script src="adapters/records.js?v=84"></script>
+<script src="adapters/location.js?v=84"></script>
+<script src="engine/geomap.js?v=84"></script>
 <script>
 'use strict';
-const BUILD = 'v83：長文モードの取りこぼし修正（継ぎ足した文章を捨てない） · 2026-08-13';
+const BUILD = 'v84：長文は推敲画面を挟む（直す・整える・要約する） · 2026-08-13';
 console.log('BUILD:', BUILD);
 document.getElementById('build').textContent = BUILD;
 
@@ -914,7 +967,19 @@ function renderMicState(on) {
   syncDock();                                      // 専用画面が出ている間は下のバーを出さない（判定は syncDock 1箇所）
 }
 
-function onUtterance(text, meta) {
+// v84: opts.reviewed＝推敲画面を通ってきた（＝もう挟まない）。
+// 話したままの文字は**推敲画面が自分で来歴に1行残す**（🗣 話したまま ＋ ✍️ 推敲後）＝
+// この関数に「元の文字」を通す配管を作らない（通す層が4つあり、増やすたびに忘れる場所が増える・v74）。
+function onUtterance(text, meta, opts) {
+  // 🆕 v84: 長い発話は**解釈の前に**手元で直せるようにする（ゆう要求）。
+  // 🔑 ここで止めるのが肝＝直した文章がそのまま解釈に掛かる（日時も直した後の文から取れる）。
+  //    フォームに入れてから直す形にすると、解釈は崩れた文のままになり、直しが二度手間になる。
+  // 補助機能が本体を殺さない（v13）＝画面を出せなければ、そのまま普段どおり流す。
+  if (!(opts && opts.reviewed)) {
+    try {
+      if (shouldReviewUtterance(text)) { openReview(text, meta); return; }
+    } catch (e) { window.__vcNote('推敲画面', (e && e.message) || String(e)); }
+  }
   // v37: 辞書（言い換え）展開＝**解釈より前**に生テキストへ適用（欄指定「メモ 僕のメールアドレス」でも効く）。
   // 🗣（画面と来歴の生テキスト）は話したままを残す＝認識と解釈の切り分け（v5 来歴の目的）を壊さない。
   // 何が展開されたかは来歴に 🔤 で刻む（黙って置換しない＝v16）。辞書の失敗は本体を殺さない（v13）。
@@ -1290,8 +1355,15 @@ function renderHistory() {
     line1.append(time, text);
     const line2 = document.createElement('div');
     line2.className = 'h-result';
-    // v42: AI が複数件を読み取った発話はフォームでなく「まとめて入力」へ入った＝行き先を書く
-    line2.textContent = e.aiMulti ? `→ ${e.aiMulti}件を「まとめて入力」へ` : patchSummary(e.patch || {}, e.skipped, e.cleared);
+    // v84: 推敲の行は「話したまま（🗣）→ どうしたか」だけを言う。解釈はこの行の仕事ではないので
+    // 「解釈できる項目なし」を出さない（嘘ではないが、読む人の注意を無駄に取る）。
+    if (e.kind === 'review') {
+      line2.textContent = e.dropped ? '✕ 捨てた（フォームには入れていない）' : `✍️ 推敲後: ${e.edited}`;
+      if (e.dropped) line2.classList.add('h-note');
+    } else {
+      // v42: AI が複数件を読み取った発話はフォームでなく「まとめて入力」へ入った＝行き先を書く
+      line2.textContent = e.aiMulti ? `→ ${e.aiMulti}件を「まとめて入力」へ` : patchSummary(e.patch || {}, e.skipped, e.cleared);
+    }
     item.append(line1, line2);
     // モードのバッジ（v21）: この発話が「新規（前の入力を消して入れ直す）」だったか
     // 「欄指定（その欄だけ足す）」だったかを一目で。実機FB「新規になったときに分かるように」。
@@ -3348,6 +3420,134 @@ document.getElementById('mapZoomOut').addEventListener('click', () => {
     wrap.addEventListener(ev, () => { last = null; wrap.classList.remove('dragging'); });
   }
 })();
+
+// ===== v84: 長文の推敲画面（ゆう要求 2026-08-13・実機FB第45回の続き） =====
+// 「長い文章の時にはそれに対応した UI を一つ挟む。長い文章をそのまま表示して修正できる。
+//  AIで要約／文章を整える などのボタンを押した文章が整い、**再度 AI の文章を修正できる**ようにして、
+//  その後いつもの録音後の画面にもどる」。
+//
+// ⚠ 背骨②「仲介者を消す」への**意図した例外**。根拠＝**長文はそもそもノールックで完走する種類の
+//   入力ではない**（1件の予定を声で入れるのとは用途が違う＝実機FB第19回で見つかった「メモとして使う」道）。
+//   だから短い発話（80字未満）の一本道は1ミリも変えない＝**普段の体験は不変**（v19 の原則）。
+// 🚫 閉じ込めない（v78 の不変条件）＝出口は常に2つ（進む／捨てる）。AI が失敗しても本文は残る。
+// 🔑 直した文章が**そのまま解釈に掛かる**（onUtterance の入口で止めているため）＝日時も直した後の文から取れる。
+const rvStage = document.getElementById('reviewStage');
+const rvText = document.getElementById('reviewText');
+const rvNote = document.getElementById('reviewNote');
+let reviewMeta = null;      // この推敲がどの発話のものか（認識信頼度などをフォームへ引き継ぐ）
+let reviewSpoken = '';      // 話したまま（来歴に残すのはこれ）
+let reviewUndoText = null;  // AI を当てる直前の本文（↩ 1段で戻す）
+let reviewBusy = false;
+
+// 「この発話は推敲画面を挟むか」。長さは engine が持つ（数字を宿主に書かない）。
+// 🚫 欄指定発話（「メモ 〜」）は挟まない＝v17 の意味（その欄だけの差分）を推敲で壊さないため。
+function shouldReviewUtterance(text) {
+  if (!window.VCRewrite || !VCRewrite.needsReview(text)) return false;
+  try { if (VCParser.interpret(text, new Date()).targeted) return false; } catch {}
+  return true;
+}
+
+function renderReviewCount() {
+  document.getElementById('reviewCount').textContent = `${rvText.value.trim().length}字`;
+}
+
+function openReview(text, meta) {
+  reviewMeta = meta || null;
+  reviewSpoken = String(text || '');
+  reviewUndoText = null;
+  rvText.value = reviewSpoken;
+  rvNote.textContent = '';
+  document.getElementById('reviewUndo').hidden = true;
+  // AI のボタンはキーがある時だけ（無ければ手で直して進むだけの画面＝それでも役に立つ）
+  document.getElementById('reviewAi').hidden = !(window.VCAI && VCAI.hasKey());
+  renderReviewCount();
+  rvStage.hidden = false;
+  document.body.classList.add('reviewing');
+  window.__vcDebugNote(`✍️ 推敲画面（${reviewSpoken.length}字）`);
+}
+
+function closeReview() {
+  rvStage.hidden = true;
+  document.body.classList.remove('reviewing');
+  reviewMeta = null;
+  reviewUndoText = null;
+}
+
+// AI を当てる（整える／要約する）。**受け入れ幅と文言はモードごと**（engine/rewrite.js の表）。
+async function runReviewAi(mode) {
+  if (reviewBusy) return;
+  const before = rvText.value.trim();
+  if (!before) return;
+  const btn = document.getElementById(mode === 'summarize' ? 'reviewSum' : 'reviewTidy');
+  const label = btn.textContent;
+  reviewBusy = true;
+  btn.disabled = true;
+  btn.textContent = '⏳ ' + VCRewrite.MODES[mode].label + '…';
+  rvNote.textContent = '';
+  try {
+    const raw = await VCAI.interpretLongText(before, {
+      system: VCRewrite.buildPrompt(mode), timeoutMs: REWRITE_TIMEOUT_MS,
+    });
+    const r = VCRewrite.check(before, raw, mode);
+    if (!r.ok) { // 落とすなら理由を必ず出す（v16）＝「押したのに何も起きない」を作らない
+      rvNote.textContent = `⚠ ${r.problem}`;
+      window.__vcDebugNote(`✍️ 推敲(${mode}): ${r.problem}`);
+      return;
+    }
+    reviewUndoText = before;                 // ↩ 1段で戻せる（AI の結果を人が上書きできる＝要求③）
+    rvText.value = r.text;
+    document.getElementById('reviewUndo').hidden = false;
+    rvNote.textContent = `${VCRewrite.MODES[mode].done}（${before.length}字→${r.text.length}字）。このまま手で直せます`;
+    renderReviewCount();
+  } catch (e) {
+    const msg = (e && e.message) || String(e);
+    rvNote.textContent = `⚠ ${msg}`;         // 本文は消さない＝失敗しても書いたものは残る
+    window.__vcNote('推敲の AI', msg);
+  } finally {
+    reviewBusy = false;
+    btn.disabled = false;
+    btn.textContent = label;
+  }
+}
+
+rvText.addEventListener('input', renderReviewCount);
+document.getElementById('reviewTidy').addEventListener('click', () => runReviewAi('tidy'));
+document.getElementById('reviewSum').addEventListener('click', () => runReviewAi('summarize'));
+document.getElementById('reviewUndo').addEventListener('click', () => {
+  if (reviewUndoText === null) return;
+  rvText.value = reviewUndoText;
+  reviewUndoText = null;
+  document.getElementById('reviewUndo').hidden = true;
+  rvNote.textContent = 'AI の前に戻しました';
+  renderReviewCount();
+});
+// 「進む」＝いつもの道へ（要求④）。ここから先は普段の発話とまったく同じ扱い。
+document.getElementById('reviewGo').addEventListener('click', () => {
+  const finalText = rvText.value.trim();
+  const meta = reviewMeta;
+  const spoken = reviewSpoken;
+  closeReview();
+  if (!finalText) { toast('✍️ 本文が空です（何も入力していません）'); return; }
+  // 🔑 話したままの文字を来歴に残す（v5 の目的＝認識と解釈の切り分け）。
+  //    書き換えた時だけ1行＝触っていない時に冗長な行を作らない。
+  if (finalText !== spoken) {
+    logHistory({
+      at: Date.now(), kind: 'review', text: spoken, edited: finalText,
+      conf: meta && meta.confidence, patch: {}, notes: [], skipped: [], cleared: [], err: null, after: null,
+    });
+  }
+  onUtterance(finalText, meta, { reviewed: true });
+});
+document.getElementById('reviewCancel').addEventListener('click', () => {
+  const spoken = reviewSpoken;
+  closeReview();
+  // 捨てたのは人の判断＝v16 に反しない。ただし**黙って捨てない**＝来歴に残して toast で告げる。
+  logHistory({
+    at: Date.now(), kind: 'review', text: spoken, dropped: true,
+    patch: {}, notes: [], skipped: [], cleared: [], err: null, after: null,
+  });
+  toast('✍️ 捨てました（フォームには入れていません）');
+});
 
 // ===== v80: 長文を AI で整える（ゆう要求 2026-08-13） =====
 // 「**長文になると、文章が不正確になりがち**、AIボタンで文章をリライトする機能も加えたい」。

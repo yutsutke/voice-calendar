@@ -327,5 +327,47 @@ t('押した時に native へ伝える（画面だけ変わって効いていな
     'ボタンの状態を native に渡していない＝✓ は付くのに止まり続ける（画面が嘘をつく・v3）');
 });
 
+// ===== 11. 長文の推敲画面（v84・ゆう要求） =====
+// 🚨 これは背骨②「仲介者を消す」への**意図した例外**＝だからこそ「どこまでが例外か」を機械で固定する。
+//    ①短い発話には絶対に出さない ②解釈の前に止める ③出口が必ず在る。
+t('推敲画面は解釈の前に止める（直した文章がそのまま解釈に掛かる）', () => {
+  const body = bodyOf('onUtterance');
+  const i = body.indexOf('openReview');
+  const j = body.indexOf('VCParser.interpret');
+  ok(i > 0, 'onUtterance が推敲画面を開いていない');
+  ok(j > 0 && i < j, '解釈より後で止めている＝崩れた文のまま解釈され、直しが二度手間になる');
+  ok(/opts && opts\.reviewed/.test(body), '推敲済みの再入を止めていない＝画面が無限に出る');
+});
+
+t('挟む判定は1箇所・長さの数字は engine が持つ', () => {
+  ok(/function shouldReviewUtterance/.test(code), 'shouldReviewUtterance が無い');
+  const body = bodyOf('shouldReviewUtterance');
+  ok(/VCRewrite\.needsReview/.test(body), '長さの判定を engine に任せていない＝閾値が2箇所に散る');
+  ok(/targeted/.test(body), '欄指定発話でも挟んでいる＝v17（その欄だけの差分）の意味が壊れる');
+  // 定義（function openReview）は数えない＝**呼び出し**が1箇所であることを見る
+  const calls = countOf(/(?<!function )\bopenReview\s*\(/g);
+  ok(calls === 1, `openReview の呼び出しが ${calls} 箇所＝入口が増えると条件が食い違う`);
+});
+
+t('閉じ込めない＝出口は「進む」と「捨てる」の2つ（v78 の不変条件）', () => {
+  for (const id of ['reviewGo', 'reviewCancel']) {
+    ok(html.includes(`id="${id}"`), `${id} が無い＝画面から出られなくなる`);
+    ok(new RegExp(`getElementById\\('${id}'\\)\\.addEventListener`).test(code), `${id} が配線されていない`);
+  }
+  ok(countOf(/function closeReview/g) === 1, '閉じる処理が1箇所でない');
+});
+
+t('AI の結果は人が上書きできる（↩ で戻せる・そのまま手でも直せる）', () => {
+  ok(/reviewUndoText\s*=\s*before/.test(code), 'AI を当てる前の本文を控えていない＝戻せない');
+  ok(/id="reviewText"/.test(html) && /<textarea id="reviewText"/.test(html),
+    '本文が編集できる要素になっていない（要求「そのまま表示して修正できる」）');
+});
+
+t('捨てた時も来歴に残す（黙って捨てない・v16）', () => {
+  ok(/kind: 'review', text: spoken, dropped: true/.test(code),
+    '捨てた発話が痕跡なしに消える＝何を失ったか誰も追えない');
+  ok(/kind === 'review'/.test(code), '来歴が推敲の行を描き分けていない');
+});
+
 console.log(`\nwiring.test: ${pass} passed, ${fail.length} failed`);
 if (fail.length) { console.log('\n' + fail.join('\n\n')); process.exit(1); }
