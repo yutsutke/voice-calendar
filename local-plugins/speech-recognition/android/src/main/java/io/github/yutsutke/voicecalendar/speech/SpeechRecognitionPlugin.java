@@ -74,8 +74,10 @@ public class SpeechRecognitionPlugin extends Plugin {
      *  終わったら**その場で startListening し直し**、それまでの文章をここに積んで継ぎ足す。
      *  JS から見た契約は不変＝1回の録音＝1回の final。 */
     private String carried = "";
-    /** 開き直しが空振りし続けた時の歯止め（認識器が壊れている＝無限に開き直さない） */
+    /** 開き直しが**空のまま高速に回り続ける**時の歯止め（沈黙は正常＝回数でなく間隔で見る・v83） */
     private int emptyRestarts = 0;
+    private long lastRestartMs = 0;
+    private static final long SPIN_MS = 500; // これ未満の間隔で空振りが続く＝認識器が壊れている
     /** 開き直しに使う Intent（begin で組んだものを取っておく＝設定が1回の録音の中でブレない） */
     private Intent listenIntent;
     private Runnable maxRunnable;
@@ -341,8 +343,25 @@ public class SpeechRecognitionPlugin extends Plugin {
         emitState("idle");
     }
 
+    /**
+     * 🔴 v83（実機FB第45回・v82 の実バグ）: 長文モードで**継ぎ足してきた文章ごとエラーにしていた**。
+     *
+     * 症状「話すと文字は出る → 赤いマイクで止めると『聞き取れませんでした』」の道筋:
+     *   一区切りが終わる → rotateSegment が carried へ積み、**lastPartial を空にする**
+     *   → 直後に停止 → 新しい認識器はまだ何も拾っていない（lastPartial は空）
+     *   → onError(#7 NO_MATCH) か 2秒の保険が「何も無い」と判断 → ここへ来て**全部捨てていた**
+     *
+     * 🔑 直し方は「**呼ぶ側で carried を数える**」ではなく「**ここで引き受ける**」。
+     *    エラーを報告する入口は3つ（onError / 保険タイマー / 確定が空）あり、呼ぶ側に条件を撒くと
+     *    入口が増えた日にまた片方だけ落ちる（v74 の形）。**持っている文章があるならエラーではない**。
+     */
     private void deliverIdleError(String message) {
         if (finished) return;
+        if (!carried.isEmpty()) {
+            debug("エラーだが継ぎ足し=" + carried.length() + "字あり → 捨てずに確定する（" + message + "）");
+            deliverFinal("", null, true);   // finalText = carried（+ 残っていれば途中結果）
+            return;
+        }
         finished = true;
         cleanup();
         emitState("idle");
@@ -359,16 +378,23 @@ public class SpeechRecognitionPlugin extends Plugin {
         if (!continuous || finished) return;
         String seg = (text == null || text.isEmpty()) ? lastPartial : text;
         if (seg == null || seg.isEmpty()) {
-            emptyRestarts++;
-            // 3回続けて何も拾えない＝認識器が本当に死んでいる。**黙って回り続けない**（v16）
+            // 🚨 v83: 「認識器が壊れている」と「**考えて黙っている**」を回数では区別できない。
+            //   長文モードでは沈黙こそ普通（数十秒考えることがある）＝回数で切ると熟考で録音が終わる。
+            //   危ないのは**空のまま高速に回り続ける**こと（電池を焼く）なので、**時間で見分ける**。
+            //   ゆっくりの空振り（沈黙）は何度でも許し、止めるのは10分の上限に任せる。
+            long now = System.currentTimeMillis();
+            boolean spinning = (now - lastRestartMs) < SPIN_MS;
+            lastRestartMs = now;
+            emptyRestarts = spinning ? emptyRestarts + 1 : 0;
             if (emptyRestarts >= 3) {
-                debug("長文モード: 3回続けて空 → 打ち切り");
+                debug("長文モード: 空のまま高速に回っている（" + SPIN_MS + "ms 未満×3）→ 打ち切り");
                 continuous = false;
                 endAudioAndArmFinalize();
                 return;
             }
         } else {
             emptyRestarts = 0;
+            lastRestartMs = System.currentTimeMillis();
             carried += seg;
         }
         lastPartial = "";

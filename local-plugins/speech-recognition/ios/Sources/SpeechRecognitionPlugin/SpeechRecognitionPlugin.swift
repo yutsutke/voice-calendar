@@ -59,8 +59,10 @@ public class SpeechRecognitionPlugin: CAPPlugin, CAPBridgedPlugin {
     /// 「止めない」だけでは長文がそこで切れるので、確定が来たら**その場で認識器を開き直し**、
     /// それまでの文章をここに積んで継ぎ足す。JS から見た契約は不変＝1回の録音＝1回の final。
     private var carried = ""
-    /// 開き直しが空振りし続けた時の歯止め（認識器が壊れている＝無限に開き直さない）
+    /// 開き直しが**空のまま高速に回り続ける**時の歯止め（沈黙は正常＝回数でなく間隔で見る・v83）
     private var emptyRestarts = 0
+    private var lastRestartAt = Date(timeIntervalSince1970: 0)
+    private let spinSec: TimeInterval = 0.5 // これ未満の間隔で空振りが続く＝認識器が壊れている
     /// 長文モードの打ち切り上限。**マイクを握ったまま忘れる**のを防ぐ最後の砦（電池・プライバシー）。
     /// 打ち切っても**それまでの文章は確定として届く**＝黙って捨てない（v16）。
     private var maxTimer: Timer?
@@ -298,16 +300,23 @@ public class SpeechRecognitionPlugin: CAPPlugin, CAPBridgedPlugin {
         guard continuous, !finished else { return }
         let seg = text.isEmpty ? lastPartial : text
         if seg.isEmpty {
-            emptyRestarts += 1
-            // 3回続けて何も拾えない＝認識器が本当に死んでいる。**黙って回り続けない**（v16）
+            // 🚨 v83: 「認識器が壊れている」と「**考えて黙っている**」を回数では区別できない。
+            //   長文モードでは沈黙こそ普通（数十秒考えることがある）＝回数で切ると熟考で録音が終わる。
+            //   危ないのは**空のまま高速に回り続ける**こと（電池を焼く）なので、**時間で見分ける**。
+            //   ゆっくりの空振り（沈黙）は何度でも許し、止めるのは10分の上限に任せる。
+            let now = Date()
+            let spinning = now.timeIntervalSince(lastRestartAt) < spinSec
+            lastRestartAt = now
+            emptyRestarts = spinning ? emptyRestarts + 1 : 0
             if emptyRestarts >= 3 {
-                debug("長文モード: 3回続けて空 → 打ち切り")
+                debug("長文モード: 空のまま高速に回っている（\(spinSec)s 未満×3）→ 打ち切り")
                 continuous = false
                 endAudioAndArmFinalize()
                 return
             }
         } else {
             emptyRestarts = 0
+            lastRestartAt = Date()
             carried += seg
         }
         lastPartial = ""
@@ -385,8 +394,20 @@ public class SpeechRecognitionPlugin: CAPPlugin, CAPBridgedPlugin {
         notifyListeners("state", data: ["state": "idle"])
     }
 
+    /// 🔴 v83（実機FB第45回・v82 の実バグ・Android で再現）: 長文モードで**継ぎ足してきた文章ごと
+    /// エラーにしていた**。症状「話すと文字は出る → 赤いマイクで止めると『聞き取れませんでした』」。
+    ///   一区切りが終わる → rotateSegment が carried へ積み、**lastPartial を空にする**
+    ///   → 直後に停止 → 新しい認識はまだ何も拾っていない → 「何も無い」と判断して**全部捨てていた**
+    /// 🔑 直し方は「呼ぶ側で carried を数える」ではなく「**ここで引き受ける**」。エラーの入口は3つ
+    ///   （認識エラー／保険タイマー／確定が空）あり、呼ぶ側に条件を撒くと入口が増えた日にまた片方だけ
+    ///   落ちる（v74 の形）。**持っている文章があるなら、それはエラーではない。**
     private func deliverIdleError(_ message: String) {
         guard !finished else { return }
+        if !carried.isEmpty {
+            debug("エラーだが継ぎ足し=\(carried.count)字あり → 捨てずに確定する（\(message)）")
+            deliverFinal(text: "", transcription: nil, fallback: true) // finalText = carried（+残りの途中結果）
+            return
+        }
         finished = true
         cleanup()
         notifyListeners("state", data: ["state": "idle"])

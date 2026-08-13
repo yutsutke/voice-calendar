@@ -206,6 +206,71 @@ t('v82: native に setContinuous が無い版では黙らずエラーにする',
   });
 });
 
+// ===== v83: 長文モードの「継ぎ足した文章を捨てない」を **native のソースで**縛る =====
+//
+// 症状（実機FB第45回・Android）: 長文モードで話すと文字は出るのに、赤いマイクで止めると
+//   「音声認識エラー 聞き取れませんでした」＝**継ぎ足してきた文章ごと消えた**。
+// 真因: 一区切りが終わると carried へ積んで lastPartial を空にする → 直後に停止すると
+//   新しい認識器はまだ何も拾っていない → 「何も無い」と判断してエラー経路へ落ち、carried を捨てた。
+// 🚨 なぜここで縛るか: **JS から native の中身は見えない**（上の契約テストは引数名しか見ていない）。
+//   Swift は Windows でコンパイルすらできない。calendar.test.js の不変条件6 と同じ手で、
+//   **ソースを読んで構造を固定する**（CLAUDE.md「プラグインを増やしたら同じガードを新しいソースにも」）。
+const { readFileSync } = require('node:fs');
+const { join } = require('node:path');
+const SPEECH_JAVA = readFileSync(join(
+  __dirname, '..', 'local-plugins', 'speech-recognition', 'android', 'src', 'main',
+  'java', 'io', 'github', 'yutsutke', 'voicecalendar', 'speech', 'SpeechRecognitionPlugin.java'
+), 'utf8');
+const SPEECH_SWIFT = readFileSync(join(
+  __dirname, '..', 'local-plugins', 'speech-recognition', 'ios', 'Sources',
+  'SpeechRecognitionPlugin', 'SpeechRecognitionPlugin.swift'
+), 'utf8');
+
+// コメントを落とした「実コードだけ」（コメント中の carried を実装と数えない）
+const stripComments = (s) => s.split('\n').filter((ln) => {
+  const t = ln.trim();
+  return !(t.startsWith('//') || t.startsWith('*') || t.startsWith('/*'));
+}).join('\n');
+const JAVA = stripComments(SPEECH_JAVA);
+const SWIFT = stripComments(SPEECH_SWIFT);
+// 名前つきの関数/メソッド本体を波括弧の対応で切り出す
+function block(src, header) {
+  const i = src.indexOf(header);
+  if (i < 0) throw new Error(`${header} が見つからない（名前を変えたならこのテストも直す）`);
+  const s = src.indexOf('{', i);
+  let depth = 0;
+  for (let j = s; j < src.length; j++) {
+    if (src[j] === '{') depth++;
+    else if (src[j] === '}') { depth--; if (depth === 0) return src.slice(s, j + 1); }
+  }
+  throw new Error(`${header} の本体を閉じられない`);
+}
+
+t('🚨【v83 回帰・Android】エラー経路が継ぎ足した文章を捨てない', () => {
+  const b = block(JAVA, 'private void deliverIdleError');
+  ok(/carried/.test(b), 'deliverIdleError が carried を見ていない＝長文が丸ごと消える（v16 違反）');
+  ok(/deliverFinal\(/.test(b), '持っている文章を確定として届けていない');
+});
+
+t('🚨【v83 回帰・iOS】エラー経路が継ぎ足した文章を捨てない（両OSで同じ直り方）', () => {
+  const b = block(SWIFT, 'private func deliverIdleError');
+  ok(/carried/.test(b), 'deliverIdleError が carried を見ていない＝長文が丸ごと消える（v16 違反）');
+  ok(/deliverFinal\(/.test(b), '持っている文章を確定として届けていない');
+});
+
+t('🚨【v83】確定は必ず carried を前に付ける（両OS）', () => {
+  ok(/carried \+ \(usePartial/.test(JAVA), 'Java の deliverFinal が carried を前に付けていない');
+  ok(/carried \+ \(usePartial/.test(SWIFT), 'Swift の deliverFinal が carried を前に付けていない');
+});
+
+// 長文モードでは**沈黙こそ普通**。回数で打ち切ると「考えていたら録音が終わった」になる。
+t('🚨【v83】空振りの打ち切りは回数でなく間隔で見る（沈黙で録音を終わらせない）', () => {
+  for (const [name, src, spin] of [['Java', JAVA, /SPIN_MS/], ['Swift', SWIFT, /spinSec/]]) {
+    ok(spin.test(src), `${name}: 高速回転の判定（間隔）が無い＝沈黙の回数で打ち切っている`);
+    ok(/spinning/.test(src), `${name}: spinning の判定が無い`);
+  }
+});
+
 // ===== v49: 言い間違えの「やめる」（cancel） =====
 // stop は「止めて確定する」・cancel は「止めて、この発話を無かったことにする」＝**別の操作**。
 // 🔑 Swift に cancel を足さずに済ませている（確定を受け取ってから捨てる）＝native の再ビルド無しで成立する。
