@@ -522,6 +522,15 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
     <button id="editCancel" type="button">やめる</button>
   </div>
 
+  <!-- v80（ゆう要求「長文になると文章が不正確になりがち、AIボタンで文章をリライトする機能」）:
+       長い文章がメモ欄にある時だけ出す。**新しい視覚言語を増やさない**（v46）＝辞書の行と同じ姿
+       （淡い青の面＋accent の縦線）。保存より前に置く＝整えてから保存する順に指が動く。
+       押すまで何も起きない・押した結果は来歴の ↩ で戻せる（黙って書き換えない・v16）。 -->
+  <div class="learn-row" id="rewriteRow" hidden>
+    <div class="learn-hint" id="rewriteHint"></div>
+    <button id="rewriteRun" type="button">🤖 文章を整える</button>
+  </div>
+
   <div class="learn-row" id="learnRow" hidden>
     <div class="learn-hint" id="learnHint"></div>
     <button id="saveLearn" type="button">🔤 辞書に登録して保存</button>
@@ -721,20 +730,21 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
      理由: この版文字列は index.html にしかないが、ロジックは別ファイル＝別キャッシュ。
      付けないと「フッタは新しいのにパーサは古い」という嘘の状態が成立する（v9 で実際に踏んだ）。
      index.html が更新されれば src の URL も変わる → JS も必ず新しく取り直される。 -->
-<script src="engine/settings.js?v=79"></script>
-<script src="engine/schema.js?v=79"></script>
-<script src="engine/parser.js?v=79"></script>
-<script src="engine/dictionary.js?v=79"></script>
-<script src="engine/contract.js?v=79"></script>
-<script src="engine/batch.js?v=79"></script>
-<script src="engine/ai.js?v=79"></script>
-<script src="input/transcriber.js?v=79"></script>
-<script src="adapters/calendar.js?v=79"></script>
-<script src="adapters/records.js?v=79"></script>
-<script src="adapters/location.js?v=79"></script>
+<script src="engine/settings.js?v=80"></script>
+<script src="engine/schema.js?v=80"></script>
+<script src="engine/parser.js?v=80"></script>
+<script src="engine/dictionary.js?v=80"></script>
+<script src="engine/contract.js?v=80"></script>
+<script src="engine/batch.js?v=80"></script>
+<script src="engine/ai.js?v=80"></script>
+<script src="engine/rewrite.js?v=80"></script>
+<script src="input/transcriber.js?v=80"></script>
+<script src="adapters/calendar.js?v=80"></script>
+<script src="adapters/records.js?v=80"></script>
+<script src="adapters/location.js?v=80"></script>
 <script>
 'use strict';
-const BUILD = 'v79：ホーム長押しの「リスト」が録音に覆われない · 2026-08-13';
+const BUILD = 'v80：長文を AI で整える（🤖 文章を整える） · 2026-08-13';
 console.log('BUILD:', BUILD);
 document.getElementById('build').textContent = BUILD;
 
@@ -1207,7 +1217,9 @@ function renderHistory() {
       + (e.fb ? ' 補完確定' : ''); // isFinal が来ず途中結果で確定した発話（v15 の保険が効いた印）
     const text = document.createElement('span');
     text.className = 'h-text';
-    text.textContent = `🗣 ${e.text}`;
+    // v80: 発話でない行（AI で文章を整えた）は 🗣 を付けない＝**話していないのに話した印を出さない**
+    // （来歴は「これまで居た状態の一覧」v20＝発話以外の状態変化も並ぶが、印は事実どおりに）。
+    text.textContent = (e.kind === 'rewrite' ? '✍️ ' : '🗣 ') + e.text;
     line1.append(time, text);
     const line2 = document.createElement('div');
     line2.className = 'h-result';
@@ -2170,6 +2182,7 @@ function renderAiConfig() {
   keyEl.placeholder = cfg.key ? `保存済み（…${cfg.key.slice(-4)}）— 変える時だけ入力` : 'API キーを貼る';
   document.getElementById('aiConfigState').textContent = cfg.key ? `${VCAI.PROVIDERS[cfg.provider].label}・設定済み` : '';
   document.getElementById('batchAiRun').hidden = !cfg.key;
+  refreshRewriteRow(); // v80: キーの有無で「文章を整える」も出る/消える＝判定の置き場所をここに揃える
 }
 document.getElementById('aiProvider').addEventListener('change', () => {
   if (!window.VCAI) return;
@@ -3097,6 +3110,90 @@ function runSave(opts) { return editingRec ? saveEditedRecord() : doSave(opts); 
 
 document.getElementById('save').addEventListener('click', () => runSave());
 
+// ===== v80: 長文を AI で整える（ゆう要求 2026-08-13） =====
+// 「**長文になると、文章が不正確になりがち**、AIボタンで文章をリライトする機能も加えたい」。
+// 直す対象は**メモ欄**＝ v58 以降、長い発話の全文はそこに入る（タイトルはその前の方の切り出し）。
+// 🔒 守ること:
+//   ・**黙って書き換えない**（v16）＝来歴に1行残し、その行の ↩ で戻せる（v18 の機構をそのまま使う＝
+//     新しい「元に戻す」を作らない。多段で戻れるのも、ロック欄の事故を避けるのも既に解けている）
+//   ・**自動保存しない**＝整えるのは人が押した時だけ。保存は別の操作（保存は不可逆・v28）
+//   ・**人が書いたタイトルは触らない**（v43 の不変条件）＝音声が切り出したタイトルだけ取り直す
+//   ・失敗しても本体を殺さない（v13）＝ボタンが元に戻るだけ・理由は toast と診断へ
+const REWRITE_TIMEOUT_MS = 30000; // 音声経路の 12 秒（ノールックの待ち時間）とは別＝人が押して待つ操作
+let rewriteBusy = false;
+
+function refreshRewriteRow() {
+  const row = document.getElementById('rewriteRow');
+  if (!row || !window.VCRewrite) return;
+  const note = String(store.get().note || '');
+  // キーが無ければ出さない（v40 の流儀＝押せるのに動かないボタンを作らない）。
+  // 長さの数字は engine が持つ（宿主に書くと二重管理・v3）。
+  const show = !!(window.VCAI && VCAI.hasKey()) && VCRewrite.isLongEnough(note);
+  row.hidden = !show;
+  if (show && !rewriteBusy) {
+    document.getElementById('rewriteHint').textContent =
+      `長い文章です（${note.trim().length}字）。認識ミス・句読点・言い淀みを AI が整えます（内容は足しません）`;
+  }
+}
+
+// 整えた文章をフォームへ。**タイトルは条件付き**＝「今のタイトルが、整える前の本文から機械が切り出した
+// ものそのもの」の時だけ取り直す（v58 と同じ関数で）。人が手で書いたタイトルには触らない。
+function applyRewrite(before, after) {
+  const cur = store.get();
+  const patch = { note: after };
+  try {
+    if (store.getFieldOrigin('title') === 'voice'
+        && cur.title === VCParser.splitLongUtterance(before).title) {
+      const t = VCParser.splitLongUtterance(after).title;
+      if (t && t !== cur.title) patch.title = t;
+    }
+  } catch (e) { window.__vcNote('整え（タイトル）', (e && e.message) || String(e)); } // 触らないだけ
+  // targeted: true ＝この欄だけの差分（他の欄を掃除しない・v17）
+  const a = store.applyVoicePatch(patch, '✍️ 文章を整えた（AI）', { targeted: true });
+  if (a.skipped.length) { // 編集中の欄はロックで入らない（v3）＝黙って成功と言わない
+    toast(`✍️ 編集中の欄には当てませんでした（${a.skipped.map(fieldLabel).join('・')}）`);
+  }
+  logHistory({
+    at: Date.now(), kind: 'rewrite', text: '文章を整えた（AI）',
+    patch, notes: [], skipped: a.skipped, cleared: [], err: null, after: store.snapshot(),
+  });
+  const n = ('title' in patch) ? 'メモとタイトル' : 'メモ';
+  toast(`✍️ ${n}を整えました（来歴の ↩ で戻せます）`);
+}
+
+async function runRewrite() {
+  if (rewriteBusy) return;
+  const before = String(store.get().note || '').trim();
+  if (!before) return;
+  const btn = document.getElementById('rewriteRun');
+  const label = btn.textContent;
+  rewriteBusy = true;
+  btn.disabled = true;
+  btn.textContent = '✍️ 整えています…';
+  try {
+    const raw = await VCAI.interpretLongText(before, {
+      system: VCRewrite.buildPrompt(), timeoutMs: REWRITE_TIMEOUT_MS,
+    });
+    const r = VCRewrite.check(before, raw);
+    if (!r.ok) { // 落とすなら理由を必ず出す（v16）＝「押したのに何も起きない」を作らない
+      toast(`✍️ ${r.problem}`);
+      window.__vcDebugNote(`✍️ 整え: ${r.problem}`);
+      return;
+    }
+    applyRewrite(before, r.text);
+  } catch (e) {
+    const msg = (e && e.message) || String(e);
+    toast(`✍️ 整えられませんでした: ${msg}`);
+    window.__vcNote('文章の整え', msg);
+  } finally {
+    rewriteBusy = false;
+    btn.disabled = false;
+    btn.textContent = label;
+    refreshRewriteRow();
+  }
+}
+document.getElementById('rewriteRun').addEventListener('click', runRewrite);
+
 // ===== v44: 「辞書に登録して保存」（実機FB第26回・ユーザー設計） =====
 // 音声が書いたテキスト欄を人が直した時だけ、2つ目の保存ボタンを出す。
 // **押すこと自体が「この訂正は次から自動で当ててよい」という意思表明**＝
@@ -3151,6 +3248,7 @@ store.subscribe((change) => {
     voiceBaseline = null; // 保存後・クリア・↩ 復元＝その発話は終わり
   }
   refreshLearnRow();
+  refreshRewriteRow(); // v80: メモが長くなった／短くなった／戻された、のどれでも見直す
 });
 
 document.getElementById('saveLearn').addEventListener('click', () => {

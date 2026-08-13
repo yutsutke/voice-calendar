@@ -237,5 +237,42 @@ t('リストの意図は「マイクを押した」「アプリを離れた」�
     'アプリを離れた時に消えない＝一度長押しで開いた人の「起動＝即録音」が二度と戻らない');
 });
 
+// ===== 8. 長文を AI で整える（v80・ゆう要求） =====
+// 🚨 これは**フォームの中身を機械が書き換える**唯一の手動操作＝守りが緩むと「押したら文章が変わっていた、
+//    元に戻せない、しかも保存済み」が成立する。だから3つを構造で固定する。
+t('整えるボタンは「キーがある」「長い」の両方で出す（判定は1箇所）', () => {
+  const body = bodyOf('refreshRewriteRow');
+  ok(/VCAI\s*&&\s*VCAI\.hasKey\(\)/.test(body), 'キーの有無を見ていない＝押せるのに動かないボタンが出る');
+  ok(/VCRewrite\.isLongEnough/.test(body), '長さの判定を engine に任せていない＝閾値が2箇所に散る');
+  // 行そのものを触ってよいのは判定関数の中だけ（他所から出し入れすると条件が食い違う）
+  const re = /getElementById\('rewriteRow'\)/g;
+  const all = countOf(re), inside = (body.match(re) || []).length;
+  ok(all > 0 && all === inside, `rewriteRow を refreshRewriteRow の外で触っている（外に ${all - inside} 箇所）`);
+  // 出す条件が変わったら見直される場所も固定（キーの有無は renderAiConfig が唯一の反映点）
+  ok(/refreshRewriteRow\s*\(\s*\)/.test(bodyOf('renderAiConfig')),
+    'キーを保存/削除しても行が見直されない＝設定した直後に出ない／消しても残る');
+});
+
+t('整えた結果は来歴に残り、↩ で戻せる（黙って書き換えない）', () => {
+  const body = bodyOf('applyRewrite');
+  ok(/logHistory\(/.test(body), '来歴に残していない＝何がいつ書き換わったか誰も見られない');
+  ok(/after:\s*store\.snapshot\(\)/.test(body), '状態を撮っていない＝↩ が出ない（v18 の機構に乗っていない）');
+  ok(/toast\(/.test(body), '結果を告げていない＝黙って書き換わる');
+});
+
+t('整えるだけ＝保存はしない（保存は不可逆・v28）', () => {
+  for (const fn of ['applyRewrite', 'runRewrite']) {
+    ok(!/\b(doSave|runSave)\s*\(/.test(bodyOf(fn)), `${fn} が保存を呼んでいる＝押しただけでカレンダーに入る`);
+  }
+});
+
+t('人が書いたタイトルは触らない・切り方は parser と同じ関数', () => {
+  const body = bodyOf('applyRewrite');
+  ok(/getFieldOrigin\('title'\)\s*===\s*'voice'/.test(body),
+    '人が書いたタイトルを潰す（v43 の不変条件を破る）');
+  ok(/VCParser\.splitLongUtterance/.test(body),
+    'タイトルの切り方を自前で書いている＝v58 と規則が2つに割れて静かにズレる');
+});
+
 console.log(`\nwiring.test: ${pass} passed, ${fail.length} failed`);
 if (fail.length) { console.log('\n' + fail.join('\n\n')); process.exit(1); }

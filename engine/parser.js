@@ -612,7 +612,10 @@
     return { patch, notes, normalizedText: text, prov };
   }
 
-  const api = { interpret, normalize, isFillerOnly };
+  // v80: splitLongUtterance を公開する。理由＝「長文を AI で整える」後に**タイトルを取り直す**のに
+  // 同じ関数が要る（別に書けば、切り方の規則が2つになって静かにズレる＝v74 と同じ形の事故）。
+  // 純関数のまま・呼び手は宿主（index.html）だけ＝engine 同士の相互依存は増やしていない。
+  const api = { interpret, normalize, isFillerOnly, splitLongUtterance };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else global.VCParser = api;
 })(typeof window !== 'undefined' ? window : globalThis);
