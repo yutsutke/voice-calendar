@@ -59,8 +59,8 @@
 
 <h2>AI 連携（任意・既定はオフ）</h2>
 <ul>
-  <li>AI を使う機能は3つあります——<strong>「まとめて入力」で長い文章から予定を読み取る</strong>／<strong>発話を AI で解釈する</strong>（設定・既定はオフ）／<strong>長い文章を読みやすく整える</strong>（「文章を整える」ボタン）。いずれも<strong>利用者自身が用意した API キー</strong>（Anthropic または Google）を登録した場合にのみ動作します。キーを登録しない限り、本アプリが外部の AI サービスと通信することはありません。</li>
-  <li>この機能を使うと、<strong>入力した文章（辞書機能の展開結果を含む）が、利用者の選んだ AI 事業者へ端末から直接送信されます。</strong>送信先での処理は各事業者のプライバシーポリシーに従います。<strong>開発者のサーバーは存在せず、開発者が文章や API キーを受け取ることはありません。</strong></li>
+  <li>AI を使う機能は3つあります——<strong>「まとめて入力」で長い文章から予定を読み取る</strong>／<strong>発話を AI で解釈する</strong>（設定・既定はオフ）／<strong>長い文章を読みやすく整える</strong>（「文章を整える」ボタン）。いずれも<strong>利用者自身が用意した API キー</strong>（Anthropic / Google / OpenRouter）を登録した場合にのみ動作します。キーを登録しない限り、本アプリが外部の AI サービスと通信することはありません。</li>
+  <li>この機能を使うと、<strong>入力した文章（辞書機能の展開結果を含む）が、利用者の選んだ AI 事業者へ端末から直接送信されます。</strong>送信先での処理は各事業者のプライバシーポリシーに従います。<strong>OpenRouter を選んだ場合は、OpenRouter が中継先として選んだモデル提供元にも本文が渡ります</strong>（どのモデルを使うかは利用者が指定します）。<strong>開発者のサーバーは存在せず、開発者が文章や API キーを受け取ることはありません。</strong></li>
   <li>API キーはこの端末内にのみ保存されます。共有端末では保存しないでください。本アプリ専用に<strong>使用上限付きのキー</strong>を発行することを推奨します。</li>
   <li>「AI用の指示をコピー」で文面をコピーし、外部のチャット AI に利用者自身が貼り付けた場合も、その内容は貼り付け先のサービスに渡ります。</li>
 </ul>
@@ -113,8 +113,8 @@
 
 <h2>AI Integration (Optional, Off by Default)</h2>
 <ul>
-  <li>Three features use AI — <strong>batch input</strong> (reading events from long text), <strong>AI interpretation of speech</strong> (a setting, off by default), and <strong>cleaning up long text</strong> (the "tidy up" button). All of them work <strong>only if you register your own API key</strong> (Anthropic or Google). Without a key, the App never communicates with any AI service.</li>
-  <li>When used, <strong>the text you enter (including dictionary expansions) is sent directly from your device to the AI provider you chose.</strong> Their processing is governed by their privacy policies. <strong>There is no developer server; the developer never receives your text or your key.</strong></li>
+  <li>Three features use AI — <strong>batch input</strong> (reading events from long text), <strong>AI interpretation of speech</strong> (a setting, off by default), and <strong>cleaning up long text</strong> (the "tidy up" button). All of them work <strong>only if you register your own API key</strong> (Anthropic / Google / OpenRouter). Without a key, the App never communicates with any AI service.</li>
+  <li>When used, <strong>the text you enter (including dictionary expansions) is sent directly from your device to the AI provider you chose.</strong> Their processing is governed by their privacy policies. <strong>If you choose OpenRouter, your text is also passed to the upstream model provider it routes to</strong> (you choose which model to use). <strong>There is no developer server; the developer never receives your text or your key.</strong></li>
   <li>Your API key is stored only on your device. Avoid saving it on shared devices; we recommend issuing a key with a spending limit for this App.</li>
   <li>If you copy the generated prompt and paste it into an external chat AI yourself, that content is likewise shared with that service.</li>
 </ul>

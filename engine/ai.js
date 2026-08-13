@@ -50,6 +50,14 @@
         if (res.stop_reason === 'max_tokens') throw new Error('AI の応答が長さの上限で切れました（本文を分けて試してください）');
         return block.text;
       },
+      // v85: モデル一覧（プルダウンの材料）。**キーが要る**＝取得は人が押した時だけ。
+      models: {
+        needsKey: true,
+        url: () => 'https://api.anthropic.com/v1/models?limit=100',
+        extract: (j) => (Array.isArray(j && j.data) ? j.data : [])
+          .filter((m) => m && typeof m.id === 'string')
+          .map((m) => ({ id: m.id, label: m.display_name || m.id })),
+      },
     },
     gemini: {
       label: 'Google（Gemini）',
@@ -73,9 +81,63 @@
         if (cand.finishReason === 'MAX_TOKENS') throw new Error('AI の応答が長さの上限で切れました（本文を分けて試してください）');
         return part.text;
       },
+      models: {
+        needsKey: true,
+        url: () => 'https://generativelanguage.googleapis.com/v1beta/models?pageSize=200',
+        extract: (j) => (Array.isArray(j && j.models) ? j.models : [])
+          // 文章を生成できるものだけ（埋め込み専用などを混ぜない＝選べるのに動かないを作らない）
+          .filter((m) => m && typeof m.name === 'string'
+            && (!Array.isArray(m.supportedGenerationMethods) || m.supportedGenerationMethods.includes('generateContent')))
+          .map((m) => ({ id: m.name.replace(/^models\//, ''), label: m.displayName || m.name.replace(/^models\//, '') })),
+      },
     },
-    // 🚫 openai は入れない: ブラウザからの直接呼び出しが CORS でブロックされる＝
-    //    「キーを入れたのに動かない」を仕様として作ることになる（UI に理由を明記して非対応）。
+    // 🆕 v85: OpenRouter（ゆう要求「オープンAIとオープンルーターを追加したい」）。
+    // 1つのキーで **OpenAI / Anthropic / Google / その他** のモデルを叩ける中継所。
+    // API は OpenAI 互換（/chat/completions・choices[].message.content）。
+    // 🔑 **これが「OpenAI を使いたい」への実際の答え**＝ OpenAI 直は CORS で塞がれているが（下記）、
+    //    OpenRouter 経由なら `openai/…` のモデルがブラウザから使える。
+    openrouter: {
+      label: 'OpenRouter（GPT・Claude・Gemini などを1つのキーで）',
+      // 2026-08-13 に実際の一覧から選んだ現行・最安級（$0.05/100万トークン）。
+      // 使えなくなったら 404 が返り、v43 の「モデル名が無い＋空にすると既定へ」がそのまま案内になる。
+      defaultModel: 'openai/gpt-5-nano',
+      endpoint: () => 'https://openrouter.ai/api/v1/chat/completions',
+      headers: (key) => ({
+        'content-type': 'application/json',
+        authorization: `Bearer ${key}`,
+        // 🚫 HTTP-Referer / X-Title（OpenRouter のランキング用）は送らない＝
+        //    どのアプリから来たかを先方に渡す必要が無い（任意項目・privacy §AI の線を広げない）。
+      }),
+      body: (system, text, model, maxTokens) => ({
+        model,
+        max_tokens: maxTokens,
+        messages: [{ role: 'system', content: system }, { role: 'user', content: text }],
+      }),
+      extract: (res) => {
+        const choice = res && Array.isArray(res.choices) ? res.choices[0] : null;
+        const content = choice && choice.message && choice.message.content;
+        if (typeof content !== 'string' || !content) throw new Error('AI の応答にテキストがありません');
+        if (choice.finish_reason === 'length') throw new Error('AI の応答が長さの上限で切れました（本文を分けて試してください）');
+        return content;
+      },
+      // モデル一覧はキー無しで取れる（公開エンドポイント）
+      models: {
+        needsKey: false,
+        url: () => 'https://openrouter.ai/api/v1/models',
+        extract: (j) => (Array.isArray(j && j.data) ? j.data : [])
+          // `:batch` はバッチ専用＝この場で応答を待つ用途では使えない（押せるのに動かないを作らない）
+          .filter((m) => m && typeof m.id === 'string' && !m.id.endsWith(':batch'))
+          .map((m) => ({ id: m.id, label: m.name || m.id })),
+      },
+    },
+    // 🚫 openai（直接）は入れない: ブラウザからの呼び出しが CORS でブロックされる＝
+    //    「キーを入れたのに動かない」を仕様として作ることになる。
+    // 📌 v85（2026-08-13）に**実測で再確認した**（v40 の判断は今も正しい）:
+    //      GET  https://api.openai.com/v1/models          → 401 が**読める**（CORS は通る）
+    //      POST https://api.openai.com/v1/chat/completions → **Failed to fetch**
+    //        「Access to fetch … blocked by CORS policy: No 'Access-Control-Allow-Origin' header is present」
+    //    ＝**一覧は取れるのに本命の生成だけ弾かれる**という紛らわしい形。中途半端に足すと
+    //      「モデルは選べたのに送れない」になる。→ OpenRouter 経由で `openai/…` を使うのが道。
   };
 
   // ---------- 設定（キーは端末内のみ） ----------
@@ -200,13 +262,46 @@
     return callProvider(system, t, cfg, opts && opts.fetchFn, opts && opts.timeoutMs);
   }
 
+  // v85: モデル一覧を取る（ゆう要求「最新のモデル情報を入手、プルダウンで選べるように」）。
+  // 🔑 **決め打ちの一覧を持たない**＝ここに表を書くと、その日から古くなり始める（v51「説明文の腐り」の
+  //    モデル版）。先方に聞けば常に現在の一覧が返る。
+  // 🔒 呼ぶのは**人が押した時だけ**（起動時に勝手に外へ行かない＝v38「黙って取らない」と同じ線）。
+  // 失敗の言い方は生成と同じ道具（honestHttpError / redact）を通す＝キーは絶対に出さない。
+  async function listModels(opts) {
+    const cfg = (opts && opts.config) || loadConfig();
+    const p = PROVIDERS[cfg && cfg.provider];
+    if (!p) throw new Error(`対応していないプロバイダです: ${cfg && cfg.provider}`);
+    if (!p.models) throw new Error(`${p.label} はモデル一覧に対応していません`);
+    if (p.models.needsKey && !cfg.key) throw new Error('API キーが未設定です（先にキーを保存してください）');
+    const f = (opts && opts.fetchFn) || global.fetch;
+    if (typeof f !== 'function') throw new Error('この環境では通信できません');
+    let res;
+    try {
+      res = await f(p.models.url(), {
+        method: 'GET',
+        // キーの要らない先（OpenRouter）には認証ヘッダを送らない＝要らないものを渡さない
+        headers: p.models.needsKey ? p.headers(cfg.key) : { 'content-type': 'application/json' },
+      });
+    } catch (e) {
+      throw new Error(`モデル一覧を取得できませんでした（通信）: ${redact((e && e.message) || String(e), cfg.key)}`);
+    }
+    const bodyText = await res.text().catch(() => '');
+    if (!res.ok) throw new Error(honestHttpError(res.status, providerDetail(bodyText, cfg.key)));
+    let json;
+    try { json = JSON.parse(bodyText); } catch { throw new Error('モデル一覧の応答を読めませんでした（JSON でない応答）'); }
+    const list = p.models.extract(json);
+    if (!Array.isArray(list) || !list.length) throw new Error('モデル一覧が空でした');
+    // id の昇順＝提供元でまとまる（openai/… が並ぶ）＝目で探せる。件数が多いのはここでは減らさない。
+    return list.slice().sort((a, b) => String(a.id).localeCompare(String(b.id)));
+  }
+
   // 疎通確認（キー・モデル・CORS がまとめて検証される最小の呼び出し）
   async function testConnection(opts) {
     const cfg = (opts && opts.config) || loadConfig();
     return callProvider('接続テストです。「OK」とだけ返してください。', 'OK', cfg, opts && opts.fetchFn, opts && opts.timeoutMs);
   }
 
-  const api = { PROVIDERS, KEY, MAX_TOKENS, MAX_INPUT_CHARS, loadConfig, saveConfig, clearConfig, hasKey, modelFor, interpretLongText, testConnection };
+  const api = { PROVIDERS, KEY, MAX_TOKENS, MAX_INPUT_CHARS, loadConfig, saveConfig, clearConfig, hasKey, modelFor, interpretLongText, testConnection, listModels };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else global.VCAI = api;
 })(typeof window !== 'undefined' ? window : globalThis);

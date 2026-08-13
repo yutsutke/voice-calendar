@@ -203,14 +203,103 @@ t('🔒 どの失敗経路のエラー文にもキーが出ない', async () => 
   }
 });
 
-// ===== 不変条件5: openai は指定できない =====
-t('🚫 openai は PROVIDERS に無い（CORS 非対応＝「入れたのに動かない」を作らない）', async () => {
-  ok(!AI.PROVIDERS.openai, 'openai を足すなら CORS の仕様変更を確認してから');
-  eq(Object.keys(AI.PROVIDERS).sort(), ['anthropic', 'gemini']);
+// ===== 不変条件5: openai（直接）は指定できない =====
+// 📌 v85（2026-08-13）に**実測で再確認した**（v40 の判断は今も正しい）:
+//      GET  api.openai.com/v1/models          → 401 が**読める**（CORS は通る）
+//      POST api.openai.com/v1/chat/completions → Failed to fetch
+//        「blocked by CORS policy: No 'Access-Control-Allow-Origin' header is present」
+//    ＝**一覧は取れるのに本命の生成だけ弾かれる**＝中途半端に足すと「モデルは選べたのに送れない」。
+//    → OpenAI のモデルを使う道は **OpenRouter 経由**（openai/… を指定する）。
+t('🚫 openai（直接）は PROVIDERS に無い／OpenRouter が代わりの道', async () => {
+  ok(!AI.PROVIDERS.openai, 'openai を足すなら CORS を実測で確認してから（v85 時点では POST が弾かれる）');
+  eq(Object.keys(AI.PROVIDERS).sort(), ['anthropic', 'gemini', 'openrouter']);
   await rejects(
     () => AI.interpretLongText('t', { system: 's', config: { provider: 'openai', key: SECRET } }),
     '対応していないプロバイダ'
   );
+  // 代わりの道が実在すること（禁止だけ残して代替が消えると、ただ「できない」だけになる）
+  ok(/openai\//.test(AI.PROVIDERS.openrouter.defaultModel), 'OpenRouter の既定が openai 系でない＝代替の意味が薄れる');
+});
+
+// ===== v85: OpenRouter（OpenAI 互換） =====
+t('OpenRouter のリクエストの形（エンドポイント・Bearer・system は messages の先頭）', async () => {
+  let got = null;
+  const fetchFn = async (url, init) => {
+    got = { url, init };
+    return { ok: true, status: 200, json: async () => ({ choices: [{ message: { content: 'OK' }, finish_reason: 'stop' }] }) };
+  };
+  const r = await AI.interpretLongText('本文', {
+    system: '指示', fetchFn, config: { provider: 'openrouter', key: SECRET, model: 'openai/gpt-5-nano' },
+  });
+  eq(r, 'OK');
+  eq(got.url, 'https://openrouter.ai/api/v1/chat/completions');
+  eq(got.init.headers.authorization, `Bearer ${SECRET}`, 'Bearer で送る');
+  const body = JSON.parse(got.init.body);
+  eq(body.model, 'openai/gpt-5-nano');
+  eq(body.messages[0], { role: 'system', content: '指示' }, 'system は messages の先頭（OpenAI 互換）');
+  eq(body.messages[1], { role: 'user', content: '本文' });
+});
+
+t('OpenRouter: 切れた応答（finish_reason=length）を検出して正直に言う', async () => {
+  const fetchFn = async () => ({ ok: true, status: 200,
+    json: async () => ({ choices: [{ message: { content: '途中まで' }, finish_reason: 'length' }] }) });
+  await rejects(
+    () => AI.interpretLongText('t', { system: 's', fetchFn, config: { provider: 'openrouter', key: SECRET } }),
+    '長さの上限で切れました'
+  );
+});
+
+t('OpenRouter: choices が空/中身が無い応答は正直に断る', async () => {
+  for (const res of [{ choices: [] }, { choices: [{ message: {} }] }, {}]) {
+    const fetchFn = async () => ({ ok: true, status: 200, json: async () => res });
+    await rejects(
+      () => AI.interpretLongText('t', { system: 's', fetchFn, config: { provider: 'openrouter', key: SECRET } }),
+      'テキストがありません'
+    );
+  }
+});
+
+// ===== v85: モデル一覧（プルダウンの材料） =====
+// 🔑 **決め打ちの一覧を持たない**＝表を書くとその日から古くなる（v51「説明文の腐り」のモデル版）。
+t('モデル一覧: 各社の応答から {id,label} を取り出し、id の昇順で返す', async () => {
+  const cases = [
+    ['anthropic', { data: [{ id: 'claude-z', display_name: 'Z' }, { id: 'claude-a', display_name: 'A' }] }, ['claude-a', 'claude-z']],
+    ['gemini', { models: [{ name: 'models/gemini-b', displayName: 'B', supportedGenerationMethods: ['generateContent'] },
+                          { name: 'models/embed-x', displayName: 'X', supportedGenerationMethods: ['embedContent'] },
+                          { name: 'models/gemini-a', displayName: 'A', supportedGenerationMethods: ['generateContent'] }] }, ['gemini-a', 'gemini-b']],
+    ['openrouter', { data: [{ id: 'z/z', name: 'Z' }, { id: 'a/a', name: 'A' }, { id: 'a/a:batch', name: 'batch' }] }, ['a/a', 'z/z']],
+  ];
+  for (const [provider, res, expected] of cases) {
+    const fetchFn = async () => ({ ok: true, status: 200, text: async () => JSON.stringify(res) });
+    const list = await AI.listModels({ fetchFn, config: { provider, key: SECRET } });
+    eq(list.map((m) => m.id), expected, `${provider}: 並びか絞り込みが違う`);
+    ok(list.every((m) => m.label), `${provider}: 表示名が無い`);
+  }
+});
+
+t('モデル一覧: OpenRouter はキー無しでも取れる（認証ヘッダを送らない）', async () => {
+  let got = null;
+  const fetchFn = async (url, init) => { got = { url, init };
+    return { ok: true, status: 200, text: async () => JSON.stringify({ data: [{ id: 'a/a', name: 'A' }] }) }; };
+  const list = await AI.listModels({ fetchFn, config: { provider: 'openrouter', key: '' } });
+  eq(list.length, 1);
+  ok(!got.init.headers.authorization, '要らない認証ヘッダを送っている');
+});
+
+t('モデル一覧: キーが要る先でキーが無ければ、送らずに断る（無駄な通信をしない）', async () => {
+  let called = false;
+  const fetchFn = async () => { called = true; return { ok: true, status: 200, text: async () => '{}' }; };
+  await rejects(() => AI.listModels({ fetchFn, config: { provider: 'anthropic', key: '' } }), 'API キーが未設定');
+  eq(called, false, 'キーが無いのに通信した');
+});
+
+t('モデル一覧: 失敗は生成と同じ言い方（401=キー / 空 / 未知プロバイダ）＋キーが漏れない', async () => {
+  const err401 = async () => ({ ok: false, status: 401, text: async () => `{"error":{"message":"bad key ${SECRET}"}}` });
+  try { await AI.listModels({ fetchFn: err401, config: { provider: 'anthropic', key: SECRET } }); ok(false, '通ってしまった'); }
+  catch (e) { ok(/キー/.test(e.message), `401 の言い方: ${e.message}`); ok(!e.message.includes(SECRET), 'キーが漏れた'); }
+  const empty = async () => ({ ok: true, status: 200, text: async () => JSON.stringify({ data: [] }) });
+  await rejects(() => AI.listModels({ fetchFn: empty, config: { provider: 'anthropic', key: SECRET } }), 'モデル一覧が空');
+  await rejects(() => AI.listModels({ config: { provider: 'openai', key: SECRET } }), '対応していないプロバイダ');
 });
 
 // ===== 入力ガード =====

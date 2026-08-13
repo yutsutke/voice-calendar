@@ -369,5 +369,29 @@ t('捨てた時も来歴に残す（黙って捨てない・v16）', () => {
   ok(/kind === 'review'/.test(code), '来歴が推敲の行を描き分けていない');
 });
 
+// ===== 12. モデル一覧のプルダウン（v85・ゆう要求） =====
+t('モデル一覧は押した時だけ取りに行く（起動時に勝手に外へ出ない）', () => {
+  const calls = countOf(/VCAI\.listModels\s*\(/g);
+  ok(calls === 1, `listModels の呼び出しが ${calls} 箇所＝入口が増えると起動時にも走りうる`);
+  ok(/getElementById\('aiFetchModels'\)\.addEventListener\('click'/.test(code),
+    '取得がボタン以外から走る形になっている');
+  ok(/VCAI\.listModels/.test(bodyOf('fetchModelList')), '取得が fetchModelList の外にある');
+});
+
+t('選んだモデルは「欄を埋めるだけ」＝保存の形は今までどおり', () => {
+  ok(/getElementById\('aiModel'\)\.value = v/.test(code),
+    'プルダウンがモデル欄を埋めていない＝選んでも保存に反映されない／別の保存経路ができている');
+  // 保存は今までどおり aiSave の1箇所（プルダウンから直接保存しない）
+  const saves = countOf(/VCAI\.saveConfig\s*\(/g);
+  ok(saves === 1, `saveConfig の呼び出しが ${saves} 箇所＝保存の道が増えている（v74 の形）`);
+});
+
+t('プロバイダを変えたら古い一覧を残さない（別社のモデルを選べる事故を防ぐ・v43）', () => {
+  ok(/function clearModelList/.test(code), 'clearModelList が無い');
+  ok(/clearModelList\s*\(\s*\)/.test(bodyOf('renderAiConfig')), '設定の描画で一覧を片付けていない');
+  const onChange = code.slice(code.indexOf("getElementById('aiProvider').addEventListener"));
+  ok(/clearModelList/.test(onChange.slice(0, 900)), 'プロバイダ切替で一覧が残る');
+});
+
 console.log(`\nwiring.test: ${pass} passed, ${fail.length} failed`);
 if (fail.length) { console.log('\n' + fail.join('\n\n')); process.exit(1); }

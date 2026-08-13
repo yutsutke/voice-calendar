@@ -456,6 +456,14 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
   .ai-row label { flex: 0 0 5.5em; color: var(--sub); }
   .ai-row select, .ai-row input { flex: 1; min-width: 0; padding: 7px 10px; border: 1px solid var(--line); border-radius: 8px;
     font-size: 14px; background: var(--card); color: var(--ink); font-family: inherit; }
+  /* v85: モデル一覧（取得ボタン＋プルダウン）。ラベル列を持たない行なので gap だけ揃える。
+     v76 の教訓＝**横に並べたものは縮まないと画面から溢れる**ので、ボタンは縮む/折り返す前提にする。 */
+  .ai-models { flex-wrap: wrap; }
+  .ai-models button { flex: 0 1 auto; padding: 7px 12px; border: 1px solid var(--line); border-radius: 8px;
+    background: var(--card); color: var(--accent); font-size: 13px; cursor: pointer; white-space: nowrap; }
+  .ai-models button:active { opacity: .6; }
+  .ai-models select[hidden] { display: none; }
+  .ai-models-note { font-size: 11px; color: var(--sub); padding: 2px 2px 6px; line-height: 1.5; overflow-wrap: anywhere; }
 
   /* ---- 保存 ---- */
   .actions { display: flex; gap: 10px; margin-top: 16px; }
@@ -736,9 +744,18 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
            キー未設定なら「まとめて入力」の AI ボタンは出ない＝既定の体験は不変（v19）。 -->
       <div class="ai-config" id="aiConfigBox">
         <div class="ai-title">AI 設定（自分の API キーで直接解釈・任意）<span class="rec-count" id="aiConfigState"></span></div>
-        <div class="ai-hint">自分の API キーを入れると、「まとめて入力」の長文をボタン1つで解釈できます（コピーの往復が不要になります）。詳細設定の「音声を AI で解釈する」もこのキーを使います。<b>キーはこの端末の中にのみ保存され、開発者のサーバは存在しません。</b>本文（辞書の展開結果を含む）は選んだ AI 社へ端末から直接送信されます。本アプリ専用に<b>使用上限付きのキー</b>を発行するのがおすすめです。共有端末では保存しないでください。※ OpenAI は非対応（ブラウザからの直接接続を許可していないため）。</div>
+        <div class="ai-hint">自分の API キーを入れると、「まとめて入力」の長文をボタン1つで解釈できます（コピーの往復が不要になります）。詳細設定の「音声を AI で解釈する」もこのキーを使います。<b>キーはこの端末の中にのみ保存され、開発者のサーバは存在しません。</b>本文（辞書の展開結果を含む）は選んだ AI 社へ端末から直接送信されます。本アプリ専用に<b>使用上限付きのキー</b>を発行するのがおすすめです。共有端末では保存しないでください。※ <b>OpenAI に直接つなぐことはできません</b>（ブラウザからの接続を許可していないため。2026-08-13 に再確認）。<b>GPT を使いたい場合は OpenRouter</b> を選び、モデルに <code>openai/…</code> を指定してください（1つのキーで GPT・Claude・Gemini などを使えます）。</div>
         <div class="ai-row"><label for="aiProvider">プロバイダ</label><select id="aiProvider"></select></div>
         <div class="ai-row"><label for="aiModel">モデル</label><input id="aiModel" type="text" autocomplete="off"></div>
+        <!-- v85（ゆう要求「最新のモデル情報を入手、プルダウンで選べるように」）:
+             **決め打ちの一覧を持たない**＝先方に聞く。押した時だけ取りに行く（起動時に勝手に外へ行かない）。
+             選ぶと上のモデル欄が埋まるだけ＝保存される形は今までと同じ「ただの文字列」＝
+             一覧に無いモデルも手で書ける（v43「空にすると既定へ」もそのまま生きる）。 -->
+        <div class="ai-row ai-models">
+          <button id="aiFetchModels" type="button">モデル一覧を取得</button>
+          <select id="aiModelList" hidden></select>
+        </div>
+        <div class="ai-models-note" id="aiModelsNote"></div>
         <div class="ai-row"><label for="aiKey">API キー</label><input id="aiKey" type="password" autocomplete="off"></div>
         <div class="batch-actions">
           <button id="aiSave" type="button">保存</button>
@@ -839,22 +856,22 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
      理由: この版文字列は index.html にしかないが、ロジックは別ファイル＝別キャッシュ。
      付けないと「フッタは新しいのにパーサは古い」という嘘の状態が成立する（v9 で実際に踏んだ）。
      index.html が更新されれば src の URL も変わる → JS も必ず新しく取り直される。 -->
-<script src="engine/settings.js?v=84"></script>
-<script src="engine/schema.js?v=84"></script>
-<script src="engine/parser.js?v=84"></script>
-<script src="engine/dictionary.js?v=84"></script>
-<script src="engine/contract.js?v=84"></script>
-<script src="engine/batch.js?v=84"></script>
-<script src="engine/ai.js?v=84"></script>
-<script src="engine/rewrite.js?v=84"></script>
-<script src="input/transcriber.js?v=84"></script>
-<script src="adapters/calendar.js?v=84"></script>
-<script src="adapters/records.js?v=84"></script>
-<script src="adapters/location.js?v=84"></script>
-<script src="engine/geomap.js?v=84"></script>
+<script src="engine/settings.js?v=85"></script>
+<script src="engine/schema.js?v=85"></script>
+<script src="engine/parser.js?v=85"></script>
+<script src="engine/dictionary.js?v=85"></script>
+<script src="engine/contract.js?v=85"></script>
+<script src="engine/batch.js?v=85"></script>
+<script src="engine/ai.js?v=85"></script>
+<script src="engine/rewrite.js?v=85"></script>
+<script src="input/transcriber.js?v=85"></script>
+<script src="adapters/calendar.js?v=85"></script>
+<script src="adapters/records.js?v=85"></script>
+<script src="adapters/location.js?v=85"></script>
+<script src="engine/geomap.js?v=85"></script>
 <script>
 'use strict';
-const BUILD = 'v84：長文は推敲画面を挟む（直す・整える・要約する） · 2026-08-13';
+const BUILD = 'v85：OpenRouter 追加＋モデル一覧を取得して選べる · 2026-08-13';
 console.log('BUILD:', BUILD);
 document.getElementById('build').textContent = BUILD;
 
@@ -2330,7 +2347,69 @@ function renderAiConfig() {
   document.getElementById('aiConfigState').textContent = cfg.key ? `${VCAI.PROVIDERS[cfg.provider].label}・設定済み` : '';
   document.getElementById('batchAiRun').hidden = !cfg.key;
   refreshRewriteRow(); // v80: キーの有無で「文章を整える」も出る/消える＝判定の置き場所をここに揃える
+  clearModelList();    // v85: プロバイダが変われば一覧は別物＝古い一覧を残さない（画面が嘘をつかない）
 }
+
+// ===== v85: モデル一覧（ゆう要求「最新のモデル情報を入手、プルダウンで選べるように」） =====
+// 🔑 **決め打ちの一覧をコードに書かない**＝書いた日から古くなる（v51「説明文の腐り」のモデル版）。
+//    先方に聞けば常に現在の一覧が返る。実際 2026-08-13 の OpenRouter は 409 件で、
+//    私が知っているどの表よりも新しかった。
+// 🔒 取りに行くのは**人が押した時だけ**（起動時に勝手に外へ行かない＝v38 と同じ線）。
+// 選んだ結果は**上のモデル欄を埋めるだけ**＝保存される形は今までどおりただの文字列
+//    ＝一覧に無いモデルも手で書ける・v43「空にすると既定へ」もそのまま生きる。
+function clearModelList() {
+  const sel = document.getElementById('aiModelList');
+  if (!sel) return;
+  sel.innerHTML = '';
+  sel.hidden = true;
+  document.getElementById('aiModelsNote').textContent = '';
+}
+async function fetchModelList() {
+  if (!window.VCAI) { toast('AI 機能を読み込めていません（詳細は「診断」）'); return; }
+  const btn = document.getElementById('aiFetchModels');
+  const note = document.getElementById('aiModelsNote');
+  const sel = document.getElementById('aiModelList');
+  const label = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = '取得中…';
+  note.textContent = '';
+  try {
+    // 画面で選んでいるプロバイダで聞く（保存前でも試せる＝「保存しないと確かめられない」を作らない）。
+    // キーは保存済みのものを使う（DOM にキーを書き戻さない v40 の約束を守る）。
+    const cfg = VCAI.loadConfig();
+    const provider = document.getElementById('aiProvider').value || cfg.provider;
+    const list = await VCAI.listModels({ config: { ...cfg, provider } });
+    sel.innerHTML = '';
+    const head = document.createElement('option');
+    head.value = '';
+    head.textContent = `モデルを選ぶ（${list.length}件）`;
+    sel.appendChild(head);
+    for (const m of list) {
+      const o = document.createElement('option');
+      o.value = m.id;
+      // id も出す＝表示名だけだと、どれを指定したのかが後で分からない（保存されるのは id）
+      o.textContent = m.label === m.id ? m.id : `${m.label} — ${m.id}`;
+      sel.appendChild(o);
+    }
+    sel.hidden = false;
+    note.textContent = `${VCAI.PROVIDERS[provider].label} の現在の一覧 ${list.length}件（選ぶと上のモデル欄に入ります）`;
+    window.__vcDebugNote(`🤖 モデル一覧 ${provider} ${list.length}件`);
+  } catch (e) {
+    const msg = (e && e.message) || String(e);
+    note.textContent = `⚠ ${msg}`;          // 押したのに何も起きない、を作らない（v16）
+    window.__vcNote('モデル一覧', msg);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = label;
+  }
+}
+document.getElementById('aiFetchModels').addEventListener('click', fetchModelList);
+document.getElementById('aiModelList').addEventListener('change', () => {
+  const v = document.getElementById('aiModelList').value;
+  if (!v) return;
+  document.getElementById('aiModel').value = v;   // 埋めるだけ＝保存は今までどおり「保存」ボタン
+  document.getElementById('aiModelsNote').textContent = `モデル欄に入れました: ${v}（「保存」を押すと確定します）`;
+});
 document.getElementById('aiProvider').addEventListener('change', () => {
   if (!window.VCAI) return;
   const p = VCAI.PROVIDERS[document.getElementById('aiProvider').value];
@@ -2341,6 +2420,7 @@ document.getElementById('aiProvider').addEventListener('change', () => {
   // そのまま Gemini へ送って失敗した＝**別プロバイダのモデル名を送る事故**。
   // 利用者からは原因が見えない（モデル欄は自分で入れた正しい名前に見えている）。
   document.getElementById('aiModel').value = '';
+  clearModelList(); // v85: 前のプロバイダの一覧を残さない（別社のモデルを選べてしまう＝v43 と同じ事故）
 });
 document.getElementById('aiSave').addEventListener('click', () => {
   if (!window.VCAI) { toast('AI 機能を読み込めていません（詳細は「診断」）'); return; }

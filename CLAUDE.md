@@ -27,7 +27,9 @@ engine/schema.js         # 共有状態層: DraftEvent ストア + fieldState + 
 engine/settings.js       # 詳細設定（v19）: 値の入れ物のみ・DOM も宿主も知らない。既定=従来挙動
 engine/contract.js       # AI 連携の契約（v39）: バッチ封筒の JSON Schema。日本語 description がそのままプロンプト＝二重管理ゼロ。FIELDS と鏡合わせ（テスト強制）
 engine/batch.js          # まとめて入力（v39）: parseBatch 検証ゲート（AI の出力を信用しない・不正は落として明記）＋取り込みリスト台帳＋buildPrompt。音声経路と独立
-engine/ai.js             # BYOK（v40）: プロバイダアダプタ（Anthropic/Gemini・OpenAI は CORS 非対応で入れない）。キーは端末内のみ・エラー文にキーを出さない・fetch 注入でテスト
+engine/ai.js             # BYOK（v40）: プロバイダアダプタ（Anthropic/Gemini/OpenRouter・v85）。キーは端末内のみ・エラー文にキーを出さない・fetch 注入でテスト
+                         #   🚫 OpenAI 直は入れない＝**生成の POST だけ CORS で弾かれる**（一覧の GET は通るので紛らわしい・v85 に実測で再確認）。GPT は OpenRouter 経由で使う
+                         #   モデル一覧は listModels() で先方に聞く（決め打ちの表を持たない＝書いた日から古くなる）。押した時だけ通信
                          #   v42: 音声もこの経路で解釈できる（設定 voiceAI・既定オフ・AI 経路は自動保存しない・失敗はルールへ自動フォールバック）
 engine/geomap.js         # 地図の座標計算（v81）: Web メルカトル・全部入るズーム・タイルの並べ方。純関数（DOM も宿主も知らない）
                          #   🚫 外部の地図ライブラリは入れない（バンドラ無し運用）。タイルは OpenStreetMap＝出典表示が必須
