@@ -66,6 +66,21 @@ public class SpeechRecognitionPlugin extends Plugin {
     private Runnable finalizeRunnable;
     private long t0; // 起動〜録音開始の実測用（v22「場所は一度目だけミスる」の裏取り）
 
+    // ---- v82 長文モード（ゆう要求「長文で吐き出したい／この会話に限り自動で止めない」）----
+    /** この録音だけ「無音で止めない」。録音中に JS から setContinuous で入る（start の引数ではない） */
+    private boolean continuous = false;
+    /** 🔑 Android の SpeechRecognizer も**1回の startListening で長くは持たない**（無言や上限で
+     *  onResults/onError を返して終わる）。「止めない」だけでは長文がそこで切れるので、
+     *  終わったら**その場で startListening し直し**、それまでの文章をここに積んで継ぎ足す。
+     *  JS から見た契約は不変＝1回の録音＝1回の final。 */
+    private String carried = "";
+    /** 開き直しが空振りし続けた時の歯止め（認識器が壊れている＝無限に開き直さない） */
+    private int emptyRestarts = 0;
+    /** 開き直しに使う Intent（begin で組んだものを取っておく＝設定が1回の録音の中でブレない） */
+    private Intent listenIntent;
+    private Runnable maxRunnable;
+    private static final long MAX_CONTINUOUS_MS = 600000; // 10分＝マイクを握ったまま忘れる事故の最後の砦
+
     /** 欄指定発話の欄名（engine/parser.js の FIELD_KEYS と揃える＝iOS の fieldHints と同一） */
     private static final String[] FIELD_HINTS = { "場所", "メモ", "終了", "開始", "タイトル", "件名" };
 
@@ -132,7 +147,40 @@ public class SpeechRecognitionPlugin extends Plugin {
     public void stop(PluginCall call) {
         main.post(() -> {
             debug("stop() 手動停止");
+            continuous = false;   // 止めると言われた＝もう開き直さない（この1行が無いと止まらない）
+            clearMaxTimer();
             endAudioAndArmFinalize();
+            call.resolve();
+        });
+    }
+
+    /**
+     * v82: この録音だけ「無音で止めない」。**録音中に**呼ばれる（JS の一時オーバーライド）。
+     * 一方通行にしない＝false で普段の無音停止に戻る（入った袋小路から出られる）。
+     * ℹ️ getBool は Boolean しか通さない（v66 の型の罠は数値の話＝ここは該当しない）。
+     */
+    @PluginMethod
+    public void setContinuous(PluginCall call) {
+        final boolean on = Boolean.TRUE.equals(call.getBoolean("on", Boolean.FALSE));
+        main.post(() -> {
+            // 録音していない時に触られても何もしない（無音タイマーだけが動き出して
+            // 「録っていないのに聞き取れませんでした」を出す、という嘘を作らない）
+            if (recognizer == null || finished) {
+                debug("長文モード: 録音中でないため無視");
+                call.resolve();
+                return;
+            }
+            continuous = on;
+            if (on) {
+                if (silenceRunnable != null) { main.removeCallbacks(silenceRunnable); silenceRunnable = null; }
+                armMaxTimer();
+                debug("長文モード ON（無音で止めない・上限" + (MAX_CONTINUOUS_MS / 1000) + "s）");
+            } else {
+                clearMaxTimer();
+                armSilence(silenceMs); // 普段の動きへ戻す
+                debug("長文モード OFF（無音"
+                    + String.format(java.util.Locale.ROOT, "%.1f", silenceMs / 1000.0) + "s で確定）");
+            }
             call.resolve();
         });
     }
@@ -143,6 +191,9 @@ public class SpeechRecognitionPlugin extends Plugin {
         cleanup();
         finished = false;
         lastPartial = "";
+        continuous = false;   // v82: 「この録音だけ」＝録音ごとにリセット（JS の recOverride と同じ約束）
+        carried = "";
+        emptyRestarts = 0;
 
         if (!SpeechRecognizer.isRecognitionAvailable(getContext())) {
             call.reject("音声認識が利用できません（Google アプリと音声入力の設定を確認）");
@@ -171,6 +222,7 @@ public class SpeechRecognitionPlugin extends Plugin {
             boolean onDeviceAvail = Build.VERSION.SDK_INT >= 31
                 && SpeechRecognizer.isOnDeviceRecognitionAvailable(getContext());
 
+            listenIntent = intent;   // v82: 開き直す時に同じ設定で聞き直す（1回の録音の中でブレない）
             recognizer.startListening(intent);
             emitState("listening");
             long warmMs = System.currentTimeMillis() - t0;
@@ -200,6 +252,9 @@ public class SpeechRecognitionPlugin extends Plugin {
             @Override public void onError(int error) {
                 main.post(() -> {
                     debug("認識エラー #" + error + " " + errorName(error));
+                    // v82: 長文モードでは、無言（#6/#7）や上限で終わるのは**普通のこと**＝
+                    // 開き直して続ける。何も拾えないまま繰り返すなら本当の故障＝正直に終わる。
+                    if (continuous && !finished) { rotateSegment(lastPartial); return; }
                     // 🔴 保険: エラーで閉じても途中結果があればそれを確定にする（iOS と同じ）
                     if (!finished && !lastPartial.isEmpty()) {
                         deliverFinal(lastPartial, null, true);
@@ -215,6 +270,7 @@ public class SpeechRecognitionPlugin extends Plugin {
                     float[] conf = results.getFloatArray(SpeechRecognizer.CONFIDENCE_SCORES);
                     String text = (list != null && !list.isEmpty()) ? list.get(0) : "";
                     debug("onResults 到着");
+                    if (continuous && !finished) { rotateSegment(text); return; } // v82: 終わらせずに継ぎ足す
                     Double c = (conf != null && conf.length > 0 && conf[0] > 0) ? (double) conf[0] : null;
                     deliverFinal(text, c, false);
                 });
@@ -227,7 +283,9 @@ public class SpeechRecognitionPlugin extends Plugin {
                     if (text.isEmpty()) return;
                     lastPartial = text;
                     JSObject d = new JSObject();
-                    d.put("text", text);
+                    // v82: 長文モードでは**これまでの合計**を見せる（画面が「今の断片」だけになると、
+                    // 話した分が消えたように見える＝黙って捨てたのと同じ体験になる・v16）
+                    d.put("text", carried + text);
                     notifyListeners("interim", d);
                     armSilence(silenceMs); // 部分結果が止まって N 秒 → 発話終わり
                 });
@@ -262,8 +320,11 @@ public class SpeechRecognitionPlugin extends Plugin {
     private void deliverFinal(String text, Double confidence, boolean fallback) {
         if (finished) return;
         boolean usePartial = text.isEmpty() && !lastPartial.isEmpty();
-        String finalText = usePartial ? lastPartial : text;
-        debug("確定 len=" + text.length() + " partial=" + lastPartial.length() + (usePartial ? " → 途中結果で補完" : ""));
+        // v82: 長文モードで継ぎ足してきた分を必ず前に付ける。**最後の区切りが空でも
+        // これまでの文章は届く**（carried があれば下の空チェックも通る）＝黙って捨てない。
+        String finalText = carried + (usePartial ? lastPartial : text);
+        debug("確定 len=" + text.length() + " partial=" + lastPartial.length()
+            + " 継ぎ足し=" + carried.length() + (usePartial ? " → 途中結果で補完" : ""));
 
         if (finalText.isEmpty()) {
             deliverIdleError("聞き取れませんでした（確定テキストが空）");
@@ -290,9 +351,72 @@ public class SpeechRecognitionPlugin extends Plugin {
         notifyListeners("error", d);
     }
 
+    /**
+     * v82: 認識器が1区切りを終えた（無音・上限・エラー）→ **終わらせずに継ぎ足して開き直す**。
+     * iOS の rotateSegment と同じ形（両 OS で同じ壊れ方・同じ直り方にする＝v15/v16 の流儀）。
+     */
+    private void rotateSegment(String text) {
+        if (!continuous || finished) return;
+        String seg = (text == null || text.isEmpty()) ? lastPartial : text;
+        if (seg == null || seg.isEmpty()) {
+            emptyRestarts++;
+            // 3回続けて何も拾えない＝認識器が本当に死んでいる。**黙って回り続けない**（v16）
+            if (emptyRestarts >= 3) {
+                debug("長文モード: 3回続けて空 → 打ち切り");
+                continuous = false;
+                endAudioAndArmFinalize();
+                return;
+            }
+        } else {
+            emptyRestarts = 0;
+            carried += seg;
+        }
+        lastPartial = "";
+        if (silenceRunnable != null) { main.removeCallbacks(silenceRunnable); silenceRunnable = null; }
+        debug("継ぎ足し len=" + (seg == null ? 0 : seg.length()) + " 合計=" + carried.length());
+        JSObject d = new JSObject();
+        d.put("text", carried);
+        notifyListeners("interim", d);
+        // 🚨 同じ recognizer を即座に使い回すと、端末によっては ERROR_CLIENT が返る。
+        //    Android の SpeechRecognizer は「1回の startListening = 1発話」の道具で、
+        //    連続利用は作り直すのが確実（生成は安い・v65 の流儀＝端末差は保守的に倒す）。
+        if (recognizer != null) {
+            try { recognizer.cancel(); } catch (Exception ignored) {}
+            try { recognizer.destroy(); } catch (Exception ignored) {}
+            recognizer = null;
+        }
+        try {
+            recognizer = SpeechRecognizer.createSpeechRecognizer(getContext());
+            recognizer.setRecognitionListener(makeListener());
+            recognizer.startListening(listenIntent);
+        } catch (Exception e) {
+            debug("長文モード: 開き直せず → 確定 (" + e.getMessage() + ")");
+            continuous = false;
+            deliverFinal("", null, true);   // carried があるので中身は失われない
+        }
+    }
+
+    private void armMaxTimer() {
+        clearMaxTimer();
+        maxRunnable = () -> {
+            if (finished) return;
+            debug("長文モード: 上限" + (MAX_CONTINUOUS_MS / 1000) + "s → 確定（ここまでを届ける）");
+            continuous = false;
+            endAudioAndArmFinalize();
+        };
+        main.postDelayed(maxRunnable, MAX_CONTINUOUS_MS);
+    }
+
+    private void clearMaxTimer() {
+        if (maxRunnable != null) { main.removeCallbacks(maxRunnable); maxRunnable = null; }
+    }
+
     /** 無音タイマー: 発火したら stopListening ＋ 保険タイマー */
     private void armSilence(long ms) {
-        if (silenceRunnable != null) main.removeCallbacks(silenceRunnable);
+        if (silenceRunnable != null) { main.removeCallbacks(silenceRunnable); silenceRunnable = null; }
+        // v82: 長文モードは「無音で止めない」＝**ここで張らないのが唯一の実装**（呼び出し側に
+        // if を撒くと、新しい呼び出し口が増えた日に片方だけ止まる＝v74 と同じ形になる）。
+        if (continuous) return;
         silenceRunnable = () -> {
             debug("無音" + String.format(java.util.Locale.ROOT, "%.1f", ms / 1000.0) + "s → stopListening");
             endAudioAndArmFinalize();
@@ -304,6 +428,8 @@ public class SpeechRecognitionPlugin extends Plugin {
     private void cleanup() {
         if (silenceRunnable != null) { main.removeCallbacks(silenceRunnable); silenceRunnable = null; }
         if (finalizeRunnable != null) { main.removeCallbacks(finalizeRunnable); finalizeRunnable = null; }
+        clearMaxTimer();
+        continuous = false;   // v82: 次の録音に長文モードを持ち越さない（「この録音だけ」）
         if (recognizer != null) {
             try { recognizer.cancel(); } catch (Exception ignored) {}
             try { recognizer.destroy(); } catch (Exception ignored) {}

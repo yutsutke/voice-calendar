@@ -310,5 +310,22 @@ t('画面の外に出た点は数で申告する（黙って消さない）', ()
     '置けなかった点を数えていない＝点が消えたのか外に出たのか区別がつかない');
 });
 
+// ===== 10. 長文モード（v82・ゆう要求「この会話に限り、話し終わって自動で録音をとめない」） =====
+t('長文モードは「この録音だけ」＝録音のたびに戻る', () => {
+  ok(/keepOpen/.test(code), 'keepOpen が無い（名前を変えたならこのテストも直す）');
+  ok(/keepOpen\s*=\s*false/.test(bodyOf('resetRecOverride')),
+    '録音ごとにリセットしていない＝次の録音まで「止めない」が居座る（v61 の約束を破る）');
+});
+
+t('長文モードのボタンは native の時だけ出す', () => {
+  ok(/ovKeepOpen\.hidden\s*=\s*!transcriber\.canKeepOpen/.test(code),
+    'web でも出している＝押せるのに効かないボタンになる');
+});
+
+t('押した時に native へ伝える（画面だけ変わって効いていない、を作らない）', () => {
+  ok(/setContinuous\(recOverride\.keepOpen\)/.test(code),
+    'ボタンの状態を native に渡していない＝✓ は付くのに止まり続ける（画面が嘘をつく・v3）');
+});
+
 console.log(`\nwiring.test: ${pass} passed, ${fail.length} failed`);
 if (fail.length) { console.log('\n' + fail.join('\n\n')); process.exit(1); }

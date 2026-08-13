@@ -479,6 +479,10 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
     <div id="micOverrides" class="mic-overrides" hidden>
       <button id="ovNoAuto" type="button" class="ov-btn">この録音だけ 自動登録OFF</button>
       <button id="ovAI" type="button" class="ov-btn" hidden>この録音だけ AIで解釈</button>
+      <!-- v82（ゆう要求「おもったことを長文で吐き出したい／この会話に限り、話し終わって自動で録音を
+           とめない旨のボタン」）: 押すと**この録音だけ**無音で止まらなくなる。止めるのは自分の手。
+           native だけ（web の音声はブラウザが無音判定を持つ＝押せても効かないので出さない）。 -->
+      <button id="ovKeepOpen" type="button" class="ov-btn" hidden>この録音だけ 止めない（長文）</button>
     </div>
   </div>
   <div class="transcript" id="transcript"></div>
@@ -782,22 +786,22 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
      理由: この版文字列は index.html にしかないが、ロジックは別ファイル＝別キャッシュ。
      付けないと「フッタは新しいのにパーサは古い」という嘘の状態が成立する（v9 で実際に踏んだ）。
      index.html が更新されれば src の URL も変わる → JS も必ず新しく取り直される。 -->
-<script src="engine/settings.js?v=81"></script>
-<script src="engine/schema.js?v=81"></script>
-<script src="engine/parser.js?v=81"></script>
-<script src="engine/dictionary.js?v=81"></script>
-<script src="engine/contract.js?v=81"></script>
-<script src="engine/batch.js?v=81"></script>
-<script src="engine/ai.js?v=81"></script>
-<script src="engine/rewrite.js?v=81"></script>
-<script src="input/transcriber.js?v=81"></script>
-<script src="adapters/calendar.js?v=81"></script>
-<script src="adapters/records.js?v=81"></script>
-<script src="adapters/location.js?v=81"></script>
-<script src="engine/geomap.js?v=81"></script>
+<script src="engine/settings.js?v=82"></script>
+<script src="engine/schema.js?v=82"></script>
+<script src="engine/parser.js?v=82"></script>
+<script src="engine/dictionary.js?v=82"></script>
+<script src="engine/contract.js?v=82"></script>
+<script src="engine/batch.js?v=82"></script>
+<script src="engine/ai.js?v=82"></script>
+<script src="engine/rewrite.js?v=82"></script>
+<script src="input/transcriber.js?v=82"></script>
+<script src="adapters/calendar.js?v=82"></script>
+<script src="adapters/records.js?v=82"></script>
+<script src="adapters/location.js?v=82"></script>
+<script src="engine/geomap.js?v=82"></script>
 <script>
 'use strict';
-const BUILD = 'v81：つぶやいた場所の地図（🗺 まとめて見る） · 2026-08-13';
+const BUILD = 'v82：長文モード（この録音だけ 止めない） · 2026-08-13';
 console.log('BUILD:', BUILD);
 document.getElementById('build').textContent = BUILD;
 
@@ -886,6 +890,7 @@ const micCancelBtn = document.getElementById('micCancel');
 const ovBox = document.getElementById('micOverrides');
 const ovNoAuto = document.getElementById('ovNoAuto');
 const ovAI = document.getElementById('ovAI');
+const ovKeepOpen = document.getElementById('ovKeepOpen'); // v82: この録音だけ止めない（長文）
 // v77: 下の固定マイクバー（上のマイクが画面外の時だけ出る）
 const micDock = document.getElementById('micDock');
 const dockMic = document.getElementById('dockMic');
@@ -1031,8 +1036,10 @@ let lastUtterance = null;
 // **録音開始のたびにリセット**（onState）＝「この録音だけ」。設定(localStorage)は一切変えない。
 //   noAutoSave: この録音だけ自動保存しない（保存ボタンで入る）。**減らす方向だけ**＝常に安全（迷ったら保存しない §2-4）。
 //   ai: null=設定(voiceAI)に従う / true=この録音だけ AI で解釈 / false=この録音だけルールで解釈。要キー（無ければボタンを出さない）。
-let recOverride = { noAutoSave: false, ai: null };
-function resetRecOverride() { recOverride.noAutoSave = false; recOverride.ai = null; }
+//   keepOpen: この録音だけ無音で止めない（v82・長文を吐き出す時）。**増やす方向**なので、
+//     止める手段（マイク再押下＝確定／やめる＝破棄）が必ず在ることと、native 側の打ち切り上限が保険。
+let recOverride = { noAutoSave: false, ai: null, keepOpen: false };
+function resetRecOverride() { recOverride.noAutoSave = false; recOverride.ai = null; recOverride.keepOpen = false; }
 // v79: 「リストを見に来た」＝この前面セッションでは自動録音しない（実機FB第44回）。
 // 🔑 **順番に依存しない形にする**のが肝。native がリストの指示を届けるのと、自動録音が実際に始まる
 // （native から listening が返ってくる）のは、どちらが先か決まっていない＝片方だけの対処では取りこぼす:
@@ -1053,6 +1060,13 @@ function renderOverrideButtons() {
     const active = recOverride.ai !== null;
     ovAI.classList.toggle('on', active);
     ovAI.textContent = (active ? '✓ ' : '') + (aiDefault ? 'この録音だけ AIを使わない' : 'この録音だけ AIで解釈');
+  }
+  // v82: 長文モードは native の音声だけ（web はブラウザが無音判定を持ち、こちらから外せない）
+  // ＝押せるのに効かないボタンを作らない（v40/v75 と同じ筋）。
+  if (ovKeepOpen) {
+    ovKeepOpen.hidden = !transcriber.canKeepOpen;
+    ovKeepOpen.classList.toggle('on', recOverride.keepOpen);
+    ovKeepOpen.textContent = (recOverride.keepOpen ? '✓ ' : '') + 'この録音だけ 止めない（長文）';
   }
 }
 async function interpretByAI({ text, rawText, dictHits, meta, rule, seq }) {
@@ -2499,6 +2513,17 @@ if (transcriber.available) {
       ? (settings.get('voiceAI') ? 'AIで解釈（既定に戻す）' : 'ルールで解釈（既定に戻す）')
       : (recOverride.ai ? 'この録音だけ AIで解釈します' : 'この録音だけ AIを使いません（ルール）');
     toast('🎤 ' + eff);
+  });
+  // v82: 長文モード＝**この録音だけ**無音で止めない。押した時点から効く（録音中に効かせる唯一の設定）。
+  // 🚨 一方通行にしない: もう一度押せば普段の無音停止に戻る＝入った袋小路から出られる。
+  // 止める手段は普段どおり2つ（マイク再押下＝確定／✕ やめる＝破棄）＝**閉じ込めない**（v78）。
+  ovKeepOpen.addEventListener('click', () => {
+    recOverride.keepOpen = !recOverride.keepOpen;
+    if (typeof transcriber.setContinuous === 'function') transcriber.setContinuous(recOverride.keepOpen);
+    renderOverrideButtons();
+    toast(recOverride.keepOpen
+      ? '🎤 この録音は自動で止まりません（マイクをもう一度押すと確定します）'
+      : '🎤 無音で止まる普段の動きに戻しました');
   });
 } else {
   micBtn.disabled = true;

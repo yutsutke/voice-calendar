@@ -96,6 +96,21 @@
         try { plugin.stop().catch(() => {}); } catch {} // 録音そのものは既存の stop で止める
       },
       isCancelled: () => cancelled,
+      // v82（ゆう要求「長文で吐き出したい／この会話に限り自動で止めない」）:
+      // **この録音だけ**無音での自動停止をやめる。native 側は止めないだけでなく、認識器が自分で
+      // 確定してしまった時（iOS/Android とも1分前後で終わる）に**裏で開き直して文章を継ぎ足す**
+      // ＝ JS から見た契約は不変（1回の録音＝1回の final）。だから解釈も来歴も自動保存も無改修。
+      // 🚨 **native にこのメソッドが無い版でも壊れない**（古い実機に新しい web が載る＝Pages では日常）。
+      canKeepOpen: true,
+      setContinuous(on) {
+        try {
+          if (typeof plugin.setContinuous !== 'function') { // 古い native＝黙って効かないを作らない
+            h.onError('この端末のアプリは「止めない」に未対応です（アプリの更新が要ります）');
+            return;
+          }
+          plugin.setContinuous({ on: !!on }).catch((e) => h.onError((e && e.message) || String(e)));
+        } catch (e) { h.onError((e && e.message) || String(e)); }
+      },
       toggle(opts) { listening ? this.stop() : this.start(opts); },
       isListening: () => listening,
       simulate(text) { const t = String(text || '').trim(); if (t) h.onFinal(t, { engine: 'simulated' }); },
@@ -155,6 +170,10 @@
       stop,
       cancel,
       isCancelled: () => cancelled,
+      // v82: web の無音判定は Web Speech API が内部で持っており**こちらから外せない**
+      // ＝「止めない」は出さない（押せるのに効かないボタンを作らない）。
+      canKeepOpen: false,
+      setContinuous() {},
       toggle() { listening ? stop() : start(); },
       isListening: () => listening,
       simulate(text) { const t = String(text || '').trim(); if (t) h.onFinal(t, { engine: 'simulated' }); },

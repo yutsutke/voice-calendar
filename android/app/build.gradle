@@ -28,8 +28,9 @@ android {
         //   7 / "1.2" = v73（同期の警告を「実際に上がったか」で出す）
         //   8 / "1.2" = v74（辞書ボタンが更新経路を通る・Android の位置診断の文言）
         //   9 / "1.2" = v75-v78（来歴からも直せる／横スクロール解消／カードUI＋固定マイクバー／録音中は専用画面）
-        versionCode 9
-        versionName "1.2"
+        //  10 / "1.3" = v79-v82（長押しのリスト／長文をAIで整える／場所の地図／**長文モード**＝Java も変わった回）
+        versionCode 10
+        versionName "1.3"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.

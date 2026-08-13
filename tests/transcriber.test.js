@@ -166,6 +166,46 @@ t('v44: opts 無しでも native の start は呼べる（ヒント無し＝欄�
   });
 });
 
+// ===== v82: 長文モード（この録音だけ自動で止めない） =====
+// 🚨 なぜここで縛るか（v44 と同じ理由）: Swift / Java は call.getBool("on") でキー名を決め打ちで読む。
+//    **キー名がズレても誰も落ちない**——native は「渡されなかった」＝false として動き、
+//    ボタンを押しても止まり続ける＝実機で「効かない」としか分からない（v66 の型の罠と同じ形）。
+t('v82: setContinuous は {on: boolean} を native へ渡す（キー名と型を固定）', () => {
+  const got = [];
+  withCapacitor({
+    isNativePlatform: () => true,
+    Plugins: { SpeechRecognition: { addListener: () => {}, start: () => Promise.resolve(), stop: () => Promise.resolve(), setContinuous: (o) => { got.push(o); return Promise.resolve(); } } },
+  }, () => {
+    const tr = createTranscriber(H);
+    ok(tr.canKeepOpen, 'native では長文モードのボタンを出す');
+    tr.setContinuous(true);
+    tr.setContinuous(false);
+    eq(got, [{ on: true }, { on: false }], 'Swift の call.getBool("on") / Java の getBoolean("on") と同じキー');
+  });
+});
+
+t('v82: web では長文モードを出さない（押せるのに効かないボタンを作らない）', () => {
+  withCapacitor(undefined, () => {
+    const tr = createTranscriber(H);
+    eq(tr.canKeepOpen, false, 'web の無音判定はブラウザ側＝こちらから外せない');
+    tr.setContinuous(true); // 呼んでも何も起きない（throw もしない）
+  });
+});
+
+// 🚨 **古い native に新しい web が載る**のは Pages 運用では日常（アプリの更新より web が先）。
+//    その時「押しても何も起きない」を作らない＝理由を表に出す（v16）。
+t('v82: native に setContinuous が無い版では黙らずエラーにする', () => {
+  let err = null;
+  withCapacitor({
+    isNativePlatform: () => true,
+    Plugins: { SpeechRecognition: { addListener: () => {}, start: () => Promise.resolve(), stop: () => Promise.resolve() } },
+  }, () => {
+    const tr = createTranscriber({ ...H, onError: (m) => { err = m; } });
+    tr.setContinuous(true);
+    ok(err && /未対応/.test(err), `理由が出ない: ${err}`);
+  });
+});
+
 // ===== v49: 言い間違えの「やめる」（cancel） =====
 // stop は「止めて確定する」・cancel は「止めて、この発話を無かったことにする」＝**別の操作**。
 // 🔑 Swift に cancel を足さずに済ませている（確定を受け取ってから捨てる）＝native の再ビルド無しで成立する。

@@ -26,6 +26,7 @@ public class SpeechRecognitionPlugin: CAPPlugin, CAPBridgedPlugin {
     public let pluginMethods: [CAPPluginMethod] = [
         CAPPluginMethod(name: "start", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "stop", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "setContinuous", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "available", returnType: CAPPluginReturnPromise)
     ]
 
@@ -50,6 +51,24 @@ public class SpeechRecognitionPlugin: CAPPlugin, CAPBridgedPlugin {
     /// v44: 辞書の値（人名・社名などの正しい表記）。start() ごとに JS から渡される。
     /// 欄名（fieldHints）と足して contextualStrings に入れる＝欄名の優先度を落とさない。
     private var extraHints: [String] = []
+
+    // MARK: - v82 長文モード（ゆう要求「おもったことを長文で吐き出したい／この会話に限り自動で止めない」）
+    /// この録音だけ「無音で止めない」。録音中に JS から setContinuous で入る（start の引数ではない）。
+    private var continuous = false
+    /// 🔑 **SFSpeechRecognizer は1分前後で自分から確定して終わる**（Apple の既知の挙動）。
+    /// 「止めない」だけでは長文がそこで切れるので、確定が来たら**その場で認識器を開き直し**、
+    /// それまでの文章をここに積んで継ぎ足す。JS から見た契約は不変＝1回の録音＝1回の final。
+    private var carried = ""
+    /// 開き直しが空振りし続けた時の歯止め（認識器が壊れている＝無限に開き直さない）
+    private var emptyRestarts = 0
+    /// 長文モードの打ち切り上限。**マイクを握ったまま忘れる**のを防ぐ最後の砦（電池・プライバシー）。
+    /// 打ち切っても**それまでの文章は確定として届く**＝黙って捨てない（v16）。
+    private var maxTimer: Timer?
+    private let maxContinuousSec: TimeInterval = 600 // 10分
+    /// 🚨 開き直すと**古い認識タスクの通知が後から届く**（cancel 自体がエラーとして返ってくる）。
+    /// それを「区切りが終わった」と読むと、また開き直して…＝**無限ループ**になる。
+    /// 世代番号を照合して、今動いている認識のものだけを受ける（痕跡は診断へ＝黙って捨てない v16）。
+    private var runId = 0
 
     private func debug(_ msg: String) {
         notifyListeners("debug", data: ["msg": msg])
@@ -103,7 +122,38 @@ public class SpeechRecognitionPlugin: CAPPlugin, CAPBridgedPlugin {
     @objc func stop(_ call: CAPPluginCall) {
         DispatchQueue.main.async {
             self.debug("stop() 手動停止")
+            self.continuous = false        // 止めると言われた＝もう開き直さない（この1行が無いと止まらない）
+            self.maxTimer?.invalidate()
+            self.maxTimer = nil
             self.endAudioAndArmFinalize()
+            call.resolve()
+        }
+    }
+
+    /// v82: この録音だけ「無音で止めない」。**録音中に**呼ばれる（JS の一時オーバーライド）。
+    /// 一方通行にしない＝false で普段の無音停止に戻る（入った袋小路から出られる）。
+    @objc func setContinuous(_ call: CAPPluginCall) {
+        let on = call.getBool("on") ?? false
+        DispatchQueue.main.async {
+            // 録音していない時に触られても何もしない（無音タイマーだけが動き出して
+            // 「録っていないのに聞き取れませんでした」を出す、という嘘を作らない）
+            guard self.task != nil, !self.finished else {
+                self.debug("長文モード: 録音中でないため無視")
+                call.resolve()
+                return
+            }
+            self.continuous = on
+            if on {
+                self.silenceTimer?.invalidate()   // 動いている無音タイマーをその場で外す
+                self.silenceTimer = nil
+                self.armMaxTimer()
+                self.debug("長文モード ON（無音で止めない・上限\(Int(self.maxContinuousSec))s）")
+            } else {
+                self.maxTimer?.invalidate()
+                self.maxTimer = nil
+                self.armSilenceTimer(seconds: self.silenceSec) // 普段の動きへ戻す
+                self.debug("長文モード OFF（無音\(String(format: "%.1f", self.silenceSec))s で確定）")
+            }
             call.resolve()
         }
     }
@@ -114,6 +164,9 @@ public class SpeechRecognitionPlugin: CAPPlugin, CAPBridgedPlugin {
         cleanup()
         finished = false
         lastPartial = ""
+        continuous = false   // v82: 「この録音だけ」＝録音ごとにリセット（JS の recOverride と同じ約束）
+        carried = ""
+        emptyRestarts = 0
 
         guard let recognizer = recognizer, recognizer.isAvailable else {
             call.reject("音声認識が利用できません（Siri と音声入力の設定・ネットワークを確認）")
@@ -127,15 +180,8 @@ public class SpeechRecognitionPlugin: CAPPlugin, CAPBridgedPlugin {
             try session.setCategory(.record, mode: .measurement, options: .duckOthers)
             try session.setActive(true, options: .notifyOthersOnDeactivation)
 
-            let req = SFSpeechAudioBufferRecognitionRequest()
-            req.shouldReportPartialResults = true
-            // 欄名に寄せる（v22）＋辞書の値に寄せる（v44）。欄名が先＝欄指定発話の成否を守る
-            req.contextualStrings = fieldHints + extraHints
             debug("🎙 語彙ヒント 欄名=\(fieldHints.count) 辞書=\(extraHints.count)")
             let onDevice = recognizer.supportsOnDeviceRecognition
-            if onDevice {
-                req.requiresOnDeviceRecognition = true // ローカル完結（対応端末・対応言語なら）
-            }
 
             let engine = AVAudioEngine()
             let input = engine.inputNode
@@ -153,53 +199,137 @@ public class SpeechRecognitionPlugin: CAPPlugin, CAPBridgedPlugin {
                 call.reject("マイクの準備ができていません（もう一度）", "AUDIO_NOT_READY")
                 return
             }
-            input.installTap(onBus: 0, bufferSize: 1024, format: format) { buffer, _ in
-                req.append(buffer)
+            // 🔑 v82: **その時点の request** に流し込む（req を掴まない）。長文モードでは認識器を
+            // 開き直して request を差し替えるので、掴んでいると音が古い request に流れ続けて
+            // 「録音中なのに何も認識されない」になる。差し替えは同じ main スレッドで一瞬＝音は途切れない。
+            input.installTap(onBus: 0, bufferSize: 1024, format: format) { [weak self] buffer, _ in
+                self?.request?.append(buffer)
             }
             engine.prepare()
             try engine.start()
 
             audioEngine = engine
-            request = req
+            guard startRecognition() else {
+                cleanup()
+                notifyListeners("state", data: ["state": "idle"])
+                call.reject("音声認識を開始できません")
+                return
+            }
             notifyListeners("state", data: ["state": "listening"])
             // 起動〜録音開始までの実測（v22）: 実機FB「場所は一度目だけミスる」の裏取り用。
             // 初回だけ warm が大きければ「冒頭が欠けて欄名を落としている」仮説の証拠になる。
             let warmMs = Int(Date().timeIntervalSince(t0) * 1000)
             debug("開始 onDevice=\(onDevice) 無音\(String(format: "%.1f", silenceSec))s 起動\(warmMs)ms")
             armSilenceTimer(seconds: 6.0) // 一言も聞こえないまま6秒 → 打ち切り（設定とは別）
-
-            task = recognizer.recognitionTask(with: req) { [weak self] result, error in
-                guard let self = self else { return }
-                DispatchQueue.main.async {
-                    if let result = result {
-                        let text = result.bestTranscription.formattedString
-                        if result.isFinal {
-                            self.debug("isFinal 到着")
-                            self.deliverFinal(text: text, transcription: result.bestTranscription, fallback: false)
-                        } else {
-                            self.lastPartial = text
-                            self.notifyListeners("interim", data: ["text": text])
-                            self.armSilenceTimer(seconds: self.silenceSec) // 部分結果が止まって N 秒 → 発話終わり
-                        }
-                    }
-                    if let error = error {
-                        let ns = error as NSError
-                        self.debug("認識エラー \(ns.domain)#\(ns.code)")
-                        // 🔴 保険: エラーで閉じても途中結果があればそれを確定にする
-                        // （オンデバイス認識は endAudio 後に isFinal でなくエラーで終わることがある）
-                        if !self.finished && !self.lastPartial.isEmpty {
-                            self.deliverFinal(text: self.lastPartial, transcription: nil, fallback: true)
-                        } else {
-                            self.deliverIdleError(error.localizedDescription)
-                        }
-                    }
-                }
-            }
             call.resolve()
         } catch {
             cleanup()
             notifyListeners("state", data: ["state": "idle"])
             call.reject("録音を開始できません: \(error.localizedDescription)")
+        }
+    }
+
+    /// 認識だけを（開き）直す。**音声エンジンには触らない**＝マイクは握ったまま request だけ差し替える。
+    /// v82 で begin() から切り出した。切り出す前は task の生成が begin の中にしか無く、
+    /// 「認識器が自分で終わったら開き直す」を書く場所が無かった。
+    @discardableResult
+    private func startRecognition() -> Bool {
+        guard let recognizer = recognizer, recognizer.isAvailable else { return false }
+        let req = SFSpeechAudioBufferRecognitionRequest()
+        req.shouldReportPartialResults = true
+        // 欄名に寄せる（v22）＋辞書の値に寄せる（v44）。欄名が先＝欄指定発話の成否を守る
+        req.contextualStrings = fieldHints + extraHints
+        if recognizer.supportsOnDeviceRecognition {
+            req.requiresOnDeviceRecognition = true // ローカル完結（対応端末・対応言語なら）
+        }
+        runId += 1
+        let myRun = runId        // この認識の世代（古い task の通知を見分ける）
+        task?.cancel()
+        request = req
+        task = recognizer.recognitionTask(with: req) { [weak self] result, error in
+            guard let self = self else { return }
+            DispatchQueue.main.async {
+                guard myRun == self.runId else {
+                    // 差し替えた古い認識からの通知。ここを通すと開き直しが連鎖して止まらなくなる。
+                    if error != nil { self.debug("古い認識の通知を無視（世代\(myRun)）") }
+                    return
+                }
+                if let result = result {
+                    let text = result.bestTranscription.formattedString
+                    if result.isFinal {
+                        self.debug("isFinal 到着")
+                        if self.continuous {
+                            self.rotateSegment(text)   // v82: 終わらせずに継ぎ足して開き直す
+                        } else {
+                            self.deliverFinal(text: text, transcription: result.bestTranscription, fallback: false)
+                        }
+                    } else {
+                        self.lastPartial = text
+                        // 長文モードでは**これまでの合計**を見せる（画面が「今の断片」だけになると、
+                        // 話した分が消えたように見える＝黙って捨てたのと同じ体験になる・v16）
+                        self.notifyListeners("interim", data: ["text": self.carried + text])
+                        self.armSilenceTimer(seconds: self.silenceSec) // 部分結果が止まって N 秒 → 発話終わり
+                    }
+                }
+                if let error = error {
+                    let ns = error as NSError
+                    self.debug("認識エラー \(ns.domain)#\(ns.code)")
+                    // v82: 長文モードでは、認識器が自分の上限や無言で終わるのは**普通のこと**＝
+                    // 開き直して続ける。ただし何も拾えないまま繰り返すなら本当の故障＝正直に終わる。
+                    if self.continuous && !self.finished {
+                        self.rotateSegment(self.lastPartial)
+                        return
+                    }
+                    // 🔴 保険: エラーで閉じても途中結果があればそれを確定にする
+                    // （オンデバイス認識は endAudio 後に isFinal でなくエラーで終わることがある）
+                    if !self.finished && !self.lastPartial.isEmpty {
+                        self.deliverFinal(text: self.lastPartial, transcription: nil, fallback: true)
+                    } else {
+                        self.deliverIdleError(error.localizedDescription)
+                    }
+                }
+            }
+        }
+        return true
+    }
+
+    /// v82: 認識器が1区切りを終えた（無音・自分の上限・エラー）→ **終わらせずに継ぎ足して開き直す**。
+    private func rotateSegment(_ text: String) {
+        guard continuous, !finished else { return }
+        let seg = text.isEmpty ? lastPartial : text
+        if seg.isEmpty {
+            emptyRestarts += 1
+            // 3回続けて何も拾えない＝認識器が本当に死んでいる。**黙って回り続けない**（v16）
+            if emptyRestarts >= 3 {
+                debug("長文モード: 3回続けて空 → 打ち切り")
+                continuous = false
+                endAudioAndArmFinalize()
+                return
+            }
+        } else {
+            emptyRestarts = 0
+            carried += seg
+        }
+        lastPartial = ""
+        silenceTimer?.invalidate()
+        silenceTimer = nil
+        debug("継ぎ足し len=\(seg.count) 合計=\(carried.count)")
+        notifyListeners("interim", data: ["text": carried])
+        if !startRecognition() {
+            debug("長文モード: 開き直せず → 確定")
+            continuous = false
+            deliverFinal(text: "", transcription: nil, fallback: true)
+        }
+    }
+
+    /// 長文モードの打ち切り上限（握ったまま忘れるのを防ぐ最後の砦）。**それまでの文章は確定として届く**。
+    private func armMaxTimer() {
+        maxTimer?.invalidate()
+        maxTimer = Timer.scheduledTimer(withTimeInterval: maxContinuousSec, repeats: false) { [weak self] _ in
+            guard let self = self, !self.finished else { return }
+            self.debug("長文モード: 上限\(Int(self.maxContinuousSec))s → 確定（ここまでを届ける）")
+            self.continuous = false
+            self.endAudioAndArmFinalize()
         }
     }
 
@@ -228,8 +358,10 @@ public class SpeechRecognitionPlugin: CAPPlugin, CAPBridgedPlugin {
     private func deliverFinal(text: String, transcription: SFTranscription?, fallback: Bool) {
         guard !finished else { return }
         let usePartial = text.isEmpty && !lastPartial.isEmpty
-        let finalText = usePartial ? lastPartial : text
-        debug("確定 len=\(text.count) partial=\(lastPartial.count)\(usePartial ? " → 途中結果で補完" : "")")
+        // v82: 長文モードで継ぎ足してきた分を必ず前に付ける。**最後の区切りが空でも
+        // これまでの文章は届く**（carried があれば下の空チェックも通る）＝黙って捨てない。
+        let finalText = carried + (usePartial ? lastPartial : text)
+        debug("確定 len=\(text.count) partial=\(lastPartial.count) 継ぎ足し=\(carried.count)\(usePartial ? " → 途中結果で補完" : "")")
 
         if finalText.isEmpty {
             // 空を握り潰さない: 画面（診断・toast）に必ず出す
@@ -264,6 +396,10 @@ public class SpeechRecognitionPlugin: CAPPlugin, CAPBridgedPlugin {
     /// 無音タイマー: 発火したら endAudio ＋ 保険タイマー
     private func armSilenceTimer(seconds: TimeInterval) {
         silenceTimer?.invalidate()
+        silenceTimer = nil
+        // v82: 長文モードは「無音で止めない」＝**ここで張らないのが唯一の実装**（呼び出し側に
+        // if を撒くと、新しい呼び出し口が増えた日に片方だけ止まる＝v74 と同じ形になる）。
+        guard !continuous else { return }
         silenceTimer = Timer.scheduledTimer(withTimeInterval: seconds, repeats: false) { [weak self] _ in
             self?.debug("無音\(seconds)s → endAudio")
             self?.endAudioAndArmFinalize()
@@ -275,6 +411,9 @@ public class SpeechRecognitionPlugin: CAPPlugin, CAPBridgedPlugin {
         silenceTimer = nil
         finalizeTimer?.invalidate()
         finalizeTimer = nil
+        maxTimer?.invalidate()
+        maxTimer = nil
+        continuous = false   // v82: 次の録音に長文モードを持ち越さない（「この録音だけ」）
         if let engine = audioEngine {
             engine.stop()
             engine.inputNode.removeTap(onBus: 0)
