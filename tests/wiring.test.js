@@ -393,5 +393,51 @@ t('プロバイダを変えたら古い一覧を残さない（別社のモデ�
   ok(/clearModelList/.test(onChange.slice(0, 900)), 'プロバイダ切替で一覧が残る');
 });
 
+// ===== 13. 重なりの順番とトーストの位置（v86・実機FB第46回） =====
+// 🚨 実バグ: **toast に z-index が無かった**ので、下の固定バー(40)と録音中の専用画面(60)の
+//    **下敷き**になり、しかも同じ「画面の下」に居るので**物理的にも 81% 重なっていた**
+//    （実測: トースト 62px のうち 50px がバーの下）。告げるためのものが隠れたら、無いのと同じ。
+// 規則の中身だけ（**CSS コメントは落とす**＝解説文に書いた「transition: all」を実装と数えない）
+const cssBlock = (sel) => {
+  const i = html.indexOf(sel + ' {');
+  ok(i > 0, `${sel} の規則が見つからない（名前を変えたならこのテストも直す）`);
+  return html.slice(i, html.indexOf('}', i)).replace(/\/\*[\s\S]*?\*\//g, '');
+};
+t('重なりの順番: トーストが全部の層より上に居る', () => {
+  const zOf = (block) => { const m = block.match(/z-index:\s*(\d+)/); return m ? Number(m[1]) : null; };
+  const toastZ = zOf(cssBlock('.toast'));
+  ok(toastZ, '.toast に z-index が無い＝下のバーの下敷きになる（v86 の実バグそのもの）');
+  for (const sel of ['.dock', '#reviewStage']) {
+    const z = zOf(cssBlock(sel));
+    ok(z && toastZ > z, `${sel}(${z}) が toast(${toastZ}) 以上＝トーストが隠れる`);
+  }
+  const m = html.match(/body\.recording #micStage \{[\s\S]*?z-index:\s*(\d+)/);
+  ok(m && toastZ > Number(m[1]), `#micStage(${m && m[1]}) が toast(${toastZ}) 以上＝録音中のトーストが隠れる`);
+});
+
+t('トーストの位置は「出す瞬間に測る」（高さを決め打ちしない）', () => {
+  ok(/function bottomUiTop/.test(code), 'bottomUiTop が無い');
+  ok(/bottomUiTop\(\)/.test(bodyOf('toast')), 'toast が測っていない＝バーが伸びた端末でまた重なる（v76 の教訓）');
+  ok(/getBoundingClientRect/.test(bodyOf('bottomUiTop')), '実際に測っていない＝どこかに高さが埋め込まれている');
+  const calls = countOf(/(?<!function )\bbottomUiTop\s*\(\s*\)/g); // 定義は数えない
+  ok(calls === 1, `bottomUiTop の呼び出しが ${calls} 箇所＝状態を持ち始めている（更新し忘れの余地・v74）`);
+  // 下に居うるもの3つを全部見ている（1つでも漏れるとその場面だけ隠れる）
+  const body = bodyOf('bottomUiTop');
+  for (const [name, re] of [['下の固定バー', /micDock/], ['録音中の操作群', /recording/], ['推敲画面の操作群', /reviewStage/]]) {
+    ok(re.test(body), `${name} を見ていない＝その場面でトーストが隠れる`);
+  }
+});
+
+t('トーストは位置まで補間しない（前の位置から動いて見える）', () => {
+  const b = cssBlock('.toast');
+  ok(!/transition:\s*all/.test(b), 'transition: all ＝ bottom まで補間対象になり、一瞬古い位置に出る');
+  ok(/transition:\s*opacity/.test(b), '補間の対象を明示していない');
+});
+
+t('トーストは操作を邪魔しない（重なっても押せる）', () => {
+  ok(/pointer-events:\s*none/.test(cssBlock('.toast')),
+    'トーストがタップを吸う＝下のボタンが押せなくなる');
+});
+
 console.log(`\nwiring.test: ${pass} passed, ${fail.length} failed`);
 if (fail.length) { console.log('\n' + fail.join('\n\n')); process.exit(1); }

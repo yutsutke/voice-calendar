@@ -483,9 +483,24 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
     color: var(--warn); font-size: 13px; font-family: inherit; cursor: pointer; white-space: nowrap; }
   .perm button:active { opacity: .6; }
 
+  /* ---- 重なりの順番（v86 で整理・実機FB第46回）----
+     🚨 実バグ: **toast に z-index が無かった**（auto）ので、下のバー(40)と録音中の専用画面(60)の
+        **下敷き**になっていた。しかも両方「画面の下」に居るため**物理的にも 81% 重なっていた**
+        ＝「隠れる」原因が二重。告げるためのものが隠れたら、無いのと同じ（v16 の表示版）。
+     この表より上に層を足す時は、**必ずここに足す**（散らばると同じ事故がまた起きる）:
+        40 : .dock         下の固定マイクバー（v77）
+        60 : #micStage     録音中の専用画面（v78）
+        61 : #reviewStage  長文の推敲画面（v84）
+       100 : .toast        トースト ＝ **必ず全部の上**
+     位置（縦）は CSS では決めない＝**出す瞬間に測って避ける**（下の bottomUiTop）。
+     決め打ちにすると、文字を大きくしてバーが伸びた端末でまた重なる（v76 の教訓）。 */
   .toast { position: fixed; left: 50%; bottom: calc(var(--sab) + 20px); transform: translateX(-50%) translateY(20px);
+    z-index: 100;
     background: var(--ink); color: var(--bg); padding: 10px 18px; border-radius: 12px; font-size: 14px;
-    opacity: 0; transition: all .25s; pointer-events: none; max-width: 90vw; text-align: center; }
+    /* 🚨 v86: ここは `transition: all` だった。**位置(bottom)まで補間の対象**になるため、
+       出す直前に高さを合わせても「前の位置から動く」動きが挟まる（＝一瞬だけ古い位置に出る）。
+       対象を明示して、**位置は即時・見え方だけを滑らかに**する。 */
+    opacity: 0; transition: opacity .25s, transform .25s; pointer-events: none; max-width: 90vw; text-align: center; }
   .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 
   footer { text-align: center; color: var(--sub); font-size: 11px; margin-top: 26px; }
@@ -856,22 +871,22 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
      理由: この版文字列は index.html にしかないが、ロジックは別ファイル＝別キャッシュ。
      付けないと「フッタは新しいのにパーサは古い」という嘘の状態が成立する（v9 で実際に踏んだ）。
      index.html が更新されれば src の URL も変わる → JS も必ず新しく取り直される。 -->
-<script src="engine/settings.js?v=85"></script>
-<script src="engine/schema.js?v=85"></script>
-<script src="engine/parser.js?v=85"></script>
-<script src="engine/dictionary.js?v=85"></script>
-<script src="engine/contract.js?v=85"></script>
-<script src="engine/batch.js?v=85"></script>
-<script src="engine/ai.js?v=85"></script>
-<script src="engine/rewrite.js?v=85"></script>
-<script src="input/transcriber.js?v=85"></script>
-<script src="adapters/calendar.js?v=85"></script>
-<script src="adapters/records.js?v=85"></script>
-<script src="adapters/location.js?v=85"></script>
-<script src="engine/geomap.js?v=85"></script>
+<script src="engine/settings.js?v=86"></script>
+<script src="engine/schema.js?v=86"></script>
+<script src="engine/parser.js?v=86"></script>
+<script src="engine/dictionary.js?v=86"></script>
+<script src="engine/contract.js?v=86"></script>
+<script src="engine/batch.js?v=86"></script>
+<script src="engine/ai.js?v=86"></script>
+<script src="engine/rewrite.js?v=86"></script>
+<script src="input/transcriber.js?v=86"></script>
+<script src="adapters/calendar.js?v=86"></script>
+<script src="adapters/records.js?v=86"></script>
+<script src="adapters/location.js?v=86"></script>
+<script src="engine/geomap.js?v=86"></script>
 <script>
 'use strict';
-const BUILD = 'v85：OpenRouter 追加＋モデル一覧を取得して選べる · 2026-08-13';
+const BUILD = 'v86：トーストが下のバーに隠れない（重なりの整理） · 2026-08-13';
 console.log('BUILD:', BUILD);
 document.getElementById('build').textContent = BUILD;
 
@@ -3796,10 +3811,40 @@ document.getElementById('clear').addEventListener('click', () => {
 });
 
 // ===== toast =====
+// v86（実機FB第46回「設定を保存する等のポップアップが 🎤話しかける に重なって見えない」）:
+// いま画面の下を占めているものの**上端**を返す（何も無ければ Infinity）。
+// 🔑 測るのは**トーストを出す瞬間**＝状態を持たない。どこかで更新し忘れる余地を作らない（v74）。
+//    高さを決め打ちしないので、文字を大きくしてバーが伸びても勝手に追従する（v76 の教訓）。
+// 🔑 要素は getElementById で取る（module スコープの const を使うと、初期化の途中で
+//    トーストを出した時に TDZ で落ちる＝**エラーを告げる道具自身が壊れる**）。
+function bottomUiTop() {
+  let top = Infinity;
+  try {
+    const dock = document.getElementById('micDock');
+    const cands = [];
+    if (dock && !dock.hidden) cands.push(dock);                                   // 下の固定バー（v77）
+    if (document.body.classList.contains('recording')) {
+      cands.push(document.querySelector('#micStage .mic-wrap'));                  // 録音中の操作群（v78）
+    }
+    const rv = document.getElementById('reviewStage');
+    if (rv && !rv.hidden) cands.push(document.querySelector('#reviewStage .rv-ai')); // 推敲画面の操作群（v84）
+    for (const el of cands) {
+      if (!el) continue;
+      const r = el.getBoundingClientRect();
+      if (r.height > 0) top = Math.min(top, r.top);
+    }
+  } catch { /* 測れなくても従来の位置で必ず出す＝トーストは絶対に throw しない */ }
+  return top;
+}
 let toastTimer = null;
 function toast(msg) {
   const t = document.getElementById('toast');
   t.textContent = msg;
+  const uiTop = bottomUiTop();
+  // 下に何か居ればその上へ（12px 空ける）。居なければ CSS の既定位置に戻す。
+  t.style.bottom = Number.isFinite(uiTop)
+    ? `${Math.max(0, Math.round(window.innerHeight - uiTop)) + 12}px`
+    : '';
   t.classList.add('show');
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => t.classList.remove('show'), 3200);
