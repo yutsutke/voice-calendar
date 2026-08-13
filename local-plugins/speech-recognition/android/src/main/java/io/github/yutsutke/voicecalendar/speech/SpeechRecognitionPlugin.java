@@ -290,6 +290,14 @@ public class SpeechRecognitionPlugin extends Plugin {
                     ArrayList<String> list = partialResults.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
                     String text = (list != null && !list.isEmpty()) ? list.get(0) : "";
                     if (text.isEmpty()) return;
+                    // v88: iOS で判明した「1回の認識の中で中身が入れ替わる」への備え（実機FB第48回）。
+                    // Android では踏んでいないが、**両 OS を同じ形に保つ**（片方だけ直さない・v15/v16）。
+                    // 伸びる途中結果や同じ長さの言い直しには反応せず、急に縮んだ時だけ確保する。
+                    if (continuous && !lastPartial.isEmpty() && looksReset(lastPartial, text)) {
+                        carried += lastPartial;
+                        debug("認識が入れ替わった（" + lastPartial.length() + "字→" + text.length()
+                            + "字）→ 確保 合計=" + carried.length());
+                    }
                     lastPartial = text;
                     JSObject d = new JSObject();
                     // v82: 長文モードでは**これまでの合計**を見せる（画面が「今の断片」だけになると、
@@ -402,6 +410,23 @@ public class SpeechRecognitionPlugin extends Plugin {
         d.put("text", carried);
         notifyListeners("interim", d);
         restartRecognition();
+    }
+
+    /**
+     * v88: 途中結果が「前の続き」でなく**入れ替わった**か（iOS の実機で判明・Swift の looksReset と同じ規則）。
+     * 認識器は普通、**頭を保ったまま後ろを伸ばす／推敲する**。だから:
+     *   ・頭がまるごと違う（共通の先頭が無い）         → 入れ替わり
+     *   ・急に短くなり、しかも前の頭でもない           → 入れ替わり
+     *   ・伸びた／同じ長さで数文字違う（言い直しの推敲）→ 入れ替わりではない
+     * ⚠ 誤って「入れ替わり」と読んだ損害は**言い淀みが二重に残る**程度、読み落とした損害は
+     *   **話した分が消える**。**迷ったら確保する側に倒す**（v16）。
+     */
+    private boolean looksReset(String old, String now) {
+        int n = Math.min(old.length(), now.length());
+        int shared = 0;
+        while (shared < n && old.charAt(shared) == now.charAt(shared)) shared++;
+        if (shared == 0) return true;
+        return now.length() < old.length() && !old.startsWith(now);
     }
 
     /**

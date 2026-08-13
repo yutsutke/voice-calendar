@@ -871,22 +871,22 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
      理由: この版文字列は index.html にしかないが、ロジックは別ファイル＝別キャッシュ。
      付けないと「フッタは新しいのにパーサは古い」という嘘の状態が成立する（v9 で実際に踏んだ）。
      index.html が更新されれば src の URL も変わる → JS も必ず新しく取り直される。 -->
-<script src="engine/settings.js?v=87"></script>
-<script src="engine/schema.js?v=87"></script>
-<script src="engine/parser.js?v=87"></script>
-<script src="engine/dictionary.js?v=87"></script>
-<script src="engine/contract.js?v=87"></script>
-<script src="engine/batch.js?v=87"></script>
-<script src="engine/ai.js?v=87"></script>
-<script src="engine/rewrite.js?v=87"></script>
-<script src="input/transcriber.js?v=87"></script>
-<script src="adapters/calendar.js?v=87"></script>
-<script src="adapters/records.js?v=87"></script>
-<script src="adapters/location.js?v=87"></script>
-<script src="engine/geomap.js?v=87"></script>
+<script src="engine/settings.js?v=88"></script>
+<script src="engine/schema.js?v=88"></script>
+<script src="engine/parser.js?v=88"></script>
+<script src="engine/dictionary.js?v=88"></script>
+<script src="engine/contract.js?v=88"></script>
+<script src="engine/batch.js?v=88"></script>
+<script src="engine/ai.js?v=88"></script>
+<script src="engine/rewrite.js?v=88"></script>
+<script src="input/transcriber.js?v=88"></script>
+<script src="adapters/calendar.js?v=88"></script>
+<script src="adapters/records.js?v=88"></script>
+<script src="adapters/location.js?v=88"></script>
+<script src="engine/geomap.js?v=88"></script>
 <script>
 'use strict';
-const BUILD = 'v87：長文モードが沈黙で終わらない（考えながら話せる） · 2026-08-13';
+const BUILD = 'v88：沈黙をはさんでも文章が消えない（認識の入れ替わりを確保） · 2026-08-13';
 console.log('BUILD:', BUILD);
 document.getElementById('build').textContent = BUILD;
 

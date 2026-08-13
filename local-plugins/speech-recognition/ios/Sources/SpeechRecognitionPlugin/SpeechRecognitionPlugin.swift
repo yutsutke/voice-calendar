@@ -273,6 +273,21 @@ public class SpeechRecognitionPlugin: CAPPlugin, CAPBridgedPlugin {
                             self.deliverFinal(text: text, transcription: result.bestTranscription, fallback: false)
                         }
                     } else {
+                        // 🔴 v88（実機の診断ログで判明・実機FB第48回）: iOS は **1つの認識タスクの中でも**、
+                        //   沈黙をはさむと**それまでの文章を捨てて新しい仮説を出す**ことがある。
+                        //   診断の実データ: 長文モード ON から stop まで 30 秒、**isFinal もエラーも
+                        //   打ち切りも来ていない**（＝ rotateSegment は一度も走っていない・継ぎ足し=0）のに、
+                        //   最後の partial は **8文字** ＝ 途中で中身が入れ替わっていた。
+                        //   ここで `lastPartial = text` と丸ごと置き換えていたので、**認識器が捨てた瞬間に
+                        //   こちらも一緒に捨てていた**。
+                        // 🔑 「新しい途中結果が**前より短く、かつ前の続きでもない**」＝入れ替わった、と読む。
+                        //   ・伸びていく普通の途中結果 → 何もしない
+                        //   ・言い直しの推敲（同じ長さで数文字違う）→ 何もしない（前の続きとして扱う）
+                        //   ・40字 →「また」のような急な縮み → **それまでの分を確保してから採用**（v16）
+                        if self.continuous, !self.lastPartial.isEmpty, self.looksReset(from: self.lastPartial, to: text) {
+                            self.carried += self.lastPartial
+                            self.debug("認識が入れ替わった（\(self.lastPartial.count)字→\(text.count)字）→ 確保 合計=\(self.carried.count)")
+                        }
                         self.lastPartial = text
                         // 長文モードでは**これまでの合計**を見せる（画面が「今の断片」だけになると、
                         // 話した分が消えたように見える＝黙って捨てたのと同じ体験になる・v16）
@@ -300,6 +315,18 @@ public class SpeechRecognitionPlugin: CAPPlugin, CAPBridgedPlugin {
             }
         }
         return true
+    }
+
+    /// v88: 途中結果が「前の続き」でなく**入れ替わった**か。true なら前の分を carried へ確保する。
+    /// 認識器は普通、**頭を保ったまま後ろを伸ばす／推敲する**。だから:
+    ///   ・頭がまるごと違う（共通の先頭が無い）        → 入れ替わり
+    ///   ・急に短くなり、しかも前の頭でもない          → 入れ替わり
+    ///   ・伸びた／同じ長さで数文字違う（言い直しの推敲）→ 入れ替わりではない（触らない）
+    /// ⚠ 誤って「入れ替わり」と読んだ場合の損害は**言い淀みが二重に残る**程度で、
+    ///   読み落とした場合の損害は**話した分が消える**。**迷ったら確保する側に倒す**（v16）。
+    private func looksReset(from old: String, to new: String) -> Bool {
+        if old.commonPrefix(with: new).isEmpty { return true }
+        return new.count < old.count && !old.hasPrefix(new)
     }
 
     /// v82: 認識器が1区切りを終えた（無音・自分の上限・エラー）→ **終わらせずに継ぎ足して開き直す**。

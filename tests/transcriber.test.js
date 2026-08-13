@@ -303,6 +303,46 @@ t('🚨【v87】開き直しに失敗しても終わらせない（間隔を空�
   }
 });
 
+// 🔴 v88（実機FB第48回・iPhone の診断ログが決め手）: v87 を入れても症状が残った。ログの実データ:
+//    「長文モード ON」から「stop()」まで **30秒間ログが1行も無い**（isFinal もエラーも打ち切りも無い）
+//    のに、最後は `確定 len=0 partial=8 継ぎ足し=0`。
+//    ⇒ **rotateSegment は一度も走っていない＝セッションは終わっていなかった**（v87 の見立ては外れ）。
+//    ⇒ 真因は **1つの認識タスクの中で、沈黙をはさむと認識器が途中結果を捨てて新しい仮説を出す**こと。
+//       こちらは `lastPartial = text` と丸ごと置き換えていたので、**一緒に捨てていた**。
+t('🚨【v88 回帰】途中結果が入れ替わったら、置き換える前に確保する', () => {
+  for (const [name, src, capture, assign] of [
+    ['Java', JAVA, 'carried += lastPartial', 'lastPartial = text'],
+    ['Swift', SWIFT, 'self.carried += self.lastPartial', 'self.lastPartial = text'],
+  ]) {
+    const iCap = src.indexOf(capture);
+    const iSet = src.indexOf(assign);
+    ok(iCap > 0, `${name}: 入れ替わりを確保していない＝沈黙の前に話した分が消える（実機FB第48回の症状）`);
+    ok(iSet > 0, `${name}: 途中結果の取り込みが見つからない（名前を変えたならこのテストも直す）`);
+    ok(iCap < iSet, `${name}: 確保より先に置き換えている＝その瞬間に消える（順番が全て）`);
+  }
+});
+
+t('🚨【v88】入れ替わりの判定は両OSで同じ規則（頭が違う／急に短い）', () => {
+  for (const [name, src, fn] of [
+    ['Java', JAVA, 'private boolean looksReset'],
+    ['Swift', SWIFT, 'private func looksReset'],
+  ]) {
+    const b = block(src, fn);
+    // ①頭がまるごと違う ②急に短くなり、しかも前の頭でもない
+    ok(/shared|commonPrefix/.test(b), `${name}: 「頭がまるごと違う」を見ていない＝短い断片の直後の入れ替わりを取り逃す`);
+    ok(/length\(\) < |\.count < /.test(b), `${name}: 「急に短くなった」を見ていない`);
+    ok(/startsWith|hasPrefix/.test(b), `${name}: 縮む言い直し（前の頭のまま）を入れ替わりと誤判定する`);
+  }
+});
+
+t('🚨【v88】入れ替わりの確保は長文モードの時だけ（普段の1発話は触らない）', () => {
+  for (const [name, src] of [['Java', JAVA], ['Swift', SWIFT]]) {
+    const i = src.indexOf(name === 'Java' ? 'carried += lastPartial' : 'self.carried += self.lastPartial');
+    const head = src.slice(Math.max(0, i - 260), i);
+    ok(/continuous/.test(head), `${name}: 長文モード以外でも確保している＝普通の発話が二重になる`);
+  }
+});
+
 t('🚨【v87】長文モードを終わらせてよいのは「人の停止」と「10分の上限」だけ', () => {
   for (const [name, src, stopFn, maxFn] of [
     ['Java', JAVA, 'public void stop', 'private void armMaxTimer'],
