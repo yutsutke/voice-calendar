@@ -32,7 +32,8 @@ android {
         //  11 / "1.3" = v83（長文モードの取りこぼし修正＝継ぎ足した文章ごとエラーにしていた・実機FB第45回）
         //  12 / "1.3" = v84（長文は推敲画面を挟む＝直す・整える・要約する。web のみの変更）
         //  13 / "1.3" = v85（OpenRouter 追加＋モデル一覧のプルダウン。web のみの変更）
-        versionCode 13
+        //  14 / "1.3" = v86（トーストが下のバーに隠れない＝重なりの整理。web のみの変更）
+        versionCode 14
         versionName "1.3"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
