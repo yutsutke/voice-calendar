@@ -263,11 +263,53 @@ t('🚨【v83】確定は必ず carried を前に付ける（両OS）', () => {
   ok(/carried \+ \(usePartial/.test(SWIFT), 'Swift の deliverFinal が carried を前に付けていない');
 });
 
-// 長文モードでは**沈黙こそ普通**。回数で打ち切ると「考えていたら録音が終わった」になる。
-t('🚨【v83】空振りの打ち切りは回数でなく間隔で見る（沈黙で録音を終わらせない）', () => {
+// 長文モードでは**沈黙こそ普通**。空振りを数えて打ち切ると「考えていたら録音が終わった」になる。
+t('🚨【v83】空振りは回数でなく間隔で見る（沈黙を故障と数えない）', () => {
   for (const [name, src, spin] of [['Java', JAVA, /SPIN_MS/], ['Swift', SWIFT, /spinSec/]]) {
-    ok(spin.test(src), `${name}: 高速回転の判定（間隔）が無い＝沈黙の回数で打ち切っている`);
+    ok(spin.test(src), `${name}: 高速回転の判定（間隔）が無い＝沈黙の回数で判断している`);
     ok(/spinning/.test(src), `${name}: spinning の判定が無い`);
+  }
+});
+
+// 🔴 v87（実機FB第47回・iPhone）: ゆう「**考えてしばらくして話しかけると、さきほどまでの文章が消えて
+//    新規の文章になる。これでは考えながらしゃべれない**」。
+//    犯人は v83 の歯止め（0.5秒未満の空振り×3で**打ち切り**）。**iOS は沈黙中に即座に空で終わる**ので、
+//    考えている数秒で3回に到達 → セッション終了 → 確定が飛ぶ → 次の発話は新しい録音 →
+//    v6「発話＝言い直し」で前のフォームが消える。**Android は無音判定が数秒単位なので踏まなかった**
+//    ＝同じコードでも OS の癖で片方だけ壊れる（v66 と同じ形）。
+//    ⇒ **長文モードでは、沈黙でも失敗でもセッションを終わらせない**（終わりは人の停止と10分の上限だけ）。
+t('🚨【v87 回帰】長文モードは沈黙で終わらない（継ぎ足しの途中で確定させない）', () => {
+  for (const [name, src, header] of [
+    ['Java', JAVA, 'private void rotateSegment'],
+    ['Swift', SWIFT, 'private func rotateSegment'],
+  ]) {
+    const b = block(src, header);
+    ok(!/endAudioAndArmFinalize|deliverFinal/.test(b),
+      `${name}: 継ぎ足しの途中でセッションを終わらせている＝考えている間に録音が終わる（実機FB第47回の症状そのもの）`);
+    ok(/restartRecognition/.test(b), `${name}: 開き直しを呼んでいない＝止まったままになる`);
+  }
+});
+
+t('🚨【v87】開き直しに失敗しても終わらせない（間隔を空けてもう一度）', () => {
+  for (const [name, src, header] of [
+    ['Java', JAVA, 'private void restartRecognition'],
+    ['Swift', SWIFT, 'private func restartRecognition'],
+  ]) {
+    const b = block(src, header);
+    ok(!/deliverFinal|endAudioAndArmFinalize/.test(b),
+      `${name}: 開き直せない時に終わらせている＝一時的な不調で長文が打ち切られる`);
+    ok(/restartRecognition/.test(b), `${name}: もう一度試していない`);
+    ok(/(restartDelay|restartDelayMs)/.test(b), `${name}: 間隔を空けていない＝速く回り続けて電池を焼く`);
+  }
+});
+
+t('🚨【v87】長文モードを終わらせてよいのは「人の停止」と「10分の上限」だけ', () => {
+  for (const [name, src, stopFn, maxFn] of [
+    ['Java', JAVA, 'public void stop', 'private void armMaxTimer'],
+    ['Swift', SWIFT, '@objc func stop', 'private func armMaxTimer'],
+  ]) {
+    ok(/endAudioAndArmFinalize/.test(block(src, stopFn)), `${name}: 人が止めても終わらない`);
+    ok(/endAudioAndArmFinalize/.test(block(src, maxFn)), `${name}: 10分の上限で終わらない＝マイクを握ったままになる`);
   }
 });
 

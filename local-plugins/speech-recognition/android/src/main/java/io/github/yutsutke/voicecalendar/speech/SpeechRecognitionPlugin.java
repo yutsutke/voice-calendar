@@ -74,10 +74,17 @@ public class SpeechRecognitionPlugin extends Plugin {
      *  終わったら**その場で startListening し直し**、それまでの文章をここに積んで継ぎ足す。
      *  JS から見た契約は不変＝1回の録音＝1回の final。 */
     private String carried = "";
-    /** 開き直しが**空のまま高速に回り続ける**時の歯止め（沈黙は正常＝回数でなく間隔で見る・v83） */
-    private int emptyRestarts = 0;
+    /** 開き直しが**空のまま高速に回り続ける**時の歯止め。
+     *  🔴 v87: v83 は「3回で打ち切り」だったが、**iOS は沈黙中に即座に空で終わる**ため考えている
+     *  数秒で到達して録音が終わっていた（実機FB第47回）。→ **打ち切らず間隔を空けるだけ**。
+     *  Android では踏まなかったが、**両 OS を同じ形に保つ**（v15/v16 の流儀＝片方だけ直さない）。 */
     private long lastRestartMs = 0;
-    private static final long SPIN_MS = 500; // これ未満の間隔で空振りが続く＝認識器が壊れている
+    private static final long SPIN_MS = 500;        // これ未満の間隔で空振りが続く＝速く回っている
+    private long restartDelayMs = 0;                 // 次に開き直すまで空ける（0 → 200 → 400 → 600）
+    /** ⚠ 空けている間の音は拾えない＝**上限は短く保つ**（取りこぼしを 0.6 秒までに抑える）。
+     *  普通の沈黙では 0.5 秒より速く空振りが返らないので、ここは**病的な時だけ**効く。 */
+    private static final long MAX_RESTART_DELAY_MS = 600;
+    private Runnable restartRunnable;
     /** 開き直しに使う Intent（begin で組んだものを取っておく＝設定が1回の録音の中でブレない） */
     private Intent listenIntent;
     private Runnable maxRunnable;
@@ -195,7 +202,7 @@ public class SpeechRecognitionPlugin extends Plugin {
         lastPartial = "";
         continuous = false;   // v82: 「この録音だけ」＝録音ごとにリセット（JS の recOverride と同じ約束）
         carried = "";
-        emptyRestarts = 0;
+        restartDelayMs = 0;
 
         if (!SpeechRecognizer.isRecognitionAvailable(getContext())) {
             call.reject("音声認識が利用できません（Google アプリと音声入力の設定を確認）");
@@ -378,48 +385,54 @@ public class SpeechRecognitionPlugin extends Plugin {
         if (!continuous || finished) return;
         String seg = (text == null || text.isEmpty()) ? lastPartial : text;
         if (seg == null || seg.isEmpty()) {
-            // 🚨 v83: 「認識器が壊れている」と「**考えて黙っている**」を回数では区別できない。
-            //   長文モードでは沈黙こそ普通（数十秒考えることがある）＝回数で切ると熟考で録音が終わる。
-            //   危ないのは**空のまま高速に回り続ける**こと（電池を焼く）なので、**時間で見分ける**。
-            //   ゆっくりの空振り（沈黙）は何度でも許し、止めるのは10分の上限に任せる。
+            // 空振り。速く回っているほど次までの間隔を空ける（電池だけ守る）。**打ち切らない**（v87）。
             long now = System.currentTimeMillis();
             boolean spinning = (now - lastRestartMs) < SPIN_MS;
             lastRestartMs = now;
-            emptyRestarts = spinning ? emptyRestarts + 1 : 0;
-            if (emptyRestarts >= 3) {
-                debug("長文モード: 空のまま高速に回っている（" + SPIN_MS + "ms 未満×3）→ 打ち切り");
-                continuous = false;
-                endAudioAndArmFinalize();
-                return;
-            }
+            restartDelayMs = spinning ? Math.min(MAX_RESTART_DELAY_MS, restartDelayMs + 200) : 0;
         } else {
-            emptyRestarts = 0;
             lastRestartMs = System.currentTimeMillis();
+            restartDelayMs = 0;      // 声が拾えた＝正常に戻った
             carried += seg;
         }
         lastPartial = "";
         if (silenceRunnable != null) { main.removeCallbacks(silenceRunnable); silenceRunnable = null; }
-        debug("継ぎ足し len=" + (seg == null ? 0 : seg.length()) + " 合計=" + carried.length());
+        if (seg != null && !seg.isEmpty()) debug("継ぎ足し len=" + seg.length() + " 合計=" + carried.length());
         JSObject d = new JSObject();
         d.put("text", carried);
         notifyListeners("interim", d);
-        // 🚨 同じ recognizer を即座に使い回すと、端末によっては ERROR_CLIENT が返る。
-        //    Android の SpeechRecognizer は「1回の startListening = 1発話」の道具で、
-        //    連続利用は作り直すのが確実（生成は安い・v65 の流儀＝端末差は保守的に倒す）。
-        if (recognizer != null) {
-            try { recognizer.cancel(); } catch (Exception ignored) {}
-            try { recognizer.destroy(); } catch (Exception ignored) {}
-            recognizer = null;
-        }
-        try {
-            recognizer = SpeechRecognizer.createSpeechRecognizer(getContext());
-            recognizer.setRecognitionListener(makeListener());
-            recognizer.startListening(listenIntent);
-        } catch (Exception e) {
-            debug("長文モード: 開き直せず → 確定 (" + e.getMessage() + ")");
-            continuous = false;
-            deliverFinal("", null, true);   // carried があるので中身は失われない
-        }
+        restartRecognition();
+    }
+
+    /**
+     * v87: 長文モードの開き直し。**失敗しても終わらせない**（間隔を空けてもう一度）。
+     * 終わらせてしまうと「考えている間に録音が終わる」＝この機能の目的そのものが壊れる。
+     * 🚨 同じ recognizer を即座に使い回すと端末によっては ERROR_CLIENT が返るので作り直す
+     *    （生成は安い・v65 の流儀＝端末差は保守的に倒す）。
+     */
+    private void restartRecognition() {
+        if (!continuous || finished) return;
+        if (restartRunnable != null) main.removeCallbacks(restartRunnable);
+        if (restartDelayMs > 0) debug("長文モード: " + restartDelayMs + "ms 空けて開き直す（沈黙が続いている）");
+        restartRunnable = () -> {
+            if (!continuous || finished) return;
+            if (recognizer != null) {
+                try { recognizer.cancel(); } catch (Exception ignored) {}
+                try { recognizer.destroy(); } catch (Exception ignored) {}
+                recognizer = null;
+            }
+            try {
+                recognizer = SpeechRecognizer.createSpeechRecognizer(getContext());
+                recognizer.setRecognitionListener(makeListener());
+                recognizer.startListening(listenIntent);
+            } catch (Exception e) {
+                // ここでも終わらせない（一時的に使えないだけのことがある）
+                restartDelayMs = Math.min(MAX_RESTART_DELAY_MS, restartDelayMs + 200);
+                debug("長文モード: 認識器が使えない → " + restartDelayMs + "ms 後にもう一度 (" + e.getMessage() + ")");
+                restartRecognition();
+            }
+        };
+        main.postDelayed(restartRunnable, Math.max(1, restartDelayMs));
     }
 
     private void armMaxTimer() {
@@ -455,6 +468,7 @@ public class SpeechRecognitionPlugin extends Plugin {
         if (silenceRunnable != null) { main.removeCallbacks(silenceRunnable); silenceRunnable = null; }
         if (finalizeRunnable != null) { main.removeCallbacks(finalizeRunnable); finalizeRunnable = null; }
         clearMaxTimer();
+        if (restartRunnable != null) { main.removeCallbacks(restartRunnable); restartRunnable = null; } // v87
         continuous = false;   // v82: 次の録音に長文モードを持ち越さない（「この録音だけ」）
         if (recognizer != null) {
             try { recognizer.cancel(); } catch (Exception ignored) {}

@@ -59,10 +59,17 @@ public class SpeechRecognitionPlugin: CAPPlugin, CAPBridgedPlugin {
     /// 「止めない」だけでは長文がそこで切れるので、確定が来たら**その場で認識器を開き直し**、
     /// それまでの文章をここに積んで継ぎ足す。JS から見た契約は不変＝1回の録音＝1回の final。
     private var carried = ""
-    /// 開き直しが**空のまま高速に回り続ける**時の歯止め（沈黙は正常＝回数でなく間隔で見る・v83）
-    private var emptyRestarts = 0
+    /// 開き直しが**空のまま高速に回り続ける**時の歯止め。
+    /// 🔴 v87: v83 は「3回で打ち切り」だったが、**iOS は沈黙中に即座に空で終わる**ため
+    ///   考えている数秒で到達して録音が終わっていた（実機FB第47回）。→ **打ち切らず間隔を空けるだけ**。
     private var lastRestartAt = Date(timeIntervalSince1970: 0)
-    private let spinSec: TimeInterval = 0.5 // これ未満の間隔で空振りが続く＝認識器が壊れている
+    private let spinSec: TimeInterval = 0.5      // これ未満の間隔で空振りが続く＝速く回っている
+    private var restartDelay: TimeInterval = 0   // 次に開き直すまで空ける秒数（0 → 0.2 → 0.4 → 0.6）
+    /// ⚠ 空けている間の音は拾えない（タップは古い request に流れる）＝**上限は短く保つ**。
+    ///   0.6秒なら最悪でも取りこぼしはその程度、かつ再開は毎秒2回未満＝電池は焼かない。
+    ///   そもそも普通の沈黙では 0.5秒より速く空振りが返らないので、ここは**病的な時だけ**効く。
+    private let maxRestartDelay: TimeInterval = 0.6
+    private var restartTimer: Timer?
     /// 長文モードの打ち切り上限。**マイクを握ったまま忘れる**のを防ぐ最後の砦（電池・プライバシー）。
     /// 打ち切っても**それまでの文章は確定として届く**＝黙って捨てない（v16）。
     private var maxTimer: Timer?
@@ -168,7 +175,7 @@ public class SpeechRecognitionPlugin: CAPPlugin, CAPBridgedPlugin {
         lastPartial = ""
         continuous = false   // v82: 「この録音だけ」＝録音ごとにリセット（JS の recOverride と同じ約束）
         carried = ""
-        emptyRestarts = 0
+        restartDelay = 0
 
         guard let recognizer = recognizer, recognizer.isAvailable else {
             call.reject("音声認識が利用できません（Siri と音声入力の設定・ネットワークを確認）")
@@ -296,38 +303,54 @@ public class SpeechRecognitionPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     /// v82: 認識器が1区切りを終えた（無音・自分の上限・エラー）→ **終わらせずに継ぎ足して開き直す**。
+    ///
+    /// 🔴 v87（実機FB第47回・iPhone）: ゆう「**考えてしばらくして話しかけると、さきほどまでの文章が
+    ///    消えて新規の文章になる。これでは考えながらしゃべれない**」。犯人は v83 で私が入れた歯止め
+    ///    （0.5秒未満の空振り×3で**打ち切り**）だった。
+    ///    **iOS は沈黙中に「音声なし」で認識タスクが即座に終わる**ので、開き直す→また即終わる…が
+    ///    0.5秒を切って続き、**考えている数秒で3回に到達 → セッション終了 → 確定が飛ぶ**。
+    ///    その後に話すと**新しい録音**になり、v6「発話＝言い直し」で前のフォームが消える＝症状と一致。
+    ///    （Android が無事だったのは、あちらの無音判定が数秒単位で**速く回らない**ため＝同じコードでも
+    ///      OS の癖が違うと片方だけ壊れる・v66 と同じ形。）
+    /// 🔑 直し方＝**長文モードでは終わらせない**。速く回るなら**間隔を空けるだけ**（電池だけ守る）。
+    ///    終わりは「人が止める」「10分の上限」だけ＝“止めない”という約束をコードでも守る。
     private func rotateSegment(_ text: String) {
         guard continuous, !finished else { return }
         let seg = text.isEmpty ? lastPartial : text
         if seg.isEmpty {
-            // 🚨 v83: 「認識器が壊れている」と「**考えて黙っている**」を回数では区別できない。
-            //   長文モードでは沈黙こそ普通（数十秒考えることがある）＝回数で切ると熟考で録音が終わる。
-            //   危ないのは**空のまま高速に回り続ける**こと（電池を焼く）なので、**時間で見分ける**。
-            //   ゆっくりの空振り（沈黙）は何度でも許し、止めるのは10分の上限に任せる。
+            // 空振り。速く回っているほど次までの間隔を空ける（0 → 0.3 → 0.6 … 最大2秒）。
             let now = Date()
             let spinning = now.timeIntervalSince(lastRestartAt) < spinSec
             lastRestartAt = now
-            emptyRestarts = spinning ? emptyRestarts + 1 : 0
-            if emptyRestarts >= 3 {
-                debug("長文モード: 空のまま高速に回っている（\(spinSec)s 未満×3）→ 打ち切り")
-                continuous = false
-                endAudioAndArmFinalize()
-                return
-            }
+            restartDelay = spinning ? min(maxRestartDelay, restartDelay + 0.2) : 0
         } else {
-            emptyRestarts = 0
             lastRestartAt = Date()
+            restartDelay = 0        // 声が拾えた＝正常に戻った
             carried += seg
         }
         lastPartial = ""
         silenceTimer?.invalidate()
         silenceTimer = nil
-        debug("継ぎ足し len=\(seg.count) 合計=\(carried.count)")
+        if !seg.isEmpty { debug("継ぎ足し len=\(seg.count) 合計=\(carried.count)") }
         notifyListeners("interim", data: ["text": carried])
-        if !startRecognition() {
-            debug("長文モード: 開き直せず → 確定")
-            continuous = false
-            deliverFinal(text: "", transcription: nil, fallback: true)
+        restartRecognition()
+    }
+
+    /// v87: 長文モードの開き直し。**失敗しても終わらせない**（間隔を空けてもう一度）。
+    /// 終わらせてしまうと「考えている間に録音が終わる」＝この機能の目的そのものが壊れる。
+    private func restartRecognition() {
+        guard continuous, !finished else { return }
+        restartTimer?.invalidate()
+        let delay = restartDelay
+        if delay > 0 { debug("長文モード: \(String(format: "%.1f", delay))s 空けて開き直す（沈黙が続いている）") }
+        restartTimer = Timer.scheduledTimer(withTimeInterval: max(0.01, delay), repeats: false) { [weak self] _ in
+            guard let self = self, self.continuous, !self.finished else { return }
+            if !self.startRecognition() {
+                // 認識器が一時的に使えない（isAvailable が落ちることがある）。**ここでも終わらせない**。
+                self.restartDelay = min(self.maxRestartDelay, self.restartDelay + 0.2)
+                self.debug("長文モード: 認識器が使えない → \(String(format: "%.1f", self.restartDelay))s 後にもう一度")
+                self.restartRecognition()
+            }
         }
     }
 
@@ -434,6 +457,8 @@ public class SpeechRecognitionPlugin: CAPPlugin, CAPBridgedPlugin {
         finalizeTimer = nil
         maxTimer?.invalidate()
         maxTimer = nil
+        restartTimer?.invalidate()   // v87: 待機中の開き直しを残さない（終わった後に復活しない）
+        restartTimer = nil
         continuous = false   // v82: 次の録音に長文モードを持ち越さない（「この録音だけ」）
         if let engine = audioEngine {
             engine.stop()
