@@ -29,6 +29,8 @@ engine/contract.js       # AI 連携の契約（v39）: バッチ封筒の JSON 
 engine/batch.js          # まとめて入力（v39）: parseBatch 検証ゲート（AI の出力を信用しない・不正は落として明記）＋取り込みリスト台帳＋buildPrompt。音声経路と独立
 engine/ai.js             # BYOK（v40）: プロバイダアダプタ（Anthropic/Gemini・OpenAI は CORS 非対応で入れない）。キーは端末内のみ・エラー文にキーを出さない・fetch 注入でテスト
                          #   v42: 音声もこの経路で解釈できる（設定 voiceAI・既定オフ・AI 経路は自動保存しない・失敗はルールへ自動フォールバック）
+engine/geomap.js         # 地図の座標計算（v81）: Web メルカトル・全部入るズーム・タイルの並べ方。純関数（DOM も宿主も知らない）
+                         #   🚫 外部の地図ライブラリは入れない（バンドラ無し運用）。タイルは OpenStreetMap＝出典表示が必須
 engine/rewrite.js        # 長文の「整え」（v80）: 指示文＋検証ゲートの純関数。AI は創作しない（直すのは①誤変換②句読点③言い淀み④言い直しの重複だけ）。
                          #   散文は中身を機械検証できない＝守りは人の側（黙って書き換えない・↩ で戻せる・自動保存しない）
 input/transcriber.js     # 転写層: WebSpeech(web) / native プラグイン（iOS=SFSpeech・Android=SpeechRecognizer 同一契約）。simulate() でテキスト注入。native 判定は `.native` フラグ（engine 名でゲートしない・v65）
@@ -51,6 +53,7 @@ tests/transcriber.test.js# 転写層の「壊れ方」（v13: registerPlugin 無
 tests/calendar.test.js   # 保存の native 契約（v23: 引数名がズレると黙って既定カレンダーに入る＝実機まで気づけない）
 tests/records.test.js    # 記録台帳（v32: 書込失敗は黙らない・kind=予定/記録は保存時に確定・破損は読める行だけで動く）
 tests/batch.test.js      # まとめて入力（v39: 契約と FIELDS の鏡合わせ・AI 出力の検証＝落とすなら明記・staging・不可視文字は parser と鏡）
+tests/geomap.test.js     # 地図の計算（v81: この環境は絵を描かない＝ズレは目でなくテストで見る。既知の値・全点が入る・世界の外を要求しない）
 tests/rewrite.test.js    # 長文の整え（v80: 指示文は仕様＝文言をテストで固定・前置きの剥がし・伸縮の門は境目ちょうどを通す）
 tests/ai.test.js         # BYOK（v40: リクエスト形の契約・切れた応答の検出・キー漏れ無し・openai 復活禁止）
 tests/version.test.js    # BUILD と script の ?v= の一致を強制（v10 の罠の再発防止）。`npm test` で全部走る

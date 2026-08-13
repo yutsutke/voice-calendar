@@ -50,6 +50,13 @@
   <li>「保存時に位置情報も記録する」設定（既定はオフ）を有効にした場合、取得した位置情報も<strong>端末内にのみ</strong>保存されます。</li>
 </ul>
 
+<h2>地図の表示</h2>
+<ul>
+  <li>「地図」パネルを<strong>開いたときにだけ</strong>、地図の画像（タイル）を OpenStreetMap（openstreetmap.org）から取得します。パネルを開かない限り、地図に関する通信は一切発生しません。</li>
+  <li>取得の際に伝わるのは<strong>いま画面に表示している範囲</strong>（どのあたりの地図画像が必要か）です。<strong>記録した座標そのものや、予定・記録の内容が送信されることはありません。</strong>点は取得した画像の上に、端末の中だけで重ねて表示しています。</li>
+  <li>地図データの出典は OpenStreetMap の貢献者です（画面右下に表示）。</li>
+</ul>
+
 <h2>AI 連携（任意・既定はオフ）</h2>
 <ul>
   <li>AI を使う機能は3つあります——<strong>「まとめて入力」で長い文章から予定を読み取る</strong>／<strong>発話を AI で解釈する</strong>（設定・既定はオフ）／<strong>長い文章を読みやすく整える</strong>（「文章を整える」ボタン）。いずれも<strong>利用者自身が用意した API キー</strong>（Anthropic または Google）を登録した場合にのみ動作します。キーを登録しない限り、本アプリが外部の AI サービスと通信することはありません。</li>
@@ -95,6 +102,13 @@
 <ul>
   <li>Drafts, settings, input history, and dictionary entries are stored <strong>only on your device</strong> and are never transmitted.</li>
   <li>If you enable the optional location-capture setting (off by default), location data is also stored only on your device.</li>
+</ul>
+
+<h2>Map Display</h2>
+<ul>
+  <li>Map images (tiles) are fetched from OpenStreetMap (openstreetmap.org) <strong>only when you open the Map panel</strong>. If you never open it, no map-related network request is made.</li>
+  <li>What that request conveys is <strong>the area currently shown on screen</strong> (which map images are needed). <strong>Your recorded coordinates and the contents of your events are never sent.</strong> Points are drawn over the fetched images entirely on your device.</li>
+  <li>Map data © OpenStreetMap contributors (credited in the corner of the map).</li>
 </ul>
 
 <h2>AI Integration (Optional, Off by Default)</h2>

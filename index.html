@@ -360,6 +360,34 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
   .rec-edit { border: none; background: transparent; color: var(--sub); font-size: 13px; cursor: pointer; padding: 2px 4px; align-self: center; }
   .rec-edit:active { opacity: .5; }
   .rec-rev { color: var(--sub); font-size: 11px; }
+  /* ---- 地図（v81: つぶやいた場所をまとめて見る） ----
+     外部の地図ライブラリは入れない（バンドラ無し運用＝<script> 直読みの流儀を崩さない・
+     150行の自前より依存1本の方が高くつく）。タイル画像を並べて、その上にピンを絶対配置するだけ。 */
+  .map-hint { font-size: 12px; color: var(--sub); padding: 6px 2px 10px; line-height: 1.6; }
+  .map-wrap { position: relative; width: 100%; height: 340px; overflow: hidden;
+    border-radius: 12px; border: 1px solid var(--line); background: var(--card);
+    touch-action: none; /* 指のドラッグを地図の移動として受ける（ページのスクロールに取られない） */
+    cursor: grab; }
+  .map-wrap.dragging { cursor: grabbing; }
+  .map-tiles img { position: absolute; width: 256px; height: 256px; user-select: none; -webkit-user-drag: none; }
+  .map-pin { position: absolute; width: 14px; height: 14px; margin: -7px 0 0 -7px; border-radius: 50%;
+    border: 2px solid #fff; box-shadow: 0 0 0 1px rgb(0 0 0 / .35); cursor: pointer; }
+  .map-pin.p-record { background: var(--accent); }   /* 📝 記録＝話した場所（主役） */
+  .map-pin.p-plan { background: var(--sub); }        /* 📅 予定＝控えめに */
+  .map-pin.on { width: 20px; height: 20px; margin: -10px 0 0 -10px; z-index: 3; }
+  .map-zoom { position: absolute; right: 8px; top: 8px; display: flex; flex-direction: column; gap: 6px; z-index: 4; }
+  .map-zoom button { width: 34px; height: 34px; font-size: 18px; line-height: 1; border: 1px solid var(--line);
+    background: var(--card); color: var(--ink); border-radius: 8px; cursor: pointer; }
+  .map-zoom button:active { opacity: .6; }
+  .map-zoom button.map-fit { font-size: 11px; }
+  .map-attr { position: absolute; right: 4px; bottom: 2px; z-index: 4; font-size: 10px;
+    color: var(--sub); background: rgb(255 255 255 / .7); padding: 1px 4px; border-radius: 4px; }
+  .map-attr a { color: inherit; }
+  .map-sel { margin-top: 10px; padding: 10px 12px; border-radius: 12px; background: var(--card);
+    border: 1px solid var(--line); border-left: 4px solid var(--accent); font-size: 13px; line-height: 1.6; }
+  .map-sel[hidden] { display: none; }
+  .map-sel .map-sel-meta { color: var(--sub); font-size: 12px; }
+  .map-empty { font-size: 13px; color: var(--sub); padding: 18px 2px; line-height: 1.7; }
   /* ---- 辞書（v37: 言い回し→実文字列の置き換え） ---- */
   .dict-hint { font-size: 12px; color: var(--sub); padding: 8px 2px; line-height: 1.6; }
   .dict-row { display: flex; align-items: center; gap: 8px; padding: 7px 2px; border-bottom: 1px solid var(--line); font-size: 13px; }
@@ -592,6 +620,30 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
     </div>
   </details>
 
+  <!-- 地図（v81・ゆう要求「録音した場所を1点として、地図上でまとめてみたい。どこでつぶやいているかを
+       地図を見て振り返れるようにしたい」）: リストと**同じ行**（📅/📝 の表示中）のうち、位置が付いた
+       ものを1枚に置く。開くまで地図の画像は取りに行かない＝**閉じている限り通信ゼロ**（v38「黙って取らない」の
+       表示版）。地図の画像は OpenStreetMap から取得＝出典表示は必須。 -->
+  <details class="optional" id="mapBox">
+    <summary>🗺 地図（つぶやいた場所）<span class="rec-count" id="mapCount"></span></summary>
+    <div class="card2">
+      <div class="map-hint" id="mapHint"></div>
+      <div class="map-wrap" id="mapWrap">
+        <div class="map-tiles" id="mapTiles"></div>
+        <div class="map-pins" id="mapPins"></div>
+        <div class="map-zoom">
+          <button id="mapZoomIn" type="button" aria-label="拡大">＋</button>
+          <button id="mapZoomOut" type="button" aria-label="縮小">−</button>
+          <!-- 動かした先で「点が画面の外にある」時に戻る道。これが無いと、外に出た点は
+               探す手段が無い＝黙って消えたのと同じになる（v16） -->
+          <button id="mapFitAll" type="button" class="map-fit" aria-label="全部が入るように戻す">全体</button>
+        </div>
+        <div class="map-attr">© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors</div>
+      </div>
+      <div class="map-sel" id="mapSel" hidden></div>
+    </div>
+  </details>
+
   <!-- まとめて入力（v39・un-park「LLM 解釈」「複数予定一括」）: 長文/外部 AI の JSON から複数の
        予定を一括で取り込む。入口が何でも（貼り付け / 将来の BYOK AI / WebMCP）必ず「取り込みリスト」に
        一度入り、人が確認してから保存する（直接保存しない）。音声の短文経路（ルールベース・自動保存 v28）は
@@ -730,21 +782,22 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
      理由: この版文字列は index.html にしかないが、ロジックは別ファイル＝別キャッシュ。
      付けないと「フッタは新しいのにパーサは古い」という嘘の状態が成立する（v9 で実際に踏んだ）。
      index.html が更新されれば src の URL も変わる → JS も必ず新しく取り直される。 -->
-<script src="engine/settings.js?v=80"></script>
-<script src="engine/schema.js?v=80"></script>
-<script src="engine/parser.js?v=80"></script>
-<script src="engine/dictionary.js?v=80"></script>
-<script src="engine/contract.js?v=80"></script>
-<script src="engine/batch.js?v=80"></script>
-<script src="engine/ai.js?v=80"></script>
-<script src="engine/rewrite.js?v=80"></script>
-<script src="input/transcriber.js?v=80"></script>
-<script src="adapters/calendar.js?v=80"></script>
-<script src="adapters/records.js?v=80"></script>
-<script src="adapters/location.js?v=80"></script>
+<script src="engine/settings.js?v=81"></script>
+<script src="engine/schema.js?v=81"></script>
+<script src="engine/parser.js?v=81"></script>
+<script src="engine/dictionary.js?v=81"></script>
+<script src="engine/contract.js?v=81"></script>
+<script src="engine/batch.js?v=81"></script>
+<script src="engine/ai.js?v=81"></script>
+<script src="engine/rewrite.js?v=81"></script>
+<script src="input/transcriber.js?v=81"></script>
+<script src="adapters/calendar.js?v=81"></script>
+<script src="adapters/records.js?v=81"></script>
+<script src="adapters/location.js?v=81"></script>
+<script src="engine/geomap.js?v=81"></script>
 <script>
 'use strict';
-const BUILD = 'v80：長文を AI で整える（🤖 文章を整える） · 2026-08-13';
+const BUILD = 'v81：つぶやいた場所の地図（🗺 まとめて見る） · 2026-08-13';
 console.log('BUILD:', BUILD);
 document.getElementById('build').textContent = BUILD;
 
@@ -1485,6 +1538,13 @@ const recShowRecord = document.getElementById('recShowRecord');
     recShowRecord.checked = v.record !== false;
   } catch { /* 壊れた表示状態は既定（両方オン）で動く */ }
 })();
+// v80: 「今この画面に出ている行」を決めるのは**この1関数だけ**。v36（CSV）と描画で同じ式が2箇所に
+// 複製されており、v81 で地図が3つ目の読み手になる＝ v74 の実バグ（同じ判断が2本の道に分かれ、
+// 片方だけ更新されて食い違う）とまったく同じ形になる直前だった。**WYSIWYG は1箇所から導く**。
+function visibleRecords() {
+  if (!window.VCRecords) return [];
+  return VCRecords.list().filter((r) => (r.kind === 'plan' ? recShowPlan.checked : recShowRecord.checked));
+}
 // v75: 台帳が変わったら**来歴の ✏️ も撮り直す**（ラベルは台帳のタイトル・消えた行はボタンごと消える）。
 // 🔑 ここ1箇所に置く＝台帳を書き換える入口（保存・更新・削除・全消し・位置付与）は全部 renderRecords を
 //    通るので、入口が増えても付け忘れが起きない（v74「分岐は複製せず1箇所に持つ」の描画版）。
@@ -1492,6 +1552,7 @@ const recShowRecord = document.getElementById('recShowRecord');
 function renderRecords() {
   renderRecordsList();
   renderHistory();
+  refreshMap(); // v81: 地図も同じ入口から（開いていなければ何もしない＝閉じている間は通信ゼロ）
 }
 function renderRecordsList() {
   const listEl = document.getElementById('recordsList');
@@ -1505,7 +1566,7 @@ function renderRecordsList() {
   }
   const all = VCRecords.list();
   document.getElementById('recCount').textContent = all.length ? `${all.length}件` : '';
-  const rows = all.filter((r) => (r.kind === 'plan' ? recShowPlan.checked : recShowRecord.checked));
+  const rows = visibleRecords();
   if (!rows.length) {
     const d = document.createElement('div');
     d.className = 'rec-empty';
@@ -1678,7 +1739,7 @@ document.getElementById('recordsClear').addEventListener('click', () => {
 // ため共有シート→クリップボードの順（silent drop を作らない＝v16）。web は標準のダウンロード。
 document.getElementById('recordsCsv').addEventListener('click', async () => {
   if (!window.VCRecords) { toast('リスト機能を読み込めていません（詳細は「診断」）'); return; }
-  const rows = VCRecords.list().filter((r) => (r.kind === 'plan' ? recShowPlan.checked : recShowRecord.checked));
+  const rows = visibleRecords();
   if (!rows.length) { toast('書き出す行がありません（📅/📝 で表示中の行が対象です）'); return; }
   const csv = VCRecords.toCsv(rows);
   const d = new Date();
@@ -3109,6 +3170,159 @@ document.getElementById('editCancel').addEventListener('click', () => {
 function runSave(opts) { return editingRec ? saveEditedRecord() : doSave(opts); }
 
 document.getElementById('save').addEventListener('click', () => runSave());
+
+// ===== v81: つぶやいた場所の地図（ゆう要求 2026-08-13） =====
+// 「録音した場所を1点として、**地図上でまとめてみたい**。どこでつぶやいているかを地図を見て振り返れる
+//  ようにしたい」。v38 の 🗺 は**1行ずつ外部の地図アプリを開く**＝「まとめて」は原理的にできなかった。
+// 🔑 対象は**リストと同じ行**（visibleRecords＝📅/📝 の表示中）のうち位置が付いたもの＝WYSIWYG（v36 の CSV と同じ）。
+// 🔒 **開くまで地図の画像を取りに行かない**＝閉じている限り通信ゼロ（v38「黙って取らない」の表示版）。
+//    OpenStreetMap のタイルを使う＝**出典表示は必須**（画面右下に固定）。地図に座標を送るのではなく、
+//    「その辺りの画像をください」と頼む形＝伝わるのは見ている範囲（privacy.html に明記）。
+// 計算は engine/geomap.js（純関数）＝**この環境は絵を描かない**ので、ズレは目でなくテストで見る（v46 の制約）。
+const MAP_TILE_URL = (t) => `https://tile.openstreetmap.org/${t.z}/${t.x}/${t.y}.png`;
+let mapView = null;      // { center:{lat,lng}, zoom }。null＝まだ開いていない
+let mapPoints = [];      // 今この地図に載っている行（描き直しの元）
+let mapSelectedId = null;
+
+function mapSize() {
+  const w = document.getElementById('mapWrap');
+  const r = w.getBoundingClientRect();
+  // レイアウト前は 0 になる（v78 で踏んだ罠）＝その時は CSS の実寸を当てにせず既定で描く
+  return { w: Math.round(r.width) || 360, h: Math.round(r.height) || 340 };
+}
+
+function drawMap() {
+  if (!mapView || !window.VCGeoMap) return;
+  const { w, h } = mapSize();
+  const tiles = document.getElementById('mapTiles');
+  const pins = document.getElementById('mapPins');
+  tiles.innerHTML = '';
+  for (const t of VCGeoMap.tilesFor(mapView.center, mapView.zoom, w, h)) {
+    const img = document.createElement('img');
+    // loading="lazy" は付けない: 描くタイルは必ず今の画面の分だけ＝遅らせる意味が無く、
+    // 「画面には在るのに読み込まれない」経路を1つ増やすだけ（この環境では実際にそう見えた）。
+    img.alt = '';                       // 装飾＝読み上げに出さない（地図の意味はピンが持つ）
+    img.src = MAP_TILE_URL(t);
+    img.style.left = `${t.left}px`;
+    img.style.top = `${t.top}px`;
+    tiles.appendChild(img);
+  }
+  pins.innerHTML = '';
+  let placed = 0;
+  for (const p of mapPoints) {
+    const at = VCGeoMap.pinAt(mapView.center, mapView.zoom, w, h, p.lat, p.lng);
+    if (!at) continue;                  // 画面の外＝置かない（縁に張り付けて嘘の位置を見せない）
+    placed++;
+    const el = document.createElement('button');
+    el.type = 'button';
+    el.className = 'map-pin ' + (p.kind === 'plan' ? 'p-plan' : 'p-record') + (p.id === mapSelectedId ? ' on' : '');
+    el.style.left = `${at.x}px`;
+    el.style.top = `${at.y}px`;
+    el.title = p.title || '（タイトルなし）';
+    el.addEventListener('click', (ev) => { ev.stopPropagation(); selectMapPin(p.id); });
+    pins.appendChild(el);
+  }
+  // 🚨 画面の外に出た点は**数で申告する**（v16）＝黙って消えたのと区別がつく。「全体」で戻せる。
+  const off = mapPoints.length - placed;
+  document.getElementById('mapHint').textContent =
+    `${mapPoints.length}件の位置` + (off ? `（うち${off}件は画面の外＝「全体」で戻せます）` : '')
+    + '。ドラッグで動かせます（＋−で拡大縮小・点を押すと内容が出ます）。';
+}
+
+// ピンを押したら「いつ・何を・どこで」を下に出す（地図だけでは点が誰か分からない）。
+function selectMapPin(id) {
+  mapSelectedId = id;
+  const p = mapPoints.find((x) => x.id === id);
+  const box = document.getElementById('mapSel');
+  if (!p) { box.hidden = true; drawMap(); return; }
+  box.innerHTML = '';
+  const t = document.createElement('div');
+  t.textContent = `${p.kind === 'plan' ? '📅' : '📝'} ${p.title || '（タイトルなし）'}`;
+  const m = document.createElement('div');
+  m.className = 'map-sel-meta';
+  const d = new Date(p.startMs);
+  m.textContent = `${d.getMonth() + 1}月${d.getDate()}日 ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+    + `　${p.lat.toFixed(5)}, ${p.lng.toFixed(5)}`;
+  box.append(t, m);
+  box.hidden = false;
+  drawMap();
+}
+
+// 地図を開いた時・リストの表示が変わった時に作り直す。**開いていなければ何もしない**（通信しない）。
+function refreshMap() {
+  const box = document.getElementById('mapBox');
+  const hint = document.getElementById('mapHint');
+  const wrap = document.getElementById('mapWrap');
+  const cnt = document.getElementById('mapCount');
+  const rows = visibleRecords().filter((r) => Number.isFinite(r.lat) && Number.isFinite(r.lng));
+  cnt.textContent = rows.length ? `${rows.length}件` : '';
+  if (!box.open) return;
+  mapPoints = rows;
+  if (!rows.length) {
+    wrap.hidden = true;
+    document.getElementById('mapSel').hidden = true;
+    document.getElementById('mapPins').innerHTML = ''; // 隠した器の中に古い点を残さない（画面が嘘をつかない・v3）
+    mapSelectedId = null;
+    hint.innerHTML = '';
+    const d = document.createElement('div');
+    d.className = 'map-empty';
+    // 位置が付かない理由は3つしか無い＝そのまま書く（「出ない」で終わらせない・v51）
+    d.textContent = '位置の付いた記録がまだありません。詳細設定の「保存時に位置情報も記録する」をオンにして、'
+      + '保存先を「リスト」か「両方」にして保存すると、ここに点が並びます（📅/📝 の表示にも従います）。';
+    hint.appendChild(d);
+    return;
+  }
+  wrap.hidden = false;
+  const { w, h } = mapSize();
+  if (!mapView) mapView = VCGeoMap.fit(rows, w, h);   // 初回だけ全部入る位置へ（以後は見ている場所を保つ）
+  drawMap();                                          // 説明文（画面外の件数を含む）は drawMap が書く
+}
+
+// 「全体」＝今の点が全部入る位置へ戻す。**fit は engine の1関数**＝初回表示と同じ規則（規則を2つ作らない）。
+function fitMapToAll() {
+  if (!mapPoints.length) return;
+  const { w, h } = mapSize();
+  mapView = VCGeoMap.fit(mapPoints, w, h);
+  drawMap();
+}
+document.getElementById('mapFitAll').addEventListener('click', fitMapToAll);
+
+document.getElementById('mapBox').addEventListener('toggle', () => {
+  // 開いた瞬間に初めて地図の画像を取りに行く（閉じている間は1枚も要求しない）
+  if (document.getElementById('mapBox').open) refreshMap();
+});
+document.getElementById('mapZoomIn').addEventListener('click', () => {
+  if (!mapView) return;
+  mapView.zoom = Math.min(VCGeoMap.MAX_ZOOM, mapView.zoom + 1);
+  drawMap();
+});
+document.getElementById('mapZoomOut').addEventListener('click', () => {
+  if (!mapView) return;
+  mapView.zoom = Math.max(VCGeoMap.MIN_ZOOM, mapView.zoom - 1);
+  drawMap();
+});
+// ドラッグで動かす（Pointer Events＝指もマウスも同じ道・入口を2つ作らない）
+(function wireMapDrag() {
+  const wrap = document.getElementById('mapWrap');
+  let last = null;
+  wrap.addEventListener('pointerdown', (e) => {
+    if (!mapView || e.target.closest('.map-zoom')) return;
+    last = { x: e.clientX, y: e.clientY };
+    wrap.classList.add('dragging');
+    wrap.setPointerCapture(e.pointerId);
+  });
+  wrap.addEventListener('pointermove', (e) => {
+    if (!last || !mapView) return;
+    const dx = e.clientX - last.x, dy = e.clientY - last.y;
+    if (!dx && !dy) return;
+    last = { x: e.clientX, y: e.clientY };
+    mapView.center = VCGeoMap.panned(mapView.center, mapView.zoom, dx, dy);
+    drawMap();
+  });
+  for (const ev of ['pointerup', 'pointercancel', 'pointerleave']) {
+    wrap.addEventListener(ev, () => { last = null; wrap.classList.remove('dragging'); });
+  }
+})();
 
 // ===== v80: 長文を AI で整える（ゆう要求 2026-08-13） =====
 // 「**長文になると、文章が不正確になりがち**、AIボタンで文章をリライトする機能も加えたい」。

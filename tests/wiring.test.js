@@ -274,5 +274,41 @@ t('人が書いたタイトルは触らない・切り方は parser と同じ関
     'タイトルの切り方を自前で書いている＝v58 と規則が2つに割れて静かにズレる');
 });
 
+// ===== 9. つぶやいた場所の地図（v81・ゆう要求） =====
+t('「今出ている行」を決めるのは visibleRecords 1箇所（描画・CSV・地図が同じ道）', () => {
+  ok(/function visibleRecords/.test(code), 'visibleRecords が無い');
+  // 生の filter 式が復活していないか（v36 と描画で複製されていたものを v81 でまとめた）
+  const raw = countOf(/kind === 'plan' \? recShowPlan\.checked/g);
+  ok(raw === 1, `表示中の行を選ぶ式が ${raw} 箇所ある＝片方だけ直して食い違う（v74 と同じ形）`);
+  ok(countOf(/visibleRecords\s*\(\s*\)/g) >= 3, '読み手（描画・CSV・地図）が同じ関数を通っていない');
+});
+
+t('地図は開くまで画像を取りに行かない（閉じている間は通信ゼロ）', () => {
+  ok(/if\s*\(!box\.open\)\s*return/.test(bodyOf('refreshMap')),
+    '閉じたままタイルを要求する＝黙って外部へ通信する（v38 の約束を破る）');
+  ok(/getElementById\('mapBox'\)\.addEventListener\('toggle'/.test(code),
+    '開いた時に描き始める配線が無い＝開いても白いまま');
+});
+
+t('地図の出典表示が在る（OpenStreetMap の利用条件）', () => {
+  ok(/map-attr/.test(html) && /OpenStreetMap/.test(html), '出典表示が無い＝タイルを使う条件を満たさない');
+});
+
+t('地図の計算は engine（宿主で三角関数を書き直さない）', () => {
+  for (const fn of ['drawMap', 'refreshMap', 'fitMapToAll']) {
+    ok(!/Math\.(log|tan|atan|sinh|PI)/.test(bodyOf(fn)),
+      `${fn} が図法の計算を持っている＝engine/geomap.js と規則が2つに割れる`);
+  }
+  ok(/VCGeoMap\.tilesFor/.test(bodyOf('drawMap')) && /VCGeoMap\.pinAt/.test(bodyOf('drawMap')),
+    'drawMap が engine の計算を使っていない');
+  ok(/VCGeoMap\.fit\(/.test(bodyOf('fitMapToAll')), '「全体」が初回表示と同じ規則（fit）を使っていない');
+});
+
+t('画面の外に出た点は数で申告する（黙って消さない）', () => {
+  const body = bodyOf('drawMap');
+  ok(/placed/.test(body) && /画面の外/.test(html),
+    '置けなかった点を数えていない＝点が消えたのか外に出たのか区別がつかない');
+});
+
 console.log(`\nwiring.test: ${pass} passed, ${fail.length} failed`);
 if (fail.length) { console.log('\n' + fail.join('\n\n')); process.exit(1); }
