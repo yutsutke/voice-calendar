@@ -721,20 +721,20 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
      理由: この版文字列は index.html にしかないが、ロジックは別ファイル＝別キャッシュ。
      付けないと「フッタは新しいのにパーサは古い」という嘘の状態が成立する（v9 で実際に踏んだ）。
      index.html が更新されれば src の URL も変わる → JS も必ず新しく取り直される。 -->
-<script src="engine/settings.js?v=78"></script>
-<script src="engine/schema.js?v=78"></script>
-<script src="engine/parser.js?v=78"></script>
-<script src="engine/dictionary.js?v=78"></script>
-<script src="engine/contract.js?v=78"></script>
-<script src="engine/batch.js?v=78"></script>
-<script src="engine/ai.js?v=78"></script>
-<script src="input/transcriber.js?v=78"></script>
-<script src="adapters/calendar.js?v=78"></script>
-<script src="adapters/records.js?v=78"></script>
-<script src="adapters/location.js?v=78"></script>
+<script src="engine/settings.js?v=79"></script>
+<script src="engine/schema.js?v=79"></script>
+<script src="engine/parser.js?v=79"></script>
+<script src="engine/dictionary.js?v=79"></script>
+<script src="engine/contract.js?v=79"></script>
+<script src="engine/batch.js?v=79"></script>
+<script src="engine/ai.js?v=79"></script>
+<script src="input/transcriber.js?v=79"></script>
+<script src="adapters/calendar.js?v=79"></script>
+<script src="adapters/records.js?v=79"></script>
+<script src="adapters/location.js?v=79"></script>
 <script>
 'use strict';
-const BUILD = 'v78：録音中は専用画面（文字起こし・やめる・この録音だけの切替） · 2026-08-06';
+const BUILD = 'v79：ホーム長押しの「リスト」が録音に覆われない · 2026-08-13';
 console.log('BUILD:', BUILD);
 document.getElementById('build').textContent = BUILD;
 
@@ -970,6 +970,14 @@ let lastUtterance = null;
 //   ai: null=設定(voiceAI)に従う / true=この録音だけ AI で解釈 / false=この録音だけルールで解釈。要キー（無ければボタンを出さない）。
 let recOverride = { noAutoSave: false, ai: null };
 function resetRecOverride() { recOverride.noAutoSave = false; recOverride.ai = null; }
+// v79: 「リストを見に来た」＝この前面セッションでは自動録音しない（実機FB第44回）。
+// 🔑 **順番に依存しない形にする**のが肝。native がリストの指示を届けるのと、自動録音が実際に始まる
+// （native から listening が返ってくる）のは、どちらが先か決まっていない＝片方だけの対処では取りこぼす:
+//   ・指示が先 → autoRecord がこのフラグで止まる
+//   ・録音が先 → __vcQuickAction がその場で引っ込める
+//   ・指示の後に録音が始まった → onState がその場で引っ込める（cold start の実際の順番はここになりやすい）
+// 消えるのは「マイクを押した」（＝話しに来た）か「アプリを離れた」時＝意図が終わった時だけ。
+let listIntent = false;
 function renderOverrideButtons() {
   if (!ovNoAuto) return;
   ovNoAuto.classList.toggle('on', recOverride.noAutoSave);
@@ -1615,10 +1623,22 @@ function openRecordsPanel(){
 // v64: ホーム画面の長押し（iOS Home Screen Quick Action）の唯一の入口。native（AppDelegate）が
 // WebView に window.__vcQuickAction('list') を届ける（cold/warm 両対応・届くまでリトライ）。
 // web では誰も呼ばない＝無害（機能追加のみ・既定の体験は不変）。補助機能は本体を殺さない（v13）＝try/catch し痕跡は診断へ（v15）。
+// 🔴 v79（実機FB第44回「新規で開こうとするとリストではなく録音ボタンになる」）＝**リストは開いていた**。
+//    上に v78 の専用画面（画面いっぱいの不透明な層）が被さっていただけ。順番は構造的に決まっている:
+//      ① index.html が最後まで走る → その中の**起動＝即録音**（v24）が発火 → 録音開始 → 層が出る
+//      ② native はこの関数が生えてから届ける（AppDelegate / MainActivity のリトライ）＝**必ず①の後**
+//    中断からの復帰で開けたのは、フォームに書きかけがあると自動録音が止まる（v24 の「書きかけを守る」）ため。
+//    → **リストを見に来た人は話しに来ていない**＝意図が明示されている（推測が要らない）ので録音を引っ込める。
+//    条件は「まだ一言も拾っていない」だけ＝既にある状態から導く（**誰が始めたかのフラグは持たない**＝二重管理を作らない・v3）。
+//    喋り始めていたら**捨てない**（v16）＝録音は続け、リストはその下で開いて録音が終われば現れる。
 window.__vcQuickAction = function(type){
   try {
     if (window.__vcDebugNote) window.__vcDebugNote('🔖 QuickAction 受信: ' + type);
-    if (type === 'list') openRecordsPanel();
+    if (type === 'list') {
+      listIntent = true;                      // 以降この前面セッションでは自動録音しない（順番に依存しない）
+      quietAutoRecordForList();               // もう始まっていたら引っ込める（判定は1箇所）
+      openRecordsPanel();
+    }
   } catch(e){
     if (window.__vcDebugNote) window.__vcDebugNote('🔖 QuickAction 失敗: ' + ((e && e.message) || e));
   }
@@ -2296,6 +2316,9 @@ const transcriber = VCTranscriber.createTranscriber({
     // v61: 一時オーバーライドは「この録音だけ」＝録音開始でリセット・録音中だけ出す。
     if (on) resetRecOverride();
     if (on && ovBox) renderOverrideButtons();
+    // v79: リストを見に来た起動では、指示より後に録音が始まることがある（cold start の実際の順番）
+    // ＝始まった瞬間にここで引っ込める。判定は quietAutoRecordForList 1箇所。
+    if (on) quietAutoRecordForList();
   },
   onError(e) {
     if (e === 'no-speech') { micState.textContent = ''; return; } // web の「無言」は正常系
@@ -2327,7 +2350,7 @@ function micOpts() {
 
 // v77: 録音の操作は**この2関数だけ**が行う。入口は2つ（上の丸いマイク／下の固定バー）だが道は1本
 // ＝ v74 の実バグ（保存の入口が2つで道が2本あり、片方だけ更新経路を通らなかった）と同じ形を作らない。
-function toggleMic() { transcriber.toggle(micOpts()); }
+function toggleMic() { listIntent = false; transcriber.toggle(micOpts()); } // v79: マイクを押した＝話しに来た（リストの意図は消える）
 // v77: 下のバーを出すか決めるのは**この1関数だけ**（上のマイクが1pxでも見えていれば出さない
 // ＝同じ機能のボタンが2つ同時に見える状態を作らない）。読み取りは1回＝スクロール中も軽い。
 function syncDock() {
@@ -2339,12 +2362,29 @@ function syncDock() {
 }
 // v49: 言い間違えの取り消し。**止めるだけでなく、この発話を解釈へ流さない**（transcriber.cancel）。
 // 途中結果の表示も消す＝画面から言い間違えが消える。黙って消さないよう toast で告げる（v16）。
-function cancelMic() {
+// v79: 呼ぶ理由が2つになった（人が「やめる」を押した／リストを開きに来た）ので **告げる文だけ差し替えられる**
+// ようにした。道は1本のまま＝v74「分岐は複製せず1関数に集約」。click から直で呼ばれると第1引数が Event に
+// なるため typeof で守る（新しい呼び出し口が増えても壊れない）。
+function cancelMic(note) {
   if (typeof transcriber.cancel !== 'function') { transcriber.stop(); return; } // 古い転写層でも止まる
   transcriber.cancel();
   renderMicState(false);      // v77: 見た目の後始末も1箇所（上・下・やめる・オーバーライドが一度に戻る）
   transcriptEl.textContent = '';
-  toast('🎤 やめました（何も入力していません）');
+  toast(typeof note === 'string' && note ? note : '🎤 やめました（何も入力していません）');
+}
+
+// v79: 「リストを見に来たのに録音が始まっている」を解く**唯一の判定**。呼ぶ場所は2つ（指示が届いた時／
+// 録音が始まった時）だが判定はここ1つ＝食い違いを作れない（v74「分岐は複製しない」・v77 と同じ筋）。
+// 喋り始めていたら**捨てない**（v16）＝録音は続け、リストはその下で開き、録音が終われば現れる。
+function quietAutoRecordForList() {
+  if (!listIntent || !transcriber.isListening()) return false;
+  if (transcriptEl.textContent.trim() !== '') {
+    window.__vcDebugNote('🔖 発話中なので録音は続ける（リストは下で開く）');
+    return false;
+  }
+  window.__vcDebugNote('🔖 リストを開くため録音を引っ込めた（まだ何も拾っていない）');
+  cancelMic('🎤 録音をやめてリストを開きました');
+  return true;
 }
 
 if (transcriber.available) {
@@ -2403,6 +2443,7 @@ if (transcriber.available) {
 // 実機の診断に 🎙「自動録音（起動/復帰）」が出る＝動いた証拠（v15: 画面に出す以外に見る手段が無い）。
 function autoRecord(trigger) {
   if (transcriber.isListening()) return 'listening';       // toggle ではなく start＝既に聞いていたら触らない
+  if (listIntent) return 'listIntent';                     // v79: リストを見に来た＝話しに来ていない（実機FB第44回）
   const d = store.get();
   if (VCStore.FIELDS.some((f) => d[f] !== '' && d[f] !== false)) return 'draft'; // 書きかけを守る
   if (!transcriber.native) return `engine:${transcriber.engine}`;  // native の音声が生きている時だけ（v65: 名前でなくフラグ＝Android でも効く）
@@ -2412,7 +2453,10 @@ function autoRecord(trigger) {
 }
 window.__vcAutoRecord = autoRecord; // E2E がガードを検証する入口
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'visible') autoRecord('復帰');
+  // v79: アプリを離れたら「リストを見に来た」は終わり＝次に開いた時は普段どおり自動録音する
+  // （フラグを残すと、一度長押しで開いた人の即録音が二度と戻らない）。
+  if (document.visibilityState !== 'visible') { listIntent = false; return; }
+  autoRecord('復帰');
 });
 // v31: 完全終了→Siri 起動の一瞬はマイク HW が未準備（Siri がまだ audio session を握っている）で、
 // native は AUDIO_NOT_READY で graceful に中止する（Swift 側でクラッシュを塞いだ）。

@@ -208,5 +208,34 @@ t('録音が死んだら専用画面を閉じる（フォームに閉じ込め�
     'エラー時に専用画面を閉じる保険が無い＝録音が死ぬとフォームへ戻れない');
 });
 
+// ===== 7. ホーム長押し「リスト」が録音に覆われない（v79・実機FB第44回） =====
+// 症状「新規で開こうとするとリストではなく録音ボタンになる」の正体＝**リストは開いていた**。
+// 上に v78 の専用画面（不透明な全画面層）が被っていただけ。
+// 🔑 native がリストの指示を届けるのと、自動録音（v24）が実際に始まる（native から listening が返る）のは
+//    **どちらが先か決まっていない**＝片方だけの対処では必ず取りこぼす。だから門が3つ要る。
+t('リストの意図は autoRecord を止める（指示が先に届いた場合）', () => {
+  ok(/let listIntent/.test(code), 'listIntent が無い（名前を変えたならこのテストも直す）');
+  ok(/listIntent/.test(bodyOf('autoRecord')),
+    'autoRecord が listIntent を見ていない＝リストを開いた直後に録音が始まって覆う');
+});
+
+t('録音が先なら引っ込める（判定は quietAutoRecordForList 1箇所・呼ぶ場所は2つ）', () => {
+  const body = bodyOf('quietAutoRecordForList');
+  ok(/transcriptEl\.textContent/.test(body),
+    'まだ何も拾っていないかを見ていない＝喋った言葉を捨てることになる（v16 違反）');
+  ok(/cancelMic\(/.test(body), '引っ込める道が cancelMic を通っていない＝取り消しの中身を複製している');
+  ok(/__vcQuickAction\s*=\s*function[\s\S]{0,800}quietAutoRecordForList/.test(code),
+    'リストの指示が届いた時に呼んでいない＝録音が先に始まっていた場合を取りこぼす');
+  ok(/onState\(s\)\s*\{[\s\S]{0,800}quietAutoRecordForList/.test(code),
+    '録音が始まった時に呼んでいない＝指示が先に届いた場合を取りこぼす（cold start の実際の順番）');
+});
+
+t('リストの意図は「マイクを押した」「アプリを離れた」で消える（居座らない）', () => {
+  ok(/listIntent\s*=\s*false/.test(bodyOf('toggleMic')),
+    'マイクを押しても意図が残る＝自分で始めた録音が引っ込められる');
+  ok(/visibilityState\s*!==\s*'visible'[\s\S]{0,200}listIntent\s*=\s*false/.test(code),
+    'アプリを離れた時に消えない＝一度長押しで開いた人の「起動＝即録音」が二度と戻らない');
+});
+
 console.log(`\nwiring.test: ${pass} passed, ${fail.length} failed`);
 if (fail.length) { console.log('\n' + fail.join('\n\n')); process.exit(1); }
