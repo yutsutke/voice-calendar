@@ -309,7 +309,11 @@ t('全画面は CSS で覆う（Fullscreen API は本命の実機で効かない
 t('全画面から必ず出られる（閉じ込めない・v78）', () => {
   ok(/function setMapFull/.test(code), 'setMapFull が無い');
   ok(/getElementById\('mapFull'\)\.addEventListener\('click'/.test(code), '全画面ボタンの配線が無い');
-  ok(/key === 'Escape' && mapFull/.test(code), 'Esc で出られない＝出口が1つしか無い');
+  // v91 で Esc は「上に居るものから閉じる」1箇所の判断になった（期間の板 → 地図の全画面）
+  const esc = code.slice(code.indexOf("e.key !== 'Escape'"));
+  ok(/e\.key !== 'Escape'/.test(code), 'Esc の受け口が無い＝出口が1つしか無い');
+  ok(/closePeriodSheet\(\)/.test(esc.slice(0, 400)) && /setMapFull\(false\)/.test(esc.slice(0, 400)),
+    'Esc が上から順に閉じていない（板を開いたまま地図だけ閉じる／どちらも閉じない）');
   const toggle = code.slice(code.indexOf("getElementById('mapBox').addEventListener('toggle'"));
   ok(/setMapFull\(false\)/.test(toggle.slice(0, 400)),
     '地図の段を畳んでも全画面が残る＝出口の無い画面ができる');
@@ -361,6 +365,78 @@ t('大きさが変わったら描き直す（全画面の出入り・回転）',
   ok(/clearTimeout\(mapResizeTimer\)/.test(code), 'まとめずに毎回描き直す＝連続 resize でちらつく');
   ok(/requestAnimationFrame\(\(\) => drawMap\(\)\)/.test(bodyOf('setMapFull')),
     '全画面に切り替えた直後に測っている＝class を当てる前の古い大きさで描く（v78 の親戚）');
+});
+
+// ===== 11-c. 期間で絞る（v91・ゆう要求） =====
+// この機能の固有の壊れ方＝**絞っているのに気づかず「保存した行が消えた」と読む**こと。
+// だから「1箇所で絞る」と「絞っていることを見せる」を機械で見張る。
+t('期間は visibleRecords に合流する（リスト・地図・CSV が同じ行を見る）', () => {
+  const body = bodyOf('visibleRecords');
+  ok(/VCPeriod\.windowFor/.test(body) && /VCPeriod\.inWindow/.test(body),
+    '期間の判定が visibleRecords の外にある＝読み手ごとに見えている行が食い違う（v74 の形）');
+  const calls = countOf(/VCPeriod\.inWindow\s*\(/g);
+  ok(calls === 1, `inWindow の呼び出しが ${calls} 箇所＝絞る場所が増えている`);
+});
+
+t('期間の計算は engine（「今日の午前は何時か」を宿主に書かない）', () => {
+  for (const fn of ['visibleRecords', 'renderPeriodUi', 'setPeriod']) {
+    ok(!/12 \* 3600|86400000|setHours\(/.test(bodyOf(fn)),
+      `${fn} が時刻の計算を持っている＝engine/period.js と規則が2つに割れる`);
+  }
+  ok(/VCPeriod\.PRESETS/.test(bodyOf('renderPeriodUi')), '選択肢の表を宿主が持っている（engine と二重管理）');
+});
+
+t('入口は2つでも板は1枚（設定を2つ作らない）', () => {
+  ok(/getElementById\('periodBtn'\)\.addEventListener\('click', openPeriodSheet\)/.test(code)
+    && /getElementById\('mapPeriod'\)\.addEventListener\('click', openPeriodSheet\)/.test(code),
+    'リストと地図が別々の板を開いている＝設定が2つに割れる');
+  ok(countOf(/function openPeriodSheet/g) === 1, '板を開く関数が複数ある');
+});
+
+t('選んだ瞬間に効く（「適用」ボタンを作らない・v89 と同じ線）', () => {
+  ok(/renderRecords\(\)/.test(bodyOf('setPeriod')), '選んでも描き直していない＝押しても何も起きない');
+  ok(!/id="periodApply"/.test(html), '適用ボタンが増えている＝押し忘れが戻る');
+  ok(/saveRecView\(\)/.test(bodyOf('setPeriod')), '選択が残らない＝開き直すたびに戻る');
+});
+
+t('絞っていることを常に見せる（黙って隠さない）', () => {
+  ok(/periodBtnLabel/.test(bodyOf('renderPeriodUi')), 'ボタンに今の期間が出ていない');
+  ok(/function periodActive/.test(code), 'periodActive が無い');
+  ok(/periodActive\(\)/.test(bodyOf('drawMap')), '地図の説明に期間が出ない＝全画面で理由が消える');
+  ok(/periodActive\(\)/.test(bodyOf('renderRecordsList')), 'リストが0件の理由に期間が出ない');
+  ok(/rows\.length\}\/\$\{all\.length\}件/.test(bodyOf('renderRecordsList')),
+    '件数が「N/M件」になっていない＝減ったのが絞りのせいだと分からない');
+  const csv = code.slice(code.indexOf("getElementById('recordsCsv').addEventListener"));
+  ok(/periodActive\(\)/.test(csv.slice(0, 1200)), 'CSV の返事に期間が出ない＝全部のつもりで書き出す');
+});
+
+// v48 の縦積み（flex が縮めた結果、日本語のラベルが1文字ずつ割れる）の再発防止。
+// 期間ボタンは**選んだ期間で幅が変わる**（「8/10〜8/12」）＝伸びる前提で組んでおく必要がある。
+t('絞りの行は縮めずに折り返す（v48 の縦積みを作らない）', () => {
+  // cssBlock はこのファイルの後ろで定義される（const＝巻き上がらない）ので、ここでは自前で切り出す
+  const ruleOf = (sel) => {
+    const i = html.indexOf(sel + ' {');
+    ok(i > 0, `${sel} の規則が見つからない（名前を変えたならこのテストも直す）`);
+    return html.slice(i, html.indexOf('}', i)).replace(/\/\*[\s\S]*?\*\//g, '');
+  };
+  ok(/flex-wrap:\s*wrap/.test(ruleOf('.rec-filters')), '.rec-filters が折り返さない＝狭い端末でラベルが1文字ずつ割れる');
+  ok(/white-space:\s*nowrap/.test(ruleOf('.rec-filters label')), 'ラベルが途中で折れる');
+  ok(/white-space:\s*nowrap/.test(ruleOf('.period-btn')), '期間ボタンの文字が途中で折れる');
+});
+
+t('期間の板から必ず出られる（閉じ込めない・v78）', () => {
+  for (const id of ['periodClose', 'periodBack']) {
+    ok(new RegExp(`getElementById\\('${id}'\\)\\.addEventListener\\('click', closePeriodSheet\\)`).test(code),
+      `${id} で閉じられない`);
+  }
+});
+
+t('期間の板は地図の全画面より上・録音より下（v86 の表）', () => {
+  const sheetZ = Number((html.match(/\.period-sheet \{[\s\S]*?z-index:\s*(\d+)/) || [])[1]);
+  const fullZ = Number((html.match(/\.map-wrap\.full \{[\s\S]*?z-index:\s*(\d+)/) || [])[1]);
+  const micZ = Number((html.match(/body\.recording #micStage \{[\s\S]*?z-index:\s*(\d+)/) || [])[1]);
+  ok(sheetZ > fullZ, `板(${sheetZ}) が地図の全画面(${fullZ}) の下＝全画面から開いても見えない`);
+  ok(sheetZ < micZ, `板(${sheetZ}) が録音(${micZ}) 以上＝録音が始まっても板が上に残る`);
 });
 
 t('地図の計算は engine（宿主で三角関数を書き直さない）', () => {
