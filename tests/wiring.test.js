@@ -248,9 +248,12 @@ t('整えるボタンは「キーがある」「長い」の両方で出す（�
   const re = /getElementById\('rewriteRow'\)/g;
   const all = countOf(re), inside = (body.match(re) || []).length;
   ok(all > 0 && all === inside, `rewriteRow を refreshRewriteRow の外で触っている（外に ${all - inside} 箇所）`);
-  // 出す条件が変わったら見直される場所も固定（キーの有無は renderAiConfig が唯一の反映点）
-  ok(/refreshRewriteRow\s*\(\s*\)/.test(bodyOf('renderAiConfig')),
+  // 出す条件が変わったら見直される場所も固定。v89 でキーの反映点は refreshAiState に移した
+  // （自動保存が入って「キーが変わる瞬間」が増えたため＝反映は1箇所に集める）。
+  ok(/refreshRewriteRow\s*\(\s*\)/.test(bodyOf('refreshAiState')),
     'キーを保存/削除しても行が見直されない＝設定した直後に出ない／消しても残る');
+  ok(/refreshAiState\s*\(\s*\)/.test(bodyOf('renderAiConfig')),
+    '設定の描画が保存済みの姿を反映していない');
 });
 
 t('整えた結果は来歴に残り、↩ で戻せる（黙って書き換えない）', () => {
@@ -292,6 +295,72 @@ t('地図は開くまで画像を取りに行かない（閉じている間は�
 
 t('地図の出典表示が在る（OpenStreetMap の利用条件）', () => {
   ok(/map-attr/.test(html) && /OpenStreetMap/.test(html), '出典表示が無い＝タイルを使う条件を満たさない');
+});
+
+// ===== 11-b. 地図の全画面（v90・ゆう要求） =====
+// 全画面は「隠す」変更＝**外に置いてあったものが黙って見えなくなる**のがこの機能固有の壊れ方。
+// （説明＝画面外の件数の申告 v16／選んだピンのカード＝押した結果）。ここを機械で見張る。
+t('全画面は CSS で覆う（Fullscreen API は本命の実機で効かない）', () => {
+  ok(/\.map-wrap\.full \{/.test(html), '全画面の規則が無い（名前を変えたならこのテストも直す）');
+  ok(!/requestFullscreen|webkitRequestFullscreen|exitFullscreen/.test(code),
+    'Fullscreen API を使っている＝iOS Safari / WKWebView は要素の全画面化を持たない（動かない道）');
+});
+
+t('全画面から必ず出られる（閉じ込めない・v78）', () => {
+  ok(/function setMapFull/.test(code), 'setMapFull が無い');
+  ok(/getElementById\('mapFull'\)\.addEventListener\('click'/.test(code), '全画面ボタンの配線が無い');
+  ok(/key === 'Escape' && mapFull/.test(code), 'Esc で出られない＝出口が1つしか無い');
+  const toggle = code.slice(code.indexOf("getElementById('mapBox').addEventListener('toggle'"));
+  ok(/setMapFull\(false\)/.test(toggle.slice(0, 400)),
+    '地図の段を畳んでも全画面が残る＝出口の無い画面ができる');
+  ok(/if \(mapFull\) setMapFull\(false\);/.test(bodyOf('refreshMap')),
+    '点が無くなった時に全画面から出ない＝器ごと隠れて中の説明も消える');
+});
+
+t('全画面では説明と選んだピンのカードも地図の中へ移す（外は見えない）', () => {
+  const body = bodyOf('setMapFull');
+  ok(/wrap\.appendChild\(hint\)/.test(body) && /wrap\.appendChild\(sel\)/.test(body),
+    '全画面で説明・選択カードを地図の中へ移していない＝画面外の件数もピンを押した結果も見えない');
+  ok(/mapHintHome/.test(body) && /mapSelHome/.test(body),
+    '元の置き場所へ戻していない＝一度全画面にすると通常表示が壊れる');
+  ok(/\.map-wrap\.full \.map-hint/.test(html) && /\.map-wrap\.full \.map-sel/.test(html),
+    '移した先の見た目の規則が無い＝地図に重ねただけで読めない');
+});
+
+t('全画面の重なりは dock より上・録音より下（v86 の表に載せる）', () => {
+  const fullZ = Number((html.match(/\.map-wrap\.full \{[\s\S]*?z-index:\s*(\d+)/) || [])[1]);
+  const dockZ = Number((html.match(/\.dock \{[\s\S]*?z-index:\s*(\d+)/) || [])[1]);
+  const micZ = Number((html.match(/body\.recording #micStage \{[\s\S]*?z-index:\s*(\d+)/) || [])[1]);
+  const toastZ = Number((html.match(/\.toast[\s\S]*?z-index:\s*(\d+)/) || [])[1]);
+  ok(fullZ > dockZ, `全画面(${fullZ}) が下のバー(${dockZ}) の下＝地図の上にバーが残る`);
+  ok(fullZ < micZ, `全画面(${fullZ}) が録音中の画面(${micZ}) 以上＝録音が始まっても本体が見えない`);
+  ok(fullZ < toastZ, `全画面(${fullZ}) が toast(${toastZ}) 以上＝告げるものが隠れる（v86 の実バグ）`);
+});
+
+// 🔴 v90 で見つかった実バグ（v81 から在った・全画面の E2E が暴いた）: `pointerdown` で即
+//    `setPointerCapture` すると、**その後の click は捕まえた要素に届く**＝中のピンの click は一生来ない。
+//    説明文は「点を押すと内容が出ます」と言っていた＝画面が嘘をついていた。
+t('地図を掴むのは動き始めてから（押しただけではピンの click を奪わない）', () => {
+  const drag = code.slice(code.indexOf('function wireMapDrag'));
+  const body = drag.slice(0, drag.indexOf('\n})();'));
+  const down = body.slice(body.indexOf("addEventListener('pointerdown'"), body.indexOf("addEventListener('pointermove'"));
+  ok(!/setPointerCapture/.test(down),
+    'pointerdown で捕まえている＝ピンを押しても選べない（v81 の実バグそのもの）');
+  ok(/setPointerCapture/.test(body.slice(body.indexOf("addEventListener('pointermove'"))),
+    '動き始めても捕まえない＝指が地図から外れるとドラッグが切れる');
+  ok(/MAP_DRAG_SLOP/.test(body), '閾値が無い＝指の揺れでタップが地図の移動になる');
+});
+
+t('点が無い時は描かない（説明文を上書きしない）', () => {
+  ok(/!mapPoints\.length\) return/.test(bodyOf('drawMap')),
+    '0件でも描く＝「位置が付かない理由」を「0件の位置。ドラッグで…」で上書きする（E2E で発覚）');
+});
+
+t('大きさが変わったら描き直す（全画面の出入り・回転）', () => {
+  ok(/addEventListener\('resize'/.test(code), 'resize を見ていない＝回転するとタイルがズレたまま');
+  ok(/clearTimeout\(mapResizeTimer\)/.test(code), 'まとめずに毎回描き直す＝連続 resize でちらつく');
+  ok(/requestAnimationFrame\(\(\) => drawMap\(\)\)/.test(bodyOf('setMapFull')),
+    '全画面に切り替えた直後に測っている＝class を当てる前の古い大きさで描く（v78 の親戚）');
 });
 
 t('地図の計算は engine（宿主で三角関数を書き直さない）', () => {
@@ -378,12 +447,55 @@ t('モデル一覧は押した時だけ取りに行く（起動時に勝手に�
   ok(/VCAI\.listModels/.test(bodyOf('fetchModelList')), '取得が fetchModelList の外にある');
 });
 
-t('選んだモデルは「欄を埋めるだけ」＝保存の形は今までどおり', () => {
+t('選んだモデルは「欄を埋めるだけ」＝保存される形はただの文字列', () => {
   ok(/getElementById\('aiModel'\)\.value = v/.test(code),
     'プルダウンがモデル欄を埋めていない＝選んでも保存に反映されない／別の保存経路ができている');
-  // 保存は今までどおり aiSave の1箇所（プルダウンから直接保存しない）
+  // 保存の道は1本（v74）＝ saveConfig を呼ぶのは saveAiConfig だけ。入口がいくつ増えてもここを通る
   const saves = countOf(/VCAI\.saveConfig\s*\(/g);
   ok(saves === 1, `saveConfig の呼び出しが ${saves} 箇所＝保存の道が増えている（v74 の形）`);
+  ok(/VCAI\.saveConfig\s*\(/.test(bodyOf('saveAiConfig')), '保存が saveAiConfig の外にある');
+});
+
+// ===== 12-b. AI 設定は「変えた時点で保存」（v89・実機FB第49回） =====
+// 実バグの形: キーやモデルを変えて**保存ボタンを押し忘れる**と、画面には新しい値が見えているのに
+// 動くのは古い設定＝**画面が嘘をつく**（v20 の「表示と操作結果の食い違い」）。ボタンを消したので、
+// 「入口が全部つながっているか」を機械で見張らないと**黙って保存されない欄**が生まれる。
+t('保存ボタンが存在しない（押し忘れの余地を作らない）', () => {
+  ok(!/id="aiSave"/.test(html), 'AI 設定に保存ボタンが復活している＝押し忘れの事故が戻る');
+  ok(!/getElementById\('aiSave'\)/.test(code), 'aiSave の配線が残っている');
+});
+
+t('3つの入口（プロバイダ・モデル・キー）がすべて自動保存を通る', () => {
+  ok(/function saveAiConfig/.test(code), 'saveAiConfig が無い');
+  const after = (needle) => {
+    const i = code.indexOf(needle);
+    ok(i > 0, `${needle} が見つからない`);
+    return code.slice(i, i + 700);
+  };
+  ok(/saveAiConfig\('provider'\)/.test(after("getElementById('aiProvider').addEventListener")),
+    'プロバイダを変えても保存されない');
+  ok(/saveAiConfig\('model'\)/.test(after("getElementById('aiModel').addEventListener('change'")),
+    'モデル欄を直しても保存されない');
+  ok(/saveAiConfig\('model'\)/.test(after("getElementById('aiModelList').addEventListener('change'")),
+    '一覧から選んでも保存されない');
+  ok(/saveAiConfig\('key'\)/.test(after("getElementById('aiKey').addEventListener('change'")),
+    'キーを入れても保存されない');
+  ok(/getElementById\('aiKey'\)\.addEventListener\('paste'/.test(code),
+    '貼り付けで保存されない＝キーは貼って終わりなので、離れる操作が無いまま閉じられる');
+});
+
+t('黙って保存しない・失敗も黙らない（v16）', () => {
+  const body = bodyOf('saveAiConfig');
+  ok(/setAiSavedNote\(`✅/.test(body), '保存したことを画面に出していない＝押した実感の代わりが無い');
+  ok(/setAiSavedNote\(`⚠/.test(body) && /toast\(`保存できませんでした/.test(body),
+    '保存に失敗した時に黙る＝「設定したつもり」が残る');
+});
+
+t('入力中のキー欄を消さない／保存後は画面に書き戻さない（v40 の約束）', () => {
+  const body = bodyOf('refreshAiState');
+  ok(/activeElement !== keyEl/.test(body) && /keyEl\.value = ''/.test(body),
+    'キー欄の扱いが「フォーカス中は触らない・それ以外は空へ」になっていない');
+  ok(!/keyEl\.value = cfg\.key/.test(code), 'キーを DOM に書き戻している（v40 の約束違反）');
 });
 
 t('プロバイダを変えたら古い一覧を残さない（別社のモデルを選べる事故を防ぐ・v43）', () => {
