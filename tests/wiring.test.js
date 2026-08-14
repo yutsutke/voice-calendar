@@ -424,6 +424,18 @@ t('絞りの行は縮めずに折り返す（v48 の縦積みを作らない）'
   ok(/white-space:\s*nowrap/.test(ruleOf('.period-btn')), '期間ボタンの文字が途中で折れる');
 });
 
+// 🔴 実機FB第50回（v92）: 地図の 📆 は**地図の枠の中**に居るので、0 件で枠ごと隠すと
+//    「期間を変える手段」まで消えていた＝**行き止まり**（v78 の違反）。説明文も「まだありません」の
+//    一択で、期間で 0 件にした人には嘘だった（v51）。
+t('地図が0件でも出口が残る（枠ごと消えても期間を変えられる）', () => {
+  const body = bodyOf('refreshMap');
+  ok(/map-empty-actions/.test(body), '0件の時に出口を置いていない＝地図から期間を触れなくなる');
+  ok(/openPeriodSheet/.test(body), '0件の画面から板を開けない');
+  ok(/setPeriod\('all'\)/.test(body), '「全期間に戻す」の1押しが無い＝いちばん多い出口が遠い');
+  ok(/periodActive\(\)/.test(body) && /VCPeriod\.labelOf/.test(body),
+    '0件の理由を言い分けていない＝期間で消えたのに「まだありません」と言う（v51 の腐り）');
+});
+
 t('期間の板から必ず出られる（閉じ込めない・v78）', () => {
   for (const id of ['periodClose', 'periodBack']) {
     ok(new RegExp(`getElementById\\('${id}'\\)\\.addEventListener\\('click', closePeriodSheet\\)`).test(code),
