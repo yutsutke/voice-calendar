@@ -295,8 +295,13 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
   }
 
   /* ---- リスト（v32: 保存した記録📝と予定📅の時系列） ---- */
-  .rec-filters { display: flex; gap: 18px; padding: 10px 2px 8px; font-size: 13px; border-bottom: 1px solid var(--line); }
-  .rec-filters label { display: flex; align-items: center; gap: 6px; cursor: pointer; user-select: none; }
+  /* v91: **入り切らない時は折り返す**（縮めない）。v48 の縦積みと同じ形＝flex が幅の主張の無い項目を
+     縮めると、日本語は語境界が無いので「📅 予定」が1文字ずつ割れる（実測: 320px 幅で高さ 27→44px）。
+     期間ボタンは選んだ期間で幅が変わる（「8/10〜8/12」）＝**伸びる前提**で組む。 */
+  .rec-filters { display: flex; flex-wrap: wrap; gap: 10px 18px; padding: 10px 2px 8px; font-size: 13px;
+    border-bottom: 1px solid var(--line); }
+  .rec-filters label { display: flex; align-items: center; gap: 6px; cursor: pointer; user-select: none;
+    white-space: nowrap; }
   .rec-filters input[type="checkbox"] { width: 16px; height: 16px; }
   .rec-scroll { max-height: 320px; overflow-y: auto; position: relative; -webkit-overflow-scrolling: touch; }
   .rec-day { font-size: 11px; font-weight: 600; color: var(--sub); padding: 8px 0 2px; }
@@ -432,6 +437,35 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
   .map-wrap.full .map-sel { position: absolute; left: 8px; right: 8px; bottom: calc(var(--sab) + 22px);
     z-index: 5; margin-top: 0; max-height: 34%; overflow-y: auto; }
   .map-empty { font-size: 13px; color: var(--sub); padding: 18px 2px; line-height: 1.7; }
+  /* ---- 期間で絞る（v91） ----
+     見た目は既存の語彙だけで作る（v46）＝面は --card・線は --line・効いている印は --accent。
+     板は画面に固定＝**地図の全画面(50)の上・録音(60)の下**（v86 の重なりの表）。 */
+  .period-btn { border: 1px solid var(--line); background: var(--card); color: var(--ink);
+    font-size: 12px; font-family: inherit; padding: 4px 10px; border-radius: 999px; cursor: pointer;
+    white-space: nowrap; }
+  .period-btn:active { opacity: .6; }
+  .period-btn.on { border-color: var(--accent); color: var(--accent); }   /* 絞っている間はひと目で分かる */
+  .period-sheet { position: fixed; inset: 0; z-index: 55; display: flex; align-items: flex-end; justify-content: center; }
+  .period-sheet[hidden] { display: none; }
+  .period-back { position: absolute; inset: 0; background: rgb(0 0 0 / .35); }
+  .period-card { position: relative; width: 100%; max-width: 520px; background: var(--bg);
+    border: 1px solid var(--line); border-radius: 16px 16px 0 0; padding: 14px 16px calc(var(--sab) + 16px);
+    max-height: 80vh; overflow-y: auto; }
+  .period-head { font-size: 14px; font-weight: 700; color: var(--ink); padding-bottom: 10px; }
+  .period-now { color: var(--accent); font-size: 12px; font-weight: 400; margin-left: 8px; }
+  .period-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .period-chips button { flex: 0 0 auto; padding: 9px 14px; border: 1px solid var(--line); border-radius: 999px;
+    background: var(--card); color: var(--ink); font-size: 14px; font-family: inherit; cursor: pointer; }
+  .period-chips button.on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+  .period-custom { display: flex; flex-wrap: wrap; gap: 10px; padding: 12px 2px 2px; font-size: 13px; color: var(--sub); }
+  .period-custom[hidden] { display: none; }
+  .period-custom input { margin-left: 6px; padding: 7px 10px; border: 1px solid var(--line); border-radius: 8px;
+    background: var(--card); color: var(--ink); font-size: 14px; font-family: inherit; }
+  .period-note { font-size: 12px; color: var(--warn); padding: 8px 2px 0; line-height: 1.5; }
+  .period-hint { font-size: 11px; color: var(--sub); padding: 10px 2px 0; line-height: 1.55; }
+  .period-foot { display: flex; justify-content: flex-end; padding-top: 12px; }
+  .period-foot button { padding: 9px 18px; border: 1px solid var(--line); border-radius: 10px;
+    background: var(--card); color: var(--ink); font-size: 14px; font-family: inherit; cursor: pointer; }
   /* ---- 辞書（v37: 言い回し→実文字列の置き換え） ---- */
   .dict-hint { font-size: 12px; color: var(--sub); padding: 8px 2px; line-height: 1.6; }
   .dict-row { display: flex; align-items: center; gap: 8px; padding: 7px 2px; border-bottom: 1px solid var(--line); font-size: 13px; }
@@ -717,6 +751,10 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
       <div class="rec-filters">
         <label><input type="checkbox" id="recShowPlan" checked> 📅 予定</label>
         <label><input type="checkbox" id="recShowRecord" checked> 📝 記録</label>
+        <!-- v91（ゆう要求「アイコンを開くと期間を選べる」）: 📅/📝 と**同じ列**に置く＝どちらも
+             「今この画面に出す行を決めるもの」＝仲間だと見た目で分かる。押すと期間の板が開く。
+             ラベルに今の期間を出す＝**絞っていることが常に見える**（件数が減った理由を探させない） -->
+        <button type="button" class="period-btn" id="periodBtn">📆 <span id="periodBtnLabel">全期間</span></button>
       </div>
       <div class="rec-scroll" id="recScroll"><div id="recordsList"></div></div>
       <div class="history-actions"><button id="recordsCsv" type="button">CSV書き出し</button><button id="recordsClear" type="button">リストを空にする</button></div>
@@ -744,6 +782,9 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
                （⛶ ⇄ ✕）＝新しい語彙も新しい置き場所も増やさない。**出口は常に2つ**（このボタン／Esc）
                ＝閉じ込めない（v78 の不変条件） -->
           <button id="mapFull" type="button" class="map-fit" aria-label="地図を全画面にする">⛶</button>
+          <!-- v91: 地図からも期間を触れる（全画面のまま絞れないと、いちいち出て戻ることになる）。
+               開くのは**リストと同じ板**＝設定は1つ・入口が2つ（v74「分岐は複製せず1箇所」） -->
+          <button id="mapPeriod" type="button" class="map-fit" aria-label="期間で絞る">📆</button>
         </div>
         <div class="map-attr">© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors</div>
       </div>
@@ -897,26 +938,49 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
 </div>
 <div class="toast" id="toast"></div>
 
+<!-- 期間で絞る板（v91・ゆう要求「アイコンを設定して、それを開くと、期間を選べる。今日の午前、今日の午後、
+     今日、三日、一週間、全期間、任意の期間」）。
+     🔑 **板は1枚**＝リストからも地図からも同じものが開く（入口は2つ・設定は1つ＝v74）。
+     🔑 **選んだ瞬間に効く**＝「適用」ボタンを作らない（v89 で保存ボタンを消したのと同じ理由）。
+     🚫 閉じ込めない（v78）＝出口は3つ（閉じる／背景をタップ／Esc）。
+     位置は画面に固定＝**地図の全画面(50)の上・録音(60)の下**（v86 の重なりの表に載せる）。 -->
+<div class="period-sheet" id="periodSheet" hidden>
+  <div class="period-back" id="periodBack"></div>
+  <div class="period-card" role="dialog" aria-label="期間を選ぶ">
+    <div class="period-head">📆 期間で絞る<span class="period-now" id="periodNow"></span></div>
+    <div class="period-chips" id="periodChips"></div>
+    <div class="period-custom" id="periodCustom" hidden>
+      <label>開始 <input type="date" id="periodFrom"></label>
+      <label>終了 <input type="date" id="periodTo"></label>
+    </div>
+    <!-- 0件になる理由（逆順・読めない日付）をここに出す＝黙って0件にしない（v16） -->
+    <div class="period-note" id="periodNote"></div>
+    <div class="period-hint">予定・記録の<b>開始日時</b>で絞ります。リスト・地図・CSV書き出しに同じように効きます。</div>
+    <div class="period-foot"><button id="periodClose" type="button">閉じる</button></div>
+  </div>
+</div>
+
 <!-- ?v= は BUILD と必ず同じ版にする（tests/version.test.js が強制）。
      理由: この版文字列は index.html にしかないが、ロジックは別ファイル＝別キャッシュ。
      付けないと「フッタは新しいのにパーサは古い」という嘘の状態が成立する（v9 で実際に踏んだ）。
      index.html が更新されれば src の URL も変わる → JS も必ず新しく取り直される。 -->
-<script src="engine/settings.js?v=90"></script>
-<script src="engine/schema.js?v=90"></script>
-<script src="engine/parser.js?v=90"></script>
-<script src="engine/dictionary.js?v=90"></script>
-<script src="engine/contract.js?v=90"></script>
-<script src="engine/batch.js?v=90"></script>
-<script src="engine/ai.js?v=90"></script>
-<script src="engine/rewrite.js?v=90"></script>
-<script src="input/transcriber.js?v=90"></script>
-<script src="adapters/calendar.js?v=90"></script>
-<script src="adapters/records.js?v=90"></script>
-<script src="adapters/location.js?v=90"></script>
-<script src="engine/geomap.js?v=90"></script>
+<script src="engine/settings.js?v=91"></script>
+<script src="engine/schema.js?v=91"></script>
+<script src="engine/parser.js?v=91"></script>
+<script src="engine/dictionary.js?v=91"></script>
+<script src="engine/contract.js?v=91"></script>
+<script src="engine/batch.js?v=91"></script>
+<script src="engine/ai.js?v=91"></script>
+<script src="engine/rewrite.js?v=91"></script>
+<script src="input/transcriber.js?v=91"></script>
+<script src="adapters/calendar.js?v=91"></script>
+<script src="adapters/records.js?v=91"></script>
+<script src="adapters/location.js?v=91"></script>
+<script src="engine/geomap.js?v=91"></script>
+<script src="engine/period.js?v=91"></script>
 <script>
 'use strict';
-const BUILD = 'v90：地図を全画面で見られる · 2026-08-14';
+const BUILD = 'v91：期間で絞る（リスト・地図・CSV） · 2026-08-14';
 console.log('BUILD:', BUILD);
 document.getElementById('build').textContent = BUILD;
 
@@ -1679,19 +1743,36 @@ recheckGeoPermission('起動'); // 起動時にも一度＝前回の拒否を引
 const REC_VIEW_KEY = 'vc_recview_v1';
 const recShowPlan = document.getElementById('recShowPlan');
 const recShowRecord = document.getElementById('recShowRecord');
+// v91: 期間の選択も「今この画面に出す行」の一部＝同じ入れ物に置く（表示の状態を2箇所に分けない）
+let periodSel = window.VCPeriod ? VCPeriod.normalize(null) : { id: 'all', from: '', to: '' };
 (function initRecView() {
   try {
     const v = JSON.parse(localStorage.getItem(REC_VIEW_KEY)) || {};
     recShowPlan.checked = v.plan !== false;
     recShowRecord.checked = v.record !== false;
-  } catch { /* 壊れた表示状態は既定（両方オン）で動く */ }
+    if (window.VCPeriod) periodSel = VCPeriod.normalize(v.period);
+  } catch { /* 壊れた表示状態は既定（両方オン・全期間）で動く */ }
 })();
+function saveRecView() {
+  try {
+    localStorage.setItem(REC_VIEW_KEY, JSON.stringify({
+      plan: recShowPlan.checked, record: recShowRecord.checked, period: periodSel,
+    }));
+  } catch { /* 保存できなくても表示は動く（次の起動で既定へ戻るだけ） */ }
+}
 // v80: 「今この画面に出ている行」を決めるのは**この1関数だけ**。v36（CSV）と描画で同じ式が2箇所に
 // 複製されており、v81 で地図が3つ目の読み手になる＝ v74 の実バグ（同じ判断が2本の道に分かれ、
 // 片方だけ更新されて食い違う）とまったく同じ形になる直前だった。**WYSIWYG は1箇所から導く**。
+// v91: 期間（📆）も**この1関数**に合流させる＝リスト・地図・CSV が同じ行を見る（WYSIWYG は1箇所から）。
 function visibleRecords() {
   if (!window.VCRecords) return [];
-  return VCRecords.list().filter((r) => (r.kind === 'plan' ? recShowPlan.checked : recShowRecord.checked));
+  const win = window.VCPeriod ? VCPeriod.windowFor(periodSel, new Date()) : null;
+  return VCRecords.list().filter((r) => (r.kind === 'plan' ? recShowPlan.checked : recShowRecord.checked))
+    .filter((r) => (win ? VCPeriod.inWindow(r.startMs, win) : true));
+}
+// 今、期間で絞っているか（＝全部が対象ではないか）。表示の言い方をここ1箇所から導く
+function periodActive() {
+  return !!(window.VCPeriod && VCPeriod.windowFor(periodSel, new Date()));
 }
 // v75: 台帳が変わったら**来歴の ✏️ も撮り直す**（ラベルは台帳のタイトル・消えた行はボタンごと消える）。
 // 🔑 ここ1箇所に置く＝台帳を書き換える入口（保存・更新・削除・全消し・位置付与）は全部 renderRecords を
@@ -1713,14 +1794,23 @@ function renderRecordsList() {
     return;
   }
   const all = VCRecords.list();
-  document.getElementById('recCount').textContent = all.length ? `${all.length}件` : '';
   const rows = visibleRecords();
+  // v91: 絞っている時は「今出ている件数／全部の件数」＝**減っているのが絞りのせいだと分かる**
+  document.getElementById('recCount').textContent =
+    !all.length ? '' : rows.length === all.length ? `${all.length}件` : `${rows.length}/${all.length}件`;
   if (!rows.length) {
     const d = document.createElement('div');
     d.className = 'rec-empty';
-    d.textContent = all.length
-      ? '表示する種類が両方オフになっています（上の 📅/📝 をオンに）'
-      : 'まだ何もありません。詳細設定の「保存先」を「リスト」か「両方」にして保存すると、ここに時系列で残ります。';
+    // 0件の理由は正確に言う（v51「説明文の腐り」＝機能が増えたら、それを指す説明も直す）
+    const kindOff = !recShowPlan.checked && !recShowRecord.checked;
+    d.textContent = !all.length
+      ? 'まだ何もありません。詳細設定の「保存先」を「リスト」か「両方」にして保存すると、ここに時系列で残ります。'
+      : kindOff
+        ? '表示する種類が両方オフになっています（上の 📅/📝 をオンに）'
+        : periodActive()
+          ? `期間「${VCPeriod.labelOf(periodSel)}」に入る行がありません（📆 で期間を変えられます）`
+            + (VCPeriod.problemOf(periodSel) ? `／${VCPeriod.problemOf(periodSel)}` : '')
+          : '表示する行がありません';
     listEl.appendChild(d);
     return;
   }
@@ -1817,11 +1907,70 @@ function recItem(r) {
   return item;
 }
 for (const el of [recShowPlan, recShowRecord]) {
-  el.addEventListener('change', () => {
-    try { localStorage.setItem(REC_VIEW_KEY, JSON.stringify({ plan: recShowPlan.checked, record: recShowRecord.checked })); } catch {}
+  el.addEventListener('change', () => { saveRecView(); renderRecords(); });
+}
+
+// ===== v91: 期間で絞る（ゆう要求 2026-08-14） =====
+// 「アイコンを設定して、それを開くと、期間を選べる。今日の午前、今日の午後、今日、三日、一週間、
+//  全期間、任意の期間」。効かせる先は**リスト・地図・CSV すべて**（ゆう選択）＝ visibleRecords に合流。
+// 🔑 窓の計算は engine（VCPeriod）＝「今日の午前は何時から何時か」を宿主に書かない（SPEC §6）。
+// 🔑 **選んだ瞬間に効く**＝「適用」ボタンを作らない（v89 で保存ボタンを消したのと同じ理由）。
+// 🚨 **絞っていることを常に見せる**＝ボタンのラベル・件数（N/M件）・地図の説明・CSV の toast。
+//    見せないと「保存したはずの行が無い」に化ける（黙って隠さない＝v16 の表示版）。
+function renderPeriodUi() {
+  if (!window.VCPeriod) return;
+  const on = periodActive();
+  const label = VCPeriod.labelOf(periodSel);
+  const btn = document.getElementById('periodBtn');
+  document.getElementById('periodBtnLabel').textContent = label;
+  btn.classList.toggle('on', on);
+  document.getElementById('mapPeriod').classList.toggle('on', on);
+  document.getElementById('periodNow').textContent = on ? `いま: ${label}` : '';
+  const chips = document.getElementById('periodChips');
+  if (!chips.children.length) {                 // 一覧は engine の PRESETS から（表を2箇所に持たない）
+    for (const p of VCPeriod.PRESETS) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.dataset.pid = p.id;
+      b.textContent = p.label;
+      b.addEventListener('click', () => setPeriod(p.id));
+      chips.appendChild(b);
+    }
+  }
+  for (const b of chips.children) b.classList.toggle('on', b.dataset.pid === periodSel.id);
+  document.getElementById('periodCustom').hidden = periodSel.id !== 'custom';
+  document.getElementById('periodFrom').value = periodSel.from || '';
+  document.getElementById('periodTo').value = periodSel.to || '';
+  document.getElementById('periodNote').textContent = VCPeriod.problemOf(periodSel);
+}
+function setPeriod(id) {
+  periodSel = VCPeriod.normalize({ id, from: periodSel.from, to: periodSel.to });
+  saveRecView();
+  renderPeriodUi();
+  renderRecords();   // リスト・来歴・地図が同じ入口から描き直る（v75 の道をそのまま使う）
+}
+function openPeriodSheet() {
+  renderPeriodUi();
+  document.getElementById('periodSheet').hidden = false;
+}
+function closePeriodSheet() { document.getElementById('periodSheet').hidden = true; }
+document.getElementById('periodBtn').addEventListener('click', openPeriodSheet);
+document.getElementById('mapPeriod').addEventListener('click', openPeriodSheet);
+document.getElementById('periodClose').addEventListener('click', closePeriodSheet);
+document.getElementById('periodBack').addEventListener('click', closePeriodSheet);
+for (const id of ['periodFrom', 'periodTo']) {
+  document.getElementById(id).addEventListener('change', () => {
+    periodSel = VCPeriod.normalize({
+      id: 'custom',
+      from: document.getElementById('periodFrom').value,
+      to: document.getElementById('periodTo').value,
+    });
+    saveRecView();
+    renderPeriodUi();
     renderRecords();
   });
 }
+renderPeriodUi();  // 起動時＝前回の選択がそのまま画面に出る（保存した絞りを黙って解かない）
 // 開いたら「今」を中央へ＝「開くと、現在に近い記録のあたりが表示される」（要求そのもの）
 document.getElementById('recordsBox').addEventListener('toggle', () => {
   if (!document.getElementById('recordsBox').open) return;
@@ -1888,13 +2037,15 @@ document.getElementById('recordsClear').addEventListener('click', () => {
 document.getElementById('recordsCsv').addEventListener('click', async () => {
   if (!window.VCRecords) { toast('リスト機能を読み込めていません（詳細は「診断」）'); return; }
   const rows = visibleRecords();
-  if (!rows.length) { toast('書き出す行がありません（📅/📝 で表示中の行が対象です）'); return; }
+  if (!rows.length) { toast('書き出す行がありません（📅/📝 と 📆 で表示中の行が対象です）'); return; }
   const csv = VCRecords.toCsv(rows);
   const d = new Date();
   const p2 = (n) => String(n).padStart(2, '0');
   const name = `voice-calendar-${d.getFullYear()}${p2(d.getMonth() + 1)}${p2(d.getDate())}-${p2(d.getHours())}${p2(d.getMinutes())}.csv`;
   const nPlan = rows.filter((r) => r.kind === 'plan').length;
-  const label = `${rows.length}件（📅${nPlan}・📝${rows.length - nPlan}）`;
+  // v91: 期間で絞っている時は書き出しの返事にも出す＝**後で「全部のつもりだった」を作らない**
+  const label = `${rows.length}件（📅${nPlan}・📝${rows.length - nPlan}）`
+    + (periodActive() ? `／期間: ${VCPeriod.labelOf(periodSel)}` : '');
   const C = window.Capacitor;
   const isNative = !!(C && C.isNativePlatform && C.isNativePlatform());
   if (isNative) {
@@ -3507,6 +3658,8 @@ function drawMap() {
   const off = mapPoints.length - placed;
   document.getElementById('mapHint').textContent =
     `${mapPoints.length}件の位置` + (off ? `（うち${off}件は画面の外＝「全体」で戻せます）` : '')
+    // v91: 絞っている時はここにも出す＝全画面でも「点が少ないのは期間のせい」と分かる
+    + (periodActive() ? `／期間: ${VCPeriod.labelOf(periodSel)}` : '')
     + '。ドラッグで動かせます（＋−で拡大縮小・点を押すと内容が出ます）。';
 }
 
@@ -3610,7 +3763,12 @@ function setMapFull(on) {
   requestAnimationFrame(() => drawMap());
 }
 document.getElementById('mapFull').addEventListener('click', () => setMapFull(!mapFull));
-document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && mapFull) setMapFull(false); });
+// Esc は**上に居るものから閉じる**（v91 で期間の板が地図の全画面の上に載ったため、順番を1箇所で決める）
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape') return;
+  if (!document.getElementById('periodSheet').hidden) { closePeriodSheet(); return; }
+  if (mapFull) setMapFull(false);
+});
 // 画面の大きさが変わったら描き直す（全画面の出入り・回転・ソフトキーボード）。
 // **まとめて1回**にする＝連続する resize でタイルを毎回作り直すとちらつく（描き直しは DOM の作り直し）。
 let mapResizeTimer = null;
