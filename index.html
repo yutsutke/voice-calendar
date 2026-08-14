@@ -413,6 +413,24 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
     border: 1px solid var(--line); border-left: 4px solid var(--accent); font-size: 13px; line-height: 1.6; }
   .map-sel[hidden] { display: none; }
   .map-sel .map-sel-meta { color: var(--sub); font-size: 12px; }
+  /* ---- 全画面の地図（v90・ゆう要求「地図を全画面表示もできるようにしたい」） ----
+     🔬 **Fullscreen API は使わない**（推測でなく前提の確認・v85 の流儀）: iOS Safari / WKWebView は
+        **要素の全画面化を持たない**（`requestFullscreen` が効くのは video だけ）＝本命の実機で動かない。
+        CSS で画面を覆う方が、web・iOS・Android で**同じ1つの道**になる（入口を2つ作らない）。
+     🔒 重なりの順番（v86 の表）: dock(40) < **地図の全画面(50)** < 録音中(60) < 推敲(61) < toast(100)。
+        録音より下に置くのは、全画面で見ている最中に録音が始まっても（v24 の自動録音）**本体が隠れない**ため。 */
+  .map-wrap.full { position: fixed; inset: 0; width: auto; height: auto; z-index: 50;
+    border-radius: 0; border: none; }
+  body.mapfull { overflow: hidden; }                     /* 後ろのページが指で動かない（地図の操作に集中） */
+  .map-wrap.full .map-zoom { top: calc(var(--sat) + 8px); }   /* ノッチを避ける */
+  .map-wrap.full .map-attr { bottom: calc(var(--sab) + 4px); }
+  /* 全画面では**説明と選んだ点も地図の中へ移す**。外に置いたままだと、画面外の件数（v16 の申告）も
+     ピンを押した結果も見えない＝押しても何も起きないように見える。 */
+  .map-wrap.full .map-hint { position: absolute; left: 8px; top: calc(var(--sat) + 8px); z-index: 4;
+    max-width: calc(100% - 60px); padding: 4px 8px; border-radius: 8px;
+    background: rgb(255 255 255 / .82); color: #333; font-size: 11px; line-height: 1.5; }
+  .map-wrap.full .map-sel { position: absolute; left: 8px; right: 8px; bottom: calc(var(--sab) + 22px);
+    z-index: 5; margin-top: 0; max-height: 34%; overflow-y: auto; }
   .map-empty { font-size: 13px; color: var(--sub); padding: 18px 2px; line-height: 1.7; }
   /* ---- 辞書（v37: 言い回し→実文字列の置き換え） ---- */
   .dict-hint { font-size: 12px; color: var(--sub); padding: 8px 2px; line-height: 1.6; }
@@ -722,6 +740,10 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
           <!-- 動かした先で「点が画面の外にある」時に戻る道。これが無いと、外に出た点は
                探す手段が無い＝黙って消えたのと同じになる（v16） -->
           <button id="mapFitAll" type="button" class="map-fit" aria-label="全部が入るように戻す">全体</button>
+          <!-- v90（ゆう要求「地図を全画面表示もできるようにしたい」）: 同じボタンで出入りする
+               （⛶ ⇄ ✕）＝新しい語彙も新しい置き場所も増やさない。**出口は常に2つ**（このボタン／Esc）
+               ＝閉じ込めない（v78 の不変条件） -->
+          <button id="mapFull" type="button" class="map-fit" aria-label="地図を全画面にする">⛶</button>
         </div>
         <div class="map-attr">© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors</div>
       </div>
@@ -879,22 +901,22 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
      理由: この版文字列は index.html にしかないが、ロジックは別ファイル＝別キャッシュ。
      付けないと「フッタは新しいのにパーサは古い」という嘘の状態が成立する（v9 で実際に踏んだ）。
      index.html が更新されれば src の URL も変わる → JS も必ず新しく取り直される。 -->
-<script src="engine/settings.js?v=89"></script>
-<script src="engine/schema.js?v=89"></script>
-<script src="engine/parser.js?v=89"></script>
-<script src="engine/dictionary.js?v=89"></script>
-<script src="engine/contract.js?v=89"></script>
-<script src="engine/batch.js?v=89"></script>
-<script src="engine/ai.js?v=89"></script>
-<script src="engine/rewrite.js?v=89"></script>
-<script src="input/transcriber.js?v=89"></script>
-<script src="adapters/calendar.js?v=89"></script>
-<script src="adapters/records.js?v=89"></script>
-<script src="adapters/location.js?v=89"></script>
-<script src="engine/geomap.js?v=89"></script>
+<script src="engine/settings.js?v=90"></script>
+<script src="engine/schema.js?v=90"></script>
+<script src="engine/parser.js?v=90"></script>
+<script src="engine/dictionary.js?v=90"></script>
+<script src="engine/contract.js?v=90"></script>
+<script src="engine/batch.js?v=90"></script>
+<script src="engine/ai.js?v=90"></script>
+<script src="engine/rewrite.js?v=90"></script>
+<script src="input/transcriber.js?v=90"></script>
+<script src="adapters/calendar.js?v=90"></script>
+<script src="adapters/records.js?v=90"></script>
+<script src="adapters/location.js?v=90"></script>
+<script src="engine/geomap.js?v=90"></script>
 <script>
 'use strict';
-const BUILD = 'v89：AI 設定は変えた時点で保存（保存ボタンを無くした） · 2026-08-14';
+const BUILD = 'v90：地図を全画面で見られる · 2026-08-14';
 console.log('BUILD:', BUILD);
 document.getElementById('build').textContent = BUILD;
 
@@ -3449,7 +3471,9 @@ function mapSize() {
 }
 
 function drawMap() {
-  if (!mapView || !window.VCGeoMap) return;
+  // v90: 点が無い時は描かない。器ごと隠す側（refreshMap）が説明文に「位置が付かない理由」を書くので、
+  // 後から drawMap が走ると「0件の位置。ドラッグで…」で**上書きしてしまう**（E2E で発覚）。
+  if (!mapView || !window.VCGeoMap || !mapPoints.length) return;
   const { w, h } = mapSize();
   const tiles = document.getElementById('mapTiles');
   const pins = document.getElementById('mapPins');
@@ -3516,6 +3540,8 @@ function refreshMap() {
   if (!box.open) return;
   mapPoints = rows;
   if (!rows.length) {
+    // v90: 点が無くなったら全画面から出る＝地図の器ごと隠すので、中に移した説明が一緒に消えるのを防ぐ
+    if (mapFull) setMapFull(false);
     wrap.hidden = true;
     document.getElementById('mapSel').hidden = true;
     document.getElementById('mapPins').innerHTML = ''; // 隠した器の中に古い点を残さない（画面が嘘をつかない・v3）
@@ -3544,9 +3570,60 @@ function fitMapToAll() {
 }
 document.getElementById('mapFitAll').addEventListener('click', fitMapToAll);
 
+// ===== v90: 地図の全画面（ゆう要求 2026-08-14「地図を全画面表示もできるようにしたい」） =====
+// 🔬 **Fullscreen API は使わない**＝ iOS Safari / WKWebView は要素の全画面化を持たない（効くのは video だけ）
+//    ＝**本命の実機で動かない道**。CSS で覆えば web・iOS・Android が同じ1つの道になる（v85 の流儀＝
+//    「できる/できない」は推測でなく前提の確認から決める）。
+// 🔑 **見ている場所は変えない**（中心も倍率も保つ）＝広くなった分だけ周りが見える。全部を入れ直したければ
+//    「全体」を押す＝規則を2つ作らない（v81 の fit は engine の1関数のまま）。
+// 🚫 **閉じ込めない**（v78）＝出口は常に2つ（同じボタン／Esc）。
+// 🚨 **外に置いた説明と選択カードは全画面では見えない**＝地図の中へ移す。移さないと「画面外の件数」
+//    （v16 の申告）も、ピンを押した結果も消える＝**押しても何も起きないように見える**。
+let mapFull = false;
+const mapSelHome = (() => {                 // 元の置き場所を1度だけ覚える（戻せない移動をしない）
+  const el = document.getElementById('mapSel');
+  return { parent: el.parentNode, next: el.nextSibling };
+})();
+const mapHintHome = (() => {
+  const el = document.getElementById('mapHint');
+  return { parent: el.parentNode, next: el.nextSibling };
+})();
+
+function setMapFull(on) {
+  const wrap = document.getElementById('mapWrap');
+  const btn = document.getElementById('mapFull');
+  const sel = document.getElementById('mapSel');
+  const hint = document.getElementById('mapHint');
+  mapFull = !!on;
+  if (mapFull) {
+    wrap.appendChild(hint);
+    wrap.appendChild(sel);
+  } else {
+    mapHintHome.parent.insertBefore(hint, mapHintHome.next);
+    mapSelHome.parent.insertBefore(sel, mapSelHome.next);
+  }
+  wrap.classList.toggle('full', mapFull);
+  document.body.classList.toggle('mapfull', mapFull);
+  btn.textContent = mapFull ? '✕' : '⛶';
+  btn.setAttribute('aria-label', mapFull ? '全画面をやめる' : '地図を全画面にする');
+  // 大きさが変わってから測る（class を当てた直後の rect はまだ古い＝v78 で踏んだ「レイアウト前は 0」の親戚）
+  requestAnimationFrame(() => drawMap());
+}
+document.getElementById('mapFull').addEventListener('click', () => setMapFull(!mapFull));
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && mapFull) setMapFull(false); });
+// 画面の大きさが変わったら描き直す（全画面の出入り・回転・ソフトキーボード）。
+// **まとめて1回**にする＝連続する resize でタイルを毎回作り直すとちらつく（描き直しは DOM の作り直し）。
+let mapResizeTimer = null;
+window.addEventListener('resize', () => {
+  if (!mapView || !document.getElementById('mapBox').open) return;
+  clearTimeout(mapResizeTimer);
+  mapResizeTimer = setTimeout(() => drawMap(), 120);
+});
+
 document.getElementById('mapBox').addEventListener('toggle', () => {
   // 開いた瞬間に初めて地図の画像を取りに行く（閉じている間は1枚も要求しない）
   if (document.getElementById('mapBox').open) refreshMap();
+  else if (mapFull) setMapFull(false); // v90: 畳んだのに全画面が残る＝出口の無い画面を作らない
 });
 document.getElementById('mapZoomIn').addEventListener('click', () => {
   if (!mapView) return;
@@ -3559,17 +3636,32 @@ document.getElementById('mapZoomOut').addEventListener('click', () => {
   drawMap();
 });
 // ドラッグで動かす（Pointer Events＝指もマウスも同じ道・入口を2つ作らない）
+//
+// 🔴 v90 で実バグ発覚（v81 から在った・全画面の E2E が暴いた）: **ピンを押しても何も出なかった**。
+//    真因＝ `pointerdown` で即 `setPointerCapture` していたこと。捕まえた瞬間から**その後の click は
+//    捕まえた要素（＝地図の器）に届く**ので、中のピンの click ハンドラには一生届かない。
+//    説明文には「点を押すと内容が出ます」と書いてあった＝**画面が嘘をついていた**（v20）。
+// 🔑 直し方＝**掴むのは実際に動き始めてから**（4px の閾値）。押しただけでは捕まえない＝ピンの click が生きる。
+//    ついでに**指の揺れで地図が動かない**（タップのつもりが数 px 流れる端末での取りこぼしを防ぐ）。
+const MAP_DRAG_SLOP = 4; // これ未満は「押した」＝地図を動かさない（指の揺れの実測ぶん）
 (function wireMapDrag() {
   const wrap = document.getElementById('mapWrap');
-  let last = null;
+  let start = null;    // 押した位置（閾値の判定用）
+  let last = null;     // 直前の位置（移動量の計算用）
+  let dragging = false;
   wrap.addEventListener('pointerdown', (e) => {
     if (!mapView || e.target.closest('.map-zoom')) return;
-    last = { x: e.clientX, y: e.clientY };
-    wrap.classList.add('dragging');
-    wrap.setPointerCapture(e.pointerId);
+    start = last = { x: e.clientX, y: e.clientY };
+    dragging = false;  // まだ掴まない（ここで capture するとピンの click を奪う＝上の実バグ）
   });
   wrap.addEventListener('pointermove', (e) => {
     if (!last || !mapView) return;
+    if (!dragging) {
+      if (Math.abs(e.clientX - start.x) + Math.abs(e.clientY - start.y) < MAP_DRAG_SLOP) return;
+      dragging = true;
+      wrap.classList.add('dragging');
+      try { wrap.setPointerCapture(e.pointerId); } catch {} // 掴むのはここ＝動かすと決まってから
+    }
     const dx = e.clientX - last.x, dy = e.clientY - last.y;
     if (!dx && !dy) return;
     last = { x: e.clientX, y: e.clientY };
@@ -3577,7 +3669,7 @@ document.getElementById('mapZoomOut').addEventListener('click', () => {
     drawMap();
   });
   for (const ev of ['pointerup', 'pointercancel', 'pointerleave']) {
-    wrap.addEventListener(ev, () => { last = null; wrap.classList.remove('dragging'); });
+    wrap.addEventListener(ev, () => { start = last = null; dragging = false; wrap.classList.remove('dragging'); });
   }
 })();
 

@@ -297,6 +297,72 @@ t('地図の出典表示が在る（OpenStreetMap の利用条件）', () => {
   ok(/map-attr/.test(html) && /OpenStreetMap/.test(html), '出典表示が無い＝タイルを使う条件を満たさない');
 });
 
+// ===== 11-b. 地図の全画面（v90・ゆう要求） =====
+// 全画面は「隠す」変更＝**外に置いてあったものが黙って見えなくなる**のがこの機能固有の壊れ方。
+// （説明＝画面外の件数の申告 v16／選んだピンのカード＝押した結果）。ここを機械で見張る。
+t('全画面は CSS で覆う（Fullscreen API は本命の実機で効かない）', () => {
+  ok(/\.map-wrap\.full \{/.test(html), '全画面の規則が無い（名前を変えたならこのテストも直す）');
+  ok(!/requestFullscreen|webkitRequestFullscreen|exitFullscreen/.test(code),
+    'Fullscreen API を使っている＝iOS Safari / WKWebView は要素の全画面化を持たない（動かない道）');
+});
+
+t('全画面から必ず出られる（閉じ込めない・v78）', () => {
+  ok(/function setMapFull/.test(code), 'setMapFull が無い');
+  ok(/getElementById\('mapFull'\)\.addEventListener\('click'/.test(code), '全画面ボタンの配線が無い');
+  ok(/key === 'Escape' && mapFull/.test(code), 'Esc で出られない＝出口が1つしか無い');
+  const toggle = code.slice(code.indexOf("getElementById('mapBox').addEventListener('toggle'"));
+  ok(/setMapFull\(false\)/.test(toggle.slice(0, 400)),
+    '地図の段を畳んでも全画面が残る＝出口の無い画面ができる');
+  ok(/if \(mapFull\) setMapFull\(false\);/.test(bodyOf('refreshMap')),
+    '点が無くなった時に全画面から出ない＝器ごと隠れて中の説明も消える');
+});
+
+t('全画面では説明と選んだピンのカードも地図の中へ移す（外は見えない）', () => {
+  const body = bodyOf('setMapFull');
+  ok(/wrap\.appendChild\(hint\)/.test(body) && /wrap\.appendChild\(sel\)/.test(body),
+    '全画面で説明・選択カードを地図の中へ移していない＝画面外の件数もピンを押した結果も見えない');
+  ok(/mapHintHome/.test(body) && /mapSelHome/.test(body),
+    '元の置き場所へ戻していない＝一度全画面にすると通常表示が壊れる');
+  ok(/\.map-wrap\.full \.map-hint/.test(html) && /\.map-wrap\.full \.map-sel/.test(html),
+    '移した先の見た目の規則が無い＝地図に重ねただけで読めない');
+});
+
+t('全画面の重なりは dock より上・録音より下（v86 の表に載せる）', () => {
+  const fullZ = Number((html.match(/\.map-wrap\.full \{[\s\S]*?z-index:\s*(\d+)/) || [])[1]);
+  const dockZ = Number((html.match(/\.dock \{[\s\S]*?z-index:\s*(\d+)/) || [])[1]);
+  const micZ = Number((html.match(/body\.recording #micStage \{[\s\S]*?z-index:\s*(\d+)/) || [])[1]);
+  const toastZ = Number((html.match(/\.toast[\s\S]*?z-index:\s*(\d+)/) || [])[1]);
+  ok(fullZ > dockZ, `全画面(${fullZ}) が下のバー(${dockZ}) の下＝地図の上にバーが残る`);
+  ok(fullZ < micZ, `全画面(${fullZ}) が録音中の画面(${micZ}) 以上＝録音が始まっても本体が見えない`);
+  ok(fullZ < toastZ, `全画面(${fullZ}) が toast(${toastZ}) 以上＝告げるものが隠れる（v86 の実バグ）`);
+});
+
+// 🔴 v90 で見つかった実バグ（v81 から在った・全画面の E2E が暴いた）: `pointerdown` で即
+//    `setPointerCapture` すると、**その後の click は捕まえた要素に届く**＝中のピンの click は一生来ない。
+//    説明文は「点を押すと内容が出ます」と言っていた＝画面が嘘をついていた。
+t('地図を掴むのは動き始めてから（押しただけではピンの click を奪わない）', () => {
+  const drag = code.slice(code.indexOf('function wireMapDrag'));
+  const body = drag.slice(0, drag.indexOf('\n})();'));
+  const down = body.slice(body.indexOf("addEventListener('pointerdown'"), body.indexOf("addEventListener('pointermove'"));
+  ok(!/setPointerCapture/.test(down),
+    'pointerdown で捕まえている＝ピンを押しても選べない（v81 の実バグそのもの）');
+  ok(/setPointerCapture/.test(body.slice(body.indexOf("addEventListener('pointermove'"))),
+    '動き始めても捕まえない＝指が地図から外れるとドラッグが切れる');
+  ok(/MAP_DRAG_SLOP/.test(body), '閾値が無い＝指の揺れでタップが地図の移動になる');
+});
+
+t('点が無い時は描かない（説明文を上書きしない）', () => {
+  ok(/!mapPoints\.length\) return/.test(bodyOf('drawMap')),
+    '0件でも描く＝「位置が付かない理由」を「0件の位置。ドラッグで…」で上書きする（E2E で発覚）');
+});
+
+t('大きさが変わったら描き直す（全画面の出入り・回転）', () => {
+  ok(/addEventListener\('resize'/.test(code), 'resize を見ていない＝回転するとタイルがズレたまま');
+  ok(/clearTimeout\(mapResizeTimer\)/.test(code), 'まとめずに毎回描き直す＝連続 resize でちらつく');
+  ok(/requestAnimationFrame\(\(\) => drawMap\(\)\)/.test(bodyOf('setMapFull')),
+    '全画面に切り替えた直後に測っている＝class を当てる前の古い大きさで描く（v78 の親戚）');
+});
+
 t('地図の計算は engine（宿主で三角関数を書き直さない）', () => {
   for (const fn of ['drawMap', 'refreshMap', 'fitMapToAll']) {
     ok(!/Math\.(log|tan|atan|sinh|PI)/.test(bodyOf(fn)),
