@@ -436,7 +436,14 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
     background: rgb(255 255 255 / .82); color: #333; font-size: 11px; line-height: 1.5; }
   .map-wrap.full .map-sel { position: absolute; left: 8px; right: 8px; bottom: calc(var(--sab) + 22px);
     z-index: 5; margin-top: 0; max-height: 34%; overflow-y: auto; }
-  .map-empty { font-size: 13px; color: var(--sub); padding: 18px 2px; line-height: 1.7; }
+  .map-empty { font-size: 13px; color: var(--sub); padding: 18px 2px 10px; line-height: 1.7; }
+  /* v92: 0件の時の出口（地図の枠ごと消えると、枠の中の 📆 も一緒に消えるため）。
+     見た目は板のチップと同じ語彙＝新しい形を増やさない（v46） */
+  .map-empty-actions { display: flex; flex-wrap: wrap; gap: 8px; padding: 0 2px 12px; }
+  .map-empty-actions button { padding: 8px 14px; border: 1px solid var(--line); border-radius: 999px;
+    background: var(--card); color: var(--accent); font-size: 13px; font-family: inherit; cursor: pointer;
+    white-space: nowrap; }
+  .map-empty-actions button:active { opacity: .6; }
   /* ---- 期間で絞る（v91） ----
      見た目は既存の語彙だけで作る（v46）＝面は --card・線は --line・効いている印は --accent。
      板は画面に固定＝**地図の全画面(50)の上・録音(60)の下**（v86 の重なりの表）。 */
@@ -964,23 +971,23 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
      理由: この版文字列は index.html にしかないが、ロジックは別ファイル＝別キャッシュ。
      付けないと「フッタは新しいのにパーサは古い」という嘘の状態が成立する（v9 で実際に踏んだ）。
      index.html が更新されれば src の URL も変わる → JS も必ず新しく取り直される。 -->
-<script src="engine/settings.js?v=91"></script>
-<script src="engine/schema.js?v=91"></script>
-<script src="engine/parser.js?v=91"></script>
-<script src="engine/dictionary.js?v=91"></script>
-<script src="engine/contract.js?v=91"></script>
-<script src="engine/batch.js?v=91"></script>
-<script src="engine/ai.js?v=91"></script>
-<script src="engine/rewrite.js?v=91"></script>
-<script src="input/transcriber.js?v=91"></script>
-<script src="adapters/calendar.js?v=91"></script>
-<script src="adapters/records.js?v=91"></script>
-<script src="adapters/location.js?v=91"></script>
-<script src="engine/geomap.js?v=91"></script>
-<script src="engine/period.js?v=91"></script>
+<script src="engine/settings.js?v=92"></script>
+<script src="engine/schema.js?v=92"></script>
+<script src="engine/parser.js?v=92"></script>
+<script src="engine/dictionary.js?v=92"></script>
+<script src="engine/contract.js?v=92"></script>
+<script src="engine/batch.js?v=92"></script>
+<script src="engine/ai.js?v=92"></script>
+<script src="engine/rewrite.js?v=92"></script>
+<script src="input/transcriber.js?v=92"></script>
+<script src="adapters/calendar.js?v=92"></script>
+<script src="adapters/records.js?v=92"></script>
+<script src="adapters/location.js?v=92"></script>
+<script src="engine/geomap.js?v=92"></script>
+<script src="engine/period.js?v=92"></script>
 <script>
 'use strict';
-const BUILD = 'v91：期間で絞る（リスト・地図・CSV） · 2026-08-14';
+const BUILD = 'v92：地図が0件でも期間を変えられる · 2026-08-14';
 console.log('BUILD:', BUILD);
 document.getElementById('build').textContent = BUILD;
 
@@ -3702,10 +3709,33 @@ function refreshMap() {
     hint.innerHTML = '';
     const d = document.createElement('div');
     d.className = 'map-empty';
-    // 位置が付かない理由は3つしか無い＝そのまま書く（「出ない」で終わらせない・v51）
-    d.textContent = '位置の付いた記録がまだありません。詳細設定の「保存時に位置情報も記録する」をオンにして、'
-      + '保存先を「リスト」か「両方」にして保存すると、ここに点が並びます（📅/📝 の表示にも従います）。';
+    // 🔴 v92（実機FB第50回）: 理由を**言い分ける**。v91 までは常に「まだありません」だったので、
+    //    期間で 0 件にした人には**嘘**だった（v51「機能を足したら、それを指す説明文も直す」）。
+    const byPeriod = periodActive();
+    d.textContent = byPeriod
+      ? `期間「${VCPeriod.labelOf(periodSel)}」に、位置の付いた記録がありません。`
+        + '期間を変えるか、全期間に戻すと点が出ます（📅/📝 の表示にも従います）。'
+      : '位置の付いた記録がまだありません。詳細設定の「保存時に位置情報も記録する」をオンにして、'
+        + '保存先を「リスト」か「両方」にして保存すると、ここに点が並びます（📅/📝 の表示にも従います）。';
     hint.appendChild(d);
+    // 🚨 **行き止まりを作らない**（v78）: 地図の 📆 は地図の枠の中に居るので、枠ごと隠すと
+    //    **期間を変える手段まで消える**（実機FB第50回「地図の場所から期間設定が変更できなくなる」）。
+    //    → 0 件の時は、この説明の下に出口を置く。押せる道が無い画面を残さない。
+    const acts = document.createElement('div');
+    acts.className = 'map-empty-actions';
+    const pick = document.createElement('button');
+    pick.type = 'button';
+    pick.textContent = '📆 期間を変える';
+    pick.addEventListener('click', openPeriodSheet);
+    acts.appendChild(pick);
+    if (byPeriod) {   // ひと押しで戻れる道（「全期間」を選び直す手数を省く＝いちばん多い出口）
+      const all = document.createElement('button');
+      all.type = 'button';
+      all.textContent = '全期間に戻す';
+      all.addEventListener('click', () => setPeriod('all'));
+      acts.appendChild(all);
+    }
+    hint.appendChild(acts);
     return;
   }
   wrap.hidden = false;
