@@ -272,7 +272,7 @@
     const p = PROVIDERS[cfg && cfg.provider];
     if (!p) throw new Error(`対応していないプロバイダです: ${cfg && cfg.provider}`);
     if (!p.models) throw new Error(`${p.label} はモデル一覧に対応していません`);
-    if (p.models.needsKey && !cfg.key) throw new Error('API キーが未設定です（先にキーを保存してください）');
+    if (p.models.needsKey && !cfg.key) throw new Error('API キーが未設定です（上の欄にキーを入れてください＝自動で保存されます）');
     const f = (opts && opts.fetchFn) || global.fetch;
     if (typeof f !== 'function') throw new Error('この環境では通信できません');
     let res;

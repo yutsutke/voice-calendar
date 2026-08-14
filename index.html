@@ -464,6 +464,11 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
   .ai-models button:active { opacity: .6; }
   .ai-models select[hidden] { display: none; }
   .ai-models-note { font-size: 11px; color: var(--sub); padding: 2px 2px 6px; line-height: 1.5; overflow-wrap: anywhere; }
+  /* v89: 自動保存の返事（実機FB第49回「保存ボタンを押し忘れる」）。ボタンを消した＝**押した実感**が
+     無くなるので、代わりに**何が保存されたか**をこの行が言う（黙って保存しない＝v16 の裏面）。
+     accent 色＝アプリ内で「効いた」を意味する既存の色（新しい語彙を増やさない・v46）。 */
+  .ai-saved { font-size: 12px; color: var(--accent); padding: 2px 2px 6px; line-height: 1.5; min-height: 1.2em; overflow-wrap: anywhere; }
+  .ai-saved.warn { color: var(--warn); }
 
   /* ---- 保存 ---- */
   .actions { display: flex; gap: 10px; margin-top: 16px; }
@@ -759,7 +764,7 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
            キー未設定なら「まとめて入力」の AI ボタンは出ない＝既定の体験は不変（v19）。 -->
       <div class="ai-config" id="aiConfigBox">
         <div class="ai-title">AI 設定（自分の API キーで直接解釈・任意）<span class="rec-count" id="aiConfigState"></span></div>
-        <div class="ai-hint">自分の API キーを入れると、「まとめて入力」の長文をボタン1つで解釈できます（コピーの往復が不要になります）。詳細設定の「音声を AI で解釈する」もこのキーを使います。<b>キーはこの端末の中にのみ保存され、開発者のサーバは存在しません。</b>本文（辞書の展開結果を含む）は選んだ AI 社へ端末から直接送信されます。本アプリ専用に<b>使用上限付きのキー</b>を発行するのがおすすめです。共有端末では保存しないでください。※ <b>OpenAI に直接つなぐことはできません</b>（ブラウザからの接続を許可していないため。2026-08-13 に再確認）。<b>GPT を使いたい場合は OpenRouter</b> を選び、モデルに <code>openai/…</code> を指定してください（1つのキーで GPT・Claude・Gemini などを使えます）。</div>
+        <div class="ai-hint">自分の API キーを入れると、「まとめて入力」の長文をボタン1つで解釈できます（コピーの往復が不要になります）。詳細設定の「音声を AI で解釈する」もこのキーを使います。<b>入力した内容は自動で保存されます</b>（保存ボタンはありません）。<b>キーはこの端末の中にのみ保存され、開発者のサーバは存在しません。</b>本文（辞書の展開結果を含む）は選んだ AI 社へ端末から直接送信されます。本アプリ専用に<b>使用上限付きのキー</b>を発行するのがおすすめです。共有端末では保存しないでください。※ <b>OpenAI に直接つなぐことはできません</b>（ブラウザからの接続を許可していないため。2026-08-13 に再確認）。<b>GPT を使いたい場合は OpenRouter</b> を選び、モデルに <code>openai/…</code> を指定してください（1つのキーで GPT・Claude・Gemini などを使えます）。</div>
         <div class="ai-row"><label for="aiProvider">プロバイダ</label><select id="aiProvider"></select></div>
         <div class="ai-row"><label for="aiModel">モデル</label><input id="aiModel" type="text" autocomplete="off"></div>
         <!-- v85（ゆう要求「最新のモデル情報を入手、プルダウンで選べるように」）:
@@ -772,8 +777,11 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
         </div>
         <div class="ai-models-note" id="aiModelsNote"></div>
         <div class="ai-row"><label for="aiKey">API キー</label><input id="aiKey" type="password" autocomplete="off"></div>
+        <!-- v89（実機FB第49回）: 「保存」ボタンを**置かない**。押し忘れると設定が効いていないのに
+             画面は新しい値を見せる＝**画面が嘘をつく**（v20 の「表示と操作結果の食い違い」）。
+             プロバイダ／モデル／キーは**変えた時点で保存**し、何を保存したかをこの行が言う。 -->
+        <div class="ai-saved" id="aiSavedNote"></div>
         <div class="batch-actions">
-          <button id="aiSave" type="button">保存</button>
           <button id="aiTest" type="button">テスト送信</button>
           <button id="aiClear" type="button">キーを消す</button>
         </div>
@@ -871,22 +879,22 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
      理由: この版文字列は index.html にしかないが、ロジックは別ファイル＝別キャッシュ。
      付けないと「フッタは新しいのにパーサは古い」という嘘の状態が成立する（v9 で実際に踏んだ）。
      index.html が更新されれば src の URL も変わる → JS も必ず新しく取り直される。 -->
-<script src="engine/settings.js?v=88"></script>
-<script src="engine/schema.js?v=88"></script>
-<script src="engine/parser.js?v=88"></script>
-<script src="engine/dictionary.js?v=88"></script>
-<script src="engine/contract.js?v=88"></script>
-<script src="engine/batch.js?v=88"></script>
-<script src="engine/ai.js?v=88"></script>
-<script src="engine/rewrite.js?v=88"></script>
-<script src="input/transcriber.js?v=88"></script>
-<script src="adapters/calendar.js?v=88"></script>
-<script src="adapters/records.js?v=88"></script>
-<script src="adapters/location.js?v=88"></script>
-<script src="engine/geomap.js?v=88"></script>
+<script src="engine/settings.js?v=89"></script>
+<script src="engine/schema.js?v=89"></script>
+<script src="engine/parser.js?v=89"></script>
+<script src="engine/dictionary.js?v=89"></script>
+<script src="engine/contract.js?v=89"></script>
+<script src="engine/batch.js?v=89"></script>
+<script src="engine/ai.js?v=89"></script>
+<script src="engine/rewrite.js?v=89"></script>
+<script src="input/transcriber.js?v=89"></script>
+<script src="adapters/calendar.js?v=89"></script>
+<script src="adapters/records.js?v=89"></script>
+<script src="adapters/location.js?v=89"></script>
+<script src="engine/geomap.js?v=89"></script>
 <script>
 'use strict';
-const BUILD = 'v88：沈黙をはさんでも文章が消えない（認識の入れ替わりを確保） · 2026-08-13';
+const BUILD = 'v89：AI 設定は変えた時点で保存（保存ボタンを無くした） · 2026-08-14';
 console.log('BUILD:', BUILD);
 document.getElementById('build').textContent = BUILD;
 
@@ -2356,13 +2364,71 @@ function renderAiConfig() {
   const modelEl = document.getElementById('aiModel');
   modelEl.value = cfg.model;
   modelEl.placeholder = `${VCAI.PROVIDERS[cfg.provider].defaultModel}（既定・安価）`;
+  refreshAiState();  // v89: 保存済みの姿（キー欄・設定済み表示・AI ボタンの出現）はここ1箇所から
+  clearModelList();  // v85: プロバイダが変われば一覧は別物＝古い一覧を残さない（画面が嘘をつかない）
+}
+
+// ===== v89（実機FB第49回「API キーやモデルを変えたときに保存ボタンを押し忘れる」）=====
+// **保存ボタンを無くした**。押し忘れると、画面には新しいモデル名が見えているのに動くのは古い設定
+// ＝ v20 で決めた「表示と操作結果が食い違うなら、ラベルで説明せず設計を直す」の対象そのもの。
+// （もう一つの案「押させるために色で促す」は、押し忘れという事故を**利用者の注意力で埋める**形＝
+//   同じ事故が疲れている時に必ず戻ってくるので採らない。）
+//
+// 🔑 守る線:
+//  - **保存の道は1本**（v74 の教訓）＝ saveConfig を呼ぶのはこの関数だけ。入口（プロバイダ／モデル／
+//    一覧の選択／キー）はいくつ増えてもここを通す。
+//  - **黙って保存しない**（v16 の裏面）＝何を保存したかを必ず画面に出す。
+//  - **キーを DOM に書き戻さない**（v40 の約束）＝保存後にキー欄を空へ戻す。ただし**打っている最中は
+//    消さない**（フォーカス中は触らない＝入力中に自分の手元が消える事故を作らない）。
+function refreshAiState() {
+  if (!window.VCAI) return;
+  const cfg = VCAI.loadConfig();
   const keyEl = document.getElementById('aiKey');
-  keyEl.value = ''; // キーを DOM に書き戻さない（末尾4桁だけ見せる）
+  if (document.activeElement !== keyEl) keyEl.value = ''; // キーを画面に書き戻さない（末尾4桁だけ見せる）
   keyEl.placeholder = cfg.key ? `保存済み（…${cfg.key.slice(-4)}）— 変える時だけ入力` : 'API キーを貼る';
   document.getElementById('aiConfigState').textContent = cfg.key ? `${VCAI.PROVIDERS[cfg.provider].label}・設定済み` : '';
   document.getElementById('batchAiRun').hidden = !cfg.key;
   refreshRewriteRow(); // v80: キーの有無で「文章を整える」も出る/消える＝判定の置き場所をここに揃える
-  clearModelList();    // v85: プロバイダが変われば一覧は別物＝古い一覧を残さない（画面が嘘をつかない）
+}
+
+function setAiSavedNote(msg, isWarn) {
+  const el = document.getElementById('aiSavedNote');
+  if (!el) return;
+  el.textContent = msg;
+  el.classList.toggle('warn', !!isWarn);
+}
+
+const AI_FIELD_LABEL = { provider: 'プロバイダ', model: 'モデル', key: 'API キー' };
+// what = 'provider' | 'model' | 'key'（何を触ったか＝返事の主語。保存する中身は常に3つまとめて）
+function saveAiConfig(what) {
+  if (!window.VCAI) { toast('AI 機能を読み込めていません（詳細は「診断」）'); return false; }
+  const prev = VCAI.loadConfig();
+  const typed = document.getElementById('aiKey').value.trim();
+  const next = {
+    provider: document.getElementById('aiProvider').value,
+    model: document.getElementById('aiModel').value.trim(),
+    key: typed || prev.key, // 空欄なら既存キーを維持（v40: 変える時だけ入力）
+  };
+  // 変わっていないなら何も言わない＝「保存しました」の連呼で本当の変化が埋もれるのを防ぐ
+  if (next.provider === prev.provider && next.model === prev.model && next.key === prev.key) return false;
+  try {
+    VCAI.saveConfig(next);
+  } catch (e) {
+    // 「設定したつもり」を作らない（v16）＝失敗はその場に残す＋toast で必ず気づかせる
+    const msg = (e && e.message) || String(e);
+    setAiSavedNote(`⚠ 保存できませんでした: ${msg}`, true);
+    toast(`保存できませんでした: ${msg}`);
+    return false;
+  }
+  // キーだけは toast も出す（端末内にだけ置く＝プライバシー上いちばん重い事実なので見逃させない）
+  if (typed && typed !== prev.key) toast('API キーを保存しました（この端末の中だけ）');
+  const label = AI_FIELD_LABEL[what] || '設定';
+  const shown = what === 'model' ? (next.model || `既定（${VCAI.PROVIDERS[next.provider].defaultModel}）`)
+    : what === 'provider' ? VCAI.PROVIDERS[next.provider].label
+    : `…${next.key.slice(-4)}`;
+  setAiSavedNote(`✅ ${label}を保存しました: ${shown}`);
+  refreshAiState();
+  return true;
 }
 
 // ===== v85: モデル一覧（ゆう要求「最新のモデル情報を入手、プルダウンで選べるように」） =====
@@ -2422,8 +2488,9 @@ document.getElementById('aiFetchModels').addEventListener('click', fetchModelLis
 document.getElementById('aiModelList').addEventListener('change', () => {
   const v = document.getElementById('aiModelList').value;
   if (!v) return;
-  document.getElementById('aiModel').value = v;   // 埋めるだけ＝保存は今までどおり「保存」ボタン
-  document.getElementById('aiModelsNote').textContent = `モデル欄に入れました: ${v}（「保存」を押すと確定します）`;
+  document.getElementById('aiModel').value = v;   // 欄を埋める（保存される形はただの文字列＝v85）
+  document.getElementById('aiModelsNote').textContent = `モデル欄に入れました: ${v}`;
+  saveAiConfig('model');                          // v89: 選んだ時点で保存（押し忘れる余地を残さない）
 });
 document.getElementById('aiProvider').addEventListener('change', () => {
   if (!window.VCAI) return;
@@ -2436,21 +2503,19 @@ document.getElementById('aiProvider').addEventListener('change', () => {
   // 利用者からは原因が見えない（モデル欄は自分で入れた正しい名前に見えている）。
   document.getElementById('aiModel').value = '';
   clearModelList(); // v85: 前のプロバイダの一覧を残さない（別社のモデルを選べてしまう＝v43 と同じ事故）
+  saveAiConfig('provider'); // v89: 切り替えた時点で保存（モデルは既定へ戻る＝v43 の挙動のまま）
 });
-document.getElementById('aiSave').addEventListener('click', () => {
-  if (!window.VCAI) { toast('AI 機能を読み込めていません（詳細は「診断」）'); return; }
-  const prev = VCAI.loadConfig();
-  const key = document.getElementById('aiKey').value.trim() || prev.key; // 空欄なら既存キーを維持
-  try {
-    VCAI.saveConfig({ provider: document.getElementById('aiProvider').value, model: document.getElementById('aiModel').value, key });
-  } catch (e) { toast(`保存できませんでした: ${(e && e.message) || e}`); return; } // 「設定したつもり」を作らない
-  renderAiConfig();
-  toast(key ? 'AI 設定を保存しました（キーはこの端末の中だけ）' : 'AI 設定を保存しました（キーは未設定）');
-});
+// v89: モデル欄は `change`（欄から離れた時／Enter）で保存＝1文字ごとに保存して途中の名前を
+// 「確定した設定」にしない。キー欄も同じ。**貼り付けは即座に**保存する（キーは貼って終わりが普通
+// ＝そのまま画面を閉じられても効いている形にする）。
+document.getElementById('aiModel').addEventListener('change', () => { saveAiConfig('model'); });
+document.getElementById('aiKey').addEventListener('change', () => { saveAiConfig('key'); });
+document.getElementById('aiKey').addEventListener('paste', () => { setTimeout(() => saveAiConfig('key'), 0); });
 document.getElementById('aiClear').addEventListener('click', () => {
   if (!window.VCAI) return;
   VCAI.clearConfig();
   renderAiConfig();
+  setAiSavedNote('');
   toast('API キーを端末から消しました');
 });
 // テスト送信＝キー・モデル・経路（CORS）がまとめて検証される最小の呼び出し。保存前の値でも試せる

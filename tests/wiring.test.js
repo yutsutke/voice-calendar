@@ -248,9 +248,12 @@ t('整えるボタンは「キーがある」「長い」の両方で出す（�
   const re = /getElementById\('rewriteRow'\)/g;
   const all = countOf(re), inside = (body.match(re) || []).length;
   ok(all > 0 && all === inside, `rewriteRow を refreshRewriteRow の外で触っている（外に ${all - inside} 箇所）`);
-  // 出す条件が変わったら見直される場所も固定（キーの有無は renderAiConfig が唯一の反映点）
-  ok(/refreshRewriteRow\s*\(\s*\)/.test(bodyOf('renderAiConfig')),
+  // 出す条件が変わったら見直される場所も固定。v89 でキーの反映点は refreshAiState に移した
+  // （自動保存が入って「キーが変わる瞬間」が増えたため＝反映は1箇所に集める）。
+  ok(/refreshRewriteRow\s*\(\s*\)/.test(bodyOf('refreshAiState')),
     'キーを保存/削除しても行が見直されない＝設定した直後に出ない／消しても残る');
+  ok(/refreshAiState\s*\(\s*\)/.test(bodyOf('renderAiConfig')),
+    '設定の描画が保存済みの姿を反映していない');
 });
 
 t('整えた結果は来歴に残り、↩ で戻せる（黙って書き換えない）', () => {
@@ -378,12 +381,55 @@ t('モデル一覧は押した時だけ取りに行く（起動時に勝手に�
   ok(/VCAI\.listModels/.test(bodyOf('fetchModelList')), '取得が fetchModelList の外にある');
 });
 
-t('選んだモデルは「欄を埋めるだけ」＝保存の形は今までどおり', () => {
+t('選んだモデルは「欄を埋めるだけ」＝保存される形はただの文字列', () => {
   ok(/getElementById\('aiModel'\)\.value = v/.test(code),
     'プルダウンがモデル欄を埋めていない＝選んでも保存に反映されない／別の保存経路ができている');
-  // 保存は今までどおり aiSave の1箇所（プルダウンから直接保存しない）
+  // 保存の道は1本（v74）＝ saveConfig を呼ぶのは saveAiConfig だけ。入口がいくつ増えてもここを通る
   const saves = countOf(/VCAI\.saveConfig\s*\(/g);
   ok(saves === 1, `saveConfig の呼び出しが ${saves} 箇所＝保存の道が増えている（v74 の形）`);
+  ok(/VCAI\.saveConfig\s*\(/.test(bodyOf('saveAiConfig')), '保存が saveAiConfig の外にある');
+});
+
+// ===== 12-b. AI 設定は「変えた時点で保存」（v89・実機FB第49回） =====
+// 実バグの形: キーやモデルを変えて**保存ボタンを押し忘れる**と、画面には新しい値が見えているのに
+// 動くのは古い設定＝**画面が嘘をつく**（v20 の「表示と操作結果の食い違い」）。ボタンを消したので、
+// 「入口が全部つながっているか」を機械で見張らないと**黙って保存されない欄**が生まれる。
+t('保存ボタンが存在しない（押し忘れの余地を作らない）', () => {
+  ok(!/id="aiSave"/.test(html), 'AI 設定に保存ボタンが復活している＝押し忘れの事故が戻る');
+  ok(!/getElementById\('aiSave'\)/.test(code), 'aiSave の配線が残っている');
+});
+
+t('3つの入口（プロバイダ・モデル・キー）がすべて自動保存を通る', () => {
+  ok(/function saveAiConfig/.test(code), 'saveAiConfig が無い');
+  const after = (needle) => {
+    const i = code.indexOf(needle);
+    ok(i > 0, `${needle} が見つからない`);
+    return code.slice(i, i + 700);
+  };
+  ok(/saveAiConfig\('provider'\)/.test(after("getElementById('aiProvider').addEventListener")),
+    'プロバイダを変えても保存されない');
+  ok(/saveAiConfig\('model'\)/.test(after("getElementById('aiModel').addEventListener('change'")),
+    'モデル欄を直しても保存されない');
+  ok(/saveAiConfig\('model'\)/.test(after("getElementById('aiModelList').addEventListener('change'")),
+    '一覧から選んでも保存されない');
+  ok(/saveAiConfig\('key'\)/.test(after("getElementById('aiKey').addEventListener('change'")),
+    'キーを入れても保存されない');
+  ok(/getElementById\('aiKey'\)\.addEventListener\('paste'/.test(code),
+    '貼り付けで保存されない＝キーは貼って終わりなので、離れる操作が無いまま閉じられる');
+});
+
+t('黙って保存しない・失敗も黙らない（v16）', () => {
+  const body = bodyOf('saveAiConfig');
+  ok(/setAiSavedNote\(`✅/.test(body), '保存したことを画面に出していない＝押した実感の代わりが無い');
+  ok(/setAiSavedNote\(`⚠/.test(body) && /toast\(`保存できませんでした/.test(body),
+    '保存に失敗した時に黙る＝「設定したつもり」が残る');
+});
+
+t('入力中のキー欄を消さない／保存後は画面に書き戻さない（v40 の約束）', () => {
+  const body = bodyOf('refreshAiState');
+  ok(/activeElement !== keyEl/.test(body) && /keyEl\.value = ''/.test(body),
+    'キー欄の扱いが「フォーカス中は触らない・それ以外は空へ」になっていない');
+  ok(!/keyEl\.value = cfg\.key/.test(code), 'キーを DOM に書き戻している（v40 の約束違反）');
 });
 
 t('プロバイダを変えたら古い一覧を残さない（別社のモデルを選べる事故を防ぐ・v43）', () => {
