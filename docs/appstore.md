@@ -138,6 +138,40 @@ Google カレンダーに入れたい時は、iOS の「設定 → カレンダ�
 ご意見・ご要望をお待ちしています。
 ```
 
+### リリースノート（What's New・v1.3＝公開 1.2 → v79-v92）
+> 公開版 1.2（≈v78）からの差分。**v79-v92 はすべて iOS でも見える**（この範囲に Android 専用の変更は無い＝v83 は両 OS を同時に直した）。
+> ⚠ **地図は「位置情報を記録している人だけ」**＝既定オフの機能に乗るので、そう書く（オフの人には点が1つも無い）。
+```
+バージョン1.3では、「長く話す」ことに正面から対応しました。
+
+■ 長い話を最後まで
+・録音中に「この録音だけ 止めない（長文）」を押すと、考えて黙っても録音が止まりません。思ったことを長文で吐き出したい時に。もう一度マイクを押すと確定します（最長10分）。
+・長い発話は、いつものフォームに入る前に推敲画面をはさみます。読み返して直してから進めます。
+・長く話している途中で文章が消えてしまうことがある問題を修正しました。
+
+■ 文章を整える（任意・AI）
+・メモが長い時に「文章を整える」が出ます。直すのは認識ミス・句読点・言い淀み・言い直しの重複だけで、内容は足しません。要約もできます。
+・来歴の ↩ でいつでも元に戻せます。※お使いの AI の API キーの登録が要ります
+
+■ つぶやいた場所の地図
+・位置情報を記録している場合、保存した記録の場所を1枚の地図でまとめて見られます。全画面表示もできます。
+・地図を開いた時にだけ地図画像を取得します。記録した座標そのものや、予定・記録の内容は送信しません。
+
+■ 期間で絞る（📆）
+・今日の午前／今日の午後／今日／3日／1週間／全期間／任意の期間で、リスト・地図・CSV 書き出しをまとめて絞り込めます。
+
+■ 使い勝手
+・AI 設定は、変更した時点で保存されるようになりました（保存ボタンの押し忘れがなくなります）。
+・AI のモデルを一覧から選べるようになりました。AI 事業者に OpenRouter を追加しました。
+・お知らせの表示が、画面下のマイクに隠れないようにしました。
+
+■ 修正
+・ホーム画面のアイコンを長押しして「リスト」を開いた時、録音画面が上に出てリストが見えなくなっていました。
+・地図の点をタップしても内容が出なかった問題を修正しました。
+
+ご意見・ご要望をお待ちしています。
+```
+
 ### 4-b. 説明（1.2 で差し替える案・§4 は 1.0 のまま＝リスト/辞書/まとめて入力/AI/位置に触れていない）
 > 📌 1.2 の素材をまとめておくため、§4 の直後ではなく**ここ**に置いてある。
 > §4 の本文の **■ こんなアプリです の後ろ**にこの3ブロックを足し、末尾はそのまま。文字数は上限 4000 に余裕あり。
@@ -150,6 +184,17 @@ Google カレンダーに入れたい時は、iOS の「設定 → カレンダ�
 
 ■ 自分の AI で解釈（任意・既定はオフ）
 自分の API キー（Anthropic / Google）を設定すると、あいまいな言い方や長文も AI が下書きにします。キーが無ければ一切通信しません。キーは端末内にのみ保存され、開発者は受け取りません。
+```
+
+### 4-c. 説明（1.3 で足す分・**任意**）
+> 掲載中の説明は **1.0 のまま**（リスト／辞書／まとめて入力／AI／位置／地図に一言も触れていない）。**説明は審査を通るために変える必要は無い**＝時間が無ければ触らなくてよい。
+> 触るなら **§4-b の3ブロック＋下の2ブロック**を「■ こんなアプリです」の後ろに足す。⚠ §4-b の AI の行は「（Anthropic / Google）」のままなので **OpenRouter を足す**（実物と違う記述を残さない）。
+```
+■ 長く話したいときは
+考えながら長く話したい時は、録音中に「この録音だけ 止めない（長文）」を押すと、黙っても録音が止まりません。長く話した内容は、フォームに入る前に読み返して直せます。認識ミスや言い淀みだけを AI で整えることもできます（お使いの API キーが要ります）。
+
+■ つぶやいた場所の地図
+位置情報の記録をオンにしていると、保存した記録の場所を1枚の地図でまとめて見られます。地図を開いた時にだけ地図画像を取得し、記録した座標そのものや内容は送信しません。
 ```
 
 ## 6. URL 類
@@ -291,6 +336,56 @@ TEST API KEY (Anthropic, capped at about US$1 per month, revoked after review - 
 [PASTE YOUR sk-ant-... KEY HERE]
 ```
 - **デモアカウント: 不要**（Sign-in は OFF のまま・キーは Notes に書く）。
+
+### 8-d. App Review メモ（v1.3・地図タイル＋長文モード）＝ **1.3 の提出はこれを貼る**
+
+> 8-c（1.2）からの違いは4つ。**どれも「聞かれる前に言う」**（Guideline 2.1 の引き金は**事前に開示していなかったこと**）:
+> ① 🚨 **アプリ自身が外へ出す通信が生まれた**＝地図タイル（OpenStreetMap）。1.2 までは「AI と OS の音声サービス以外、端末から何も出ない」と書いていた＝**その一文が 1.3 では不正確になる**ので自分から言い直す。**送るのは「いま画面に映している範囲」だけ**（privacy.html JP/EN の記述と同じ言い方に揃えてある）。
+> ② 🚨 **長文モード**＝ユーザーが押すとマイクが最長10分開いたままになる（審査担当が「録音が止まらない」と読みうる）＋**80字以上の発話は推敲画面をはさむ**＝テスト手順が1画面増える可能性がある。
+> ③ **AI 事業者に OpenRouter が加わった**（8-c は Anthropic / Google だけ）＝ OpenRouter は中継先のモデル提供元にも本文が渡る。
+> ④ **v89 で AI 設定の「保存」ボタンが無くなった**＝ 8-c の手順「paste the key, tap 保存」が**そのままだと存在しないボタンを押させる**ので書き換えた（v51 の「説明文の腐り」）。
+> 🚨 **ASC のメモ欄は 4000 字上限**。下の本文は **3,783 字**（`[PASTE ...]`＝31字を実キー ≈110字に差し替えて **約 3,862 字**・改行が2文字で数えられる最悪でも **3,899 字**）＝**残り約100字**。**足す時は必ず同じ分だけ削る**（8-c＝1.2 は 3,578 字だった）。
+
+```
+This app adds calendar events from Japanese voice input. No account or login. The developer has no server and collects no data.
+
+THREE THINGS TO KNOW UP FRONT:
+
+1) A FULL-SCREEN "LISTENING" VIEW MAY APPEAR RIGHT AFTER LAUNCH. The app starts recording automatically when opened with an empty form. It is not frozen: it closes by itself after about 6 seconds of silence, or tap the red microphone (stop) or the cancel button "やめる（入力しない）". Nothing is saved by this view.
+
+2) NEW IN 1.3 - AN OPTIONAL MAP, the only request this app makes on its own. If the user has turned location on (see LOCATION) and opens the "地図（つぶやいた場所）" panel, map tiles are downloaded from OpenStreetMap (tile.openstreetmap.org). Only the area currently on screen is requested; saved coordinates and entry contents are never sent. Pins are drawn locally. Nothing is fetched unless that panel is opened.
+
+3) NEW IN 1.3 - LONG-FORM DICTATION. While recording, the user can tap "この録音だけ 止めない（長文）" to keep the microphone open while thinking; it ends on tapping the microphone again, or after 10 minutes. An utterance of 80+ characters opens a full-screen review screen so the text can be corrected first (exits: "進む" continue / "捨てる" discard).
+
+HOW TO TEST WITHOUT SPEAKING JAPANESE:
+1. Launch the app; grant Microphone, Speech Recognition and Calendar (write-only) when prompted. If the listening view appears, wait ~6 seconds or tap "やめる（入力しない）".
+2. On the main screen a text field simulates an utterance. Type: 明日15時に歯医者 (= dentist tomorrow at 3pm) and tap the button below it, "発話として送る" (send as utterance).
+3. The form fills in (date / time / title). Tap "カレンダーに保存" (save) - the event is added to the device's default calendar via EventKit.
+(Or tap the microphone and say the same phrase.)
+
+PERMISSIONS:
+- Microphone + Speech Recognition: to capture and transcribe the spoken schedule (on-device where supported).
+- Calendars (iOS 17 write-only access): to ADD events only. The app does NOT read existing calendar data.
+- Location (When In Use): optional, off by default - see below.
+
+LOCATION (optional, off by default, never transmitted):
+The app can record where an entry was saved, so the user can find that place later in the app's own list, in Maps, or on the map above. Nothing is captured unless the user turns on "保存時に位置情報も記録する" in the settings panel "詳細設定". Coordinates stay on the device and are never sent anywhere. Turning the setting off stops capture immediately. This is why our App Privacy answers remain "Data Not Collected".
+
+SIRI / HOME SCREEN: "Hey Siri, ボイカレ開いて" just opens the app (INAlternativeAppNames); long-pressing the icon offers "リスト", opening the app's local list (UIApplicationShortcutItem). No custom Siri intent is used.
+
+OPTIONAL AI (off by default, bring your own key):
+The app can turn long free text into draft events and tidy up dictated text using a third-party AI service - Anthropic Claude, Google Gemini, or OpenRouter (new in 1.3; with OpenRouter the text also reaches the upstream model provider chosen). Nothing is sent unless the user enters their OWN API key. The key stays on the device; we receive neither the key nor the text; AI results are always shown for review before anything is saved.
+
+TO TEST THE AI (spend-capped key below):
+1. Expand "詳細設定" (settings) near the bottom and find "AI 設定".
+2. プロバイダ (provider): choose "Anthropic（Claude）".
+3. API キー (API key): paste the key below (it saves on paste; there is no save button), then tap テスト送信 (test send) - it should report a successful connection.
+4. Open "まとめて入力（長文・AI・JSON）", paste any text with a schedule in it, and tap the AI button. Drafts appear for review before saving.
+
+TEST API KEY (Anthropic, capped at ~US$1/month, revoked after review - please do not share):
+[PASTE YOUR sk-ant-... KEY HERE]
+```
+- **デモアカウント: 不要**（Sign-in required = OFF・キーは Notes に書く）。
 
 ---
 
@@ -556,3 +651,40 @@ npm run sync:web ; npx cap copy android ; ./android/gradlew.bat -p android bundl
 - **長文モードの継ぎ目**＝2〜3分続けて話し、**文がぶつ切りにならないか**。認識器は1分前後で自分から終わるので、その裏で開き直して継ぎ足している。診断に `継ぎ足し len=N 合計=M` が出る＝**境目が数字で見える**。
 - **止め方**＝マイク再押下で全部が1つの発話として入るか／✕ やめるで全部消えるか。
 - Play 側の版表示（設定→アプリ→バージョン）が **1.3** になっているか＝更新が届いた証拠。
+
+---
+
+## 11-5. 1.3 提出（v79-v92・地図タイル＋長文モード）＝ 2026-08-15
+
+**この版に載るもの**（公開版 1.2 ≈ v78 からの差分・**この範囲に Android 専用の変更は無い**）
+| | 内容 | 審査への影響 |
+|---|---|---|
+| v79 | ホーム長押し「リスト」が録音画面に覆われない（修正） | なし |
+| v80 | 長文を AI で整える（🤖 文章を整える） | AI の用途が1つ増える＝メモに1語 |
+| **v81** | 🚨 **つぶやいた場所の地図**（OpenStreetMap のタイル取得） | **メモに開示が必須**＝1.2 まで「AI 以外に端末から出るものは無い」と書いていた |
+| v82/v83 | **長文モード**（この録音だけ 止めない・最長10分）＋取りこぼし修正 | **メモに1項目**（「録音が止まらない」と読まれうる） |
+| v84 | 長文（80字以上）は推敲画面をはさむ | **テスト手順が1画面増えうる**＝メモに書いた |
+| **v85** | 🚨 **AI 事業者に OpenRouter 追加**＋モデル一覧 | **メモの AI 事業者の並びを更新**（中継先にも本文が渡る） |
+| v86 | トーストが下のマイクに隠れない（修正） | なし |
+| v88 | 沈黙をはさんでも文章が消えない（修正） | なし |
+| **v89** | AI 設定が「変えた時点で保存」＝**保存ボタンが消えた** | **メモのテスト手順を修正**（8-c は「tap 保存」と書いていた＝存在しないボタン） |
+| v90 | 地図の全画面＋ピンが押せる（修正） | なし |
+| v91 | 📆 期間で絞る（リスト／地図／CSV） | なし |
+| v92 | 地図が0件でも期間を変えられる（修正） | なし |
+
+**ASC で触る場所（この順で）**
+1. **バージョン 1.3 を作成** → TestFlight の **1.3(N)** ビルドを添付（`MARKETING_VERSION = 1.3`・repo は既に 1.3）。⚠ **v92 が入ったビルドを選ぶ**（TestFlight の版だけでは中身が分からない＝アプリのフッタが `v92` のものが正）。
+2. **このバージョンの新機能** ← §5 の「What's New・v1.3」を貼る。
+3. **App Review Information → メモ** ← **§8-d**（8-c ではない）。**⚠ 4000 字上限**（本文 3,783 字＋実キーで約 3,862 字）。`[PASTE ...]` に $1 上限のテストキー。**Sign-in required = OFF**。
+4. **スクリーンショット** ← 1.0 提出時（≈v31）のまま＝**今の画面と違う**。差し替えるなら **1枚目を「録音中の専用画面（大きな認識文字）」**に（§9）。審査で落ちる類ではない。
+5. **説明** ← **任意**（§4-c）。時間が無ければ触らない。
+6. **プロモーションテキスト** ← 審査不要でいつでも変更可（据え置きで可）。
+
+**変えなくてよい場所（1.3 で確認済み・2026-08-15）**
+- **App プライバシー＝「データを収集していません」のまま**。位置情報は端末外に出ない。地図タイルの取得は**地図画像を受け取るだけ**（座標も記録の中身も送らない）＝ Apple の「収集」に当たらない。**この理由は §8-d に書いてある**。
+- **プライバシーポリシー URL / サポート URL** ＝ 変更不要。**`privacy.html` は既に実物と一致**＝「地図の表示」（OpenStreetMap・JP/EN）と AI 事業者の **OpenRouter** が両方書いてある（v81 / v85 で更新済み・この提出前に本文を読んで確認）。
+- **輸出コンプライアンス**（Info.plist で恒久回答）・**カテゴリ**・**年齢 4+**・**価格** ＝ 変更なし。
+
+**⚠️ 見張り事項**
+- **もし 2.1（Information Needed）が来たら、疑う順は ①地図タイルの外部通信 ②長文モード（マイクが止まらない）③OpenRouter**＝いずれも §8-d で先回りして書いてある（1.1・1.2 とも先回り開示で通っている）。
+- **Guideline 5.1.2（AI 送信の同意）** ＝ 据え置き。担保は 1.1 から不変（既定オフ＋自分のキー＋設定に明記＋取り込み前の確認）。
