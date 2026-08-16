@@ -185,13 +185,21 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
   .rv-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px;
     font-size: 12px; color: var(--sub); margin-bottom: 10px; }
   .rv-count { white-space: nowrap; }
-  /* 本文＝この画面の主役。20px は v70/v78 でゆうが選んだ大きさに揃える（読みながら直せる） */
-  #reviewText { flex: 1; min-height: 0; width: 100%; box-sizing: border-box; resize: none;
+  /* 本文＝この画面の主役。20px は v70/v78 でゆうが選んだ大きさに揃える（読みながら直せる）。
+     v93: AI 設定を下に開いても本文が潰れないよう最低の高さを持たせる（開いた瞬間に読めなくならない） */
+  #reviewText { flex: 1; min-height: 4.5em; width: 100%; box-sizing: border-box; resize: none;
     font-size: 20px; line-height: 1.6; padding: 12px; border-radius: 12px;
     border: 1px solid var(--line); background: var(--card); color: var(--ink); }
   .rv-note { font-size: 12px; color: var(--warn); min-height: 18px; margin: 8px 2px 0; line-height: 1.5; }
+  /* v93: この画面の中で AI 設定を開く場所（ゆう要求）。中身は詳細設定の #aiConfigBox **そのもの**を
+     移して見せる＝設定を2つ作らない（v74）。長くなるのでここだけ縦にスクロールする。 */
+  .rv-aicfg { max-height: 42vh; overflow-y: auto; margin-top: 10px; padding: 0 12px 4px;
+    border: 1px solid var(--line); border-radius: 12px; background: var(--card); }
+  .rv-aicfg[hidden] { display: none; }
   .rv-ai { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
   .rv-ai[hidden] { display: none; }
+  /* AI 設定ボタンだけは**キーが無くても出す**（キーが無い人こそ設定へ行きたい）。見た目は他の
+     .ov-btn と同じ＝新しい視覚語彙を増やさない（v46）。開いている間は ✓ が付く（.on は既存の語彙） */
   .rv-go { display: flex; gap: 10px; margin-top: 12px; }
   .rv-go button { flex: 1; border: none; border-radius: 12px; font-size: 16px; font-weight: 600;
     padding: 15px 12px; cursor: pointer; }
@@ -616,10 +624,16 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
     <!-- 話したままを、そのまま出す（要求①）。ここで直せる（要求②） -->
     <textarea id="reviewText" spellcheck="false"></textarea>
     <div class="rv-note" id="reviewNote"></div>
+    <!-- 🆕 v93（ゆう要求「下書きのページに AI設定ボタンを置いてください」）: ここに詳細設定の
+         #aiConfigBox を**移して**見せる（複製しない＝設定を2つ作らない・v74）。閉じる時は必ず元へ
+         戻す＝戻し忘れると詳細設定から AI 設定が消える（v92「隠したら中身を数え直す」）。 -->
+    <div class="rv-aicfg" id="reviewAiSlot" hidden></div>
     <div class="rv-ai" id="reviewAi">
       <button id="reviewTidy" type="button" class="ov-btn">✍️ 文章を整える</button>
       <button id="reviewSum" type="button" class="ov-btn">📝 要約する</button>
       <button id="reviewUndo" type="button" class="ov-btn" hidden>↩ AIの前に戻す</button>
+      <!-- キーが無くても出す（キーが無い人こそここから設定へ行く）＝この画面を離れずに直せる -->
+      <button id="reviewAiCfg" type="button" class="ov-btn">⚙ AI設定</button>
     </div>
     <div class="rv-go">
       <button id="reviewGo" type="button">進む</button>
@@ -831,7 +845,9 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
       <div class="history-actions"><button id="settingsReset" type="button">既定に戻す</button></div>
       <!-- AI 設定（v40 BYOK）: v43 で「まとめて入力」からここへ移動（実機FB第25回）。
            設定の一覧（settingsList）とは別物なので「既定に戻す」の外に置く＝リセットの対象に見せない。
-           キー未設定なら「まとめて入力」の AI ボタンは出ない＝既定の体験は不変（v19）。 -->
+           キー未設定なら「まとめて入力」の AI ボタンは出ない＝既定の体験は不変（v19）。
+           v93: #aiConfigSlot は**戻ってくる場所**＝推敲画面（v84）へ移した後、必ずここへ戻す。 -->
+      <div id="aiConfigSlot">
       <div class="ai-config" id="aiConfigBox">
         <div class="ai-title">AI 設定（自分の API キーで直接解釈・任意）<span class="rec-count" id="aiConfigState"></span></div>
         <div class="ai-hint">自分の API キーを入れると、「まとめて入力」の長文をボタン1つで解釈できます（コピーの往復が不要になります）。詳細設定の「音声を AI で解釈する」もこのキーを使います。<b>入力した内容は自動で保存されます</b>（保存ボタンはありません）。<b>キーはこの端末の中にのみ保存され、開発者のサーバは存在しません。</b>本文（辞書の展開結果を含む）は選んだ AI 社へ端末から直接送信されます。本アプリ専用に<b>使用上限付きのキー</b>を発行するのがおすすめです。共有端末では保存しないでください。※ <b>OpenAI に直接つなぐことはできません</b>（ブラウザからの接続を許可していないため。2026-08-13 に再確認）。<b>GPT を使いたい場合は OpenRouter</b> を選び、モデルに <code>openai/…</code> を指定してください（1つのキーで GPT・Claude・Gemini などを使えます）。</div>
@@ -856,6 +872,7 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
           <button id="aiClear" type="button">キーを消す</button>
         </div>
       </div>
+      </div><!-- /#aiConfigSlot -->
     </div>
   </details>
 
@@ -971,23 +988,23 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
      理由: この版文字列は index.html にしかないが、ロジックは別ファイル＝別キャッシュ。
      付けないと「フッタは新しいのにパーサは古い」という嘘の状態が成立する（v9 で実際に踏んだ）。
      index.html が更新されれば src の URL も変わる → JS も必ず新しく取り直される。 -->
-<script src="engine/settings.js?v=92"></script>
-<script src="engine/schema.js?v=92"></script>
-<script src="engine/parser.js?v=92"></script>
-<script src="engine/dictionary.js?v=92"></script>
-<script src="engine/contract.js?v=92"></script>
-<script src="engine/batch.js?v=92"></script>
-<script src="engine/ai.js?v=92"></script>
-<script src="engine/rewrite.js?v=92"></script>
-<script src="input/transcriber.js?v=92"></script>
-<script src="adapters/calendar.js?v=92"></script>
-<script src="adapters/records.js?v=92"></script>
-<script src="adapters/location.js?v=92"></script>
-<script src="engine/geomap.js?v=92"></script>
-<script src="engine/period.js?v=92"></script>
+<script src="engine/settings.js?v=93"></script>
+<script src="engine/schema.js?v=93"></script>
+<script src="engine/parser.js?v=93"></script>
+<script src="engine/dictionary.js?v=93"></script>
+<script src="engine/contract.js?v=93"></script>
+<script src="engine/batch.js?v=93"></script>
+<script src="engine/ai.js?v=93"></script>
+<script src="engine/rewrite.js?v=93"></script>
+<script src="input/transcriber.js?v=93"></script>
+<script src="adapters/calendar.js?v=93"></script>
+<script src="adapters/records.js?v=93"></script>
+<script src="adapters/location.js?v=93"></script>
+<script src="engine/geomap.js?v=93"></script>
+<script src="engine/period.js?v=93"></script>
 <script>
 'use strict';
-const BUILD = 'v92：地図が0件でも期間を変えられる · 2026-08-14';
+const BUILD = 'v93：長文モードは必ず推敲画面／推敲画面から AI 設定 · 2026-08-16';
 console.log('BUILD:', BUILD);
 document.getElementById('build').textContent = BUILD;
 
@@ -1110,7 +1127,7 @@ function onUtterance(text, meta, opts) {
   // 補助機能が本体を殺さない（v13）＝画面を出せなければ、そのまま普段どおり流す。
   if (!(opts && opts.reviewed)) {
     try {
-      if (shouldReviewUtterance(text)) { openReview(text, meta); return; }
+      if (shouldReviewUtterance(text, opts)) { openReview(text, meta, opts); return; }
     } catch (e) { window.__vcNote('推敲画面', (e && e.message) || String(e)); }
   }
   // v37: 辞書（言い換え）展開＝**解釈より前**に生テキストへ適用（欄指定「メモ 僕のメールアドレス」でも効く）。
@@ -2569,6 +2586,7 @@ function refreshAiState() {
   document.getElementById('aiConfigState').textContent = cfg.key ? `${VCAI.PROVIDERS[cfg.provider].label}・設定済み` : '';
   document.getElementById('batchAiRun').hidden = !cfg.key;
   refreshRewriteRow(); // v80: キーの有無で「文章を整える」も出る/消える＝判定の置き場所をここに揃える
+  renderReviewAi();    // v93: 推敲画面の AI 操作も同じ1箇所から（開いたまま設定してもその場で効く）
 }
 
 function setAiSavedNote(msg, isWarn) {
@@ -2808,7 +2826,10 @@ const transcriber = VCTranscriber.createTranscriber({
     // 上に隠れた前半はスクロールで読める＝切り捨てない（v16「黙って捨てない」の表示版）。
     transcriptEl.scrollTop = transcriptEl.scrollHeight;
   },
-  onFinal(t, meta) { onUtterance(t, meta); },
+  // v93: この確定が長文モードの録音のものかを**ここでだけ**渡す（ゆう要求「長く話すボタンを押したら
+  // 必ず下書きを挟む」）。recOverride は次の録音開始までリセットされないので、テキスト送信（send）が
+  // 巻き添えで推敲画面を出さないよう、印を付けるのは**音声の確定だけ**にする。
+  onFinal(t, meta) { onUtterance(t, meta, { longMode: recOverride.keepOpen }); },
   onDebug(msg) { window.__vcDebugNote(`🎙 ${msg}`); }, // Swift 内部の出来事 → 診断（v15）
   onState(s) {
     const on = s === 'listening';
@@ -3796,6 +3817,9 @@ document.getElementById('mapFull').addEventListener('click', () => setMapFull(!m
 // Esc は**上に居るものから閉じる**（v91 で期間の板が地図の全画面の上に載ったため、順番を1箇所で決める）
 document.addEventListener('keydown', (e) => {
   if (e.key !== 'Escape') return;
+  // v93: 推敲画面の中で開いた AI 設定がいちばん上（推敲画面そのものは Esc で閉じない＝
+  // 出口は「進む」「捨てる」の2つのまま。書いた本文を Esc 一発で失わせない）
+  if (reviewAiConfigOpen()) { setReviewAiConfig(false); return; }
   if (!document.getElementById('periodSheet').hidden) { closePeriodSheet(); return; }
   if (mapFull) setMapFull(false);
 });
@@ -3881,7 +3905,17 @@ let reviewBusy = false;
 
 // 「この発話は推敲画面を挟むか」。長さは engine が持つ（数字を宿主に書かない）。
 // 🚫 欄指定発話（「メモ 〜」）は挟まない＝v17 の意味（その欄だけの差分）を推敲で壊さないため。
-function shouldReviewUtterance(text) {
+//
+// 🆕 v93（ゆう要求「長く話すボタン押したら、保存前に**必ず**1枚下書きのページを挟む」）:
+//   長文モード（v82「この録音だけ 止めない」）で録音した発話は、**長さにも欄指定にも関わらず挟む**。
+//   ・押すこと自体が「これから長く話す・読み返してから入れたい」という意思表明（v44 と同じ考え方＝
+//     人が押したのだから、こちらが条件で推測し直さない）。
+//   ・欄指定ガードを越えても v17 の意味は壊れない＝「進む」の後に**同じ文章がもう一度解釈される**
+//     （そこで targeted 判定が普段どおり効く）。ここで挟むのは解釈の前だけ。
+//   ・空だけは挟まない（直すものが無い画面を出さない）。
+function shouldReviewUtterance(text, opts) {
+  if (!String(text || '').trim()) return false;
+  if (opts && opts.longMode) return true;            // 長文モード＝必ず挟む（ゆう要求 v93）
   if (!window.VCRewrite || !VCRewrite.needsReview(text)) return false;
   try { if (VCParser.interpret(text, new Date()).targeted) return false; } catch {}
   return true;
@@ -3891,22 +3925,75 @@ function renderReviewCount() {
   document.getElementById('reviewCount').textContent = `${rvText.value.trim().length}字`;
 }
 
-function openReview(text, meta) {
+// v93: AI の操作は**キーの有無で出し入れ**するが、「⚙ AI設定」だけは常に出す
+// （キーが無い人こそここから設定へ行く＝押せるボタンが1つも無い画面を作らない・v92）。
+// 🔑 出し入れを決めるのはこの関数だけ＝ refreshAiState（v89 の「見た目を直す1箇所」）から呼ぶ
+//    ＝キーを入れた瞬間に「✍️ 文章を整える」が出る（画面と設定が食い違わない）。
+function renderReviewAi() {
+  const has = !!(window.VCAI && VCAI.hasKey());
+  const tidy = document.getElementById('reviewTidy');
+  const sum = document.getElementById('reviewSum');
+  if (!tidy || !sum) return;
+  tidy.hidden = !has;
+  sum.hidden = !has;
+  if (!has) document.getElementById('reviewUndo').hidden = true; // 戻す先は AI を当てた時にしか生まれない
+  const cfgBtn = document.getElementById('reviewAiCfg');
+  if (cfgBtn) {
+    // AI 機能そのものが読み込めていない時だけ出さない（開いても空の枠が出るだけ・v40 の流儀）
+    cfgBtn.hidden = !window.VCAI;
+    cfgBtn.textContent = has ? '⚙ AI設定' : '⚙ AI設定（キーを入れると整えられます）';
+  }
+}
+
+// v93: 詳細設定の AI 設定を、この画面の中へ**移して**開く／閉じる時は必ず元へ戻す。
+// 🚨 戻し忘れ＝詳細設定から AI 設定が消える（画面から機能が失踪する）＝ここを唯一の出入口にする。
+function setReviewAiConfig(on) {
+  const slot = document.getElementById('reviewAiSlot');
+  const home = document.getElementById('aiConfigSlot');
+  const box = document.getElementById('aiConfigBox');
+  if (!slot || !home || !box) return;
+  // 既に居るべき場所に居るなら触らない＝appendChild は同じ親でも DOM から一度外す
+  // （＝入力中のキー欄からフォーカスが飛ぶ）。冪等にしておく（v77 の syncDock と同じ線）。
+  if (on) {
+    if (box.parentNode !== slot) slot.appendChild(box); // 現物を移す（複製しない＝入力欄も配線もそのまま生きる）
+    slot.hidden = false;
+    if (window.VCAI) { try { renderAiConfig(); } catch {} } // 今の保存値を映してから見せる
+    slot.scrollTop = 0;
+  } else {
+    if (box.parentNode !== home) home.appendChild(box);  // 必ず元の場所へ返す
+    slot.hidden = true;
+  }
+  const btn = document.getElementById('reviewAiCfg');
+  if (btn) btn.classList.toggle('on', !!on);
+}
+function reviewAiConfigOpen() {
+  const slot = document.getElementById('reviewAiSlot');
+  return !!(slot && !slot.hidden);
+}
+
+function openReview(text, meta, opts) {
   reviewMeta = meta || null;
   reviewSpoken = String(text || '');
   reviewUndoText = null;
   rvText.value = reviewSpoken;
   rvNote.textContent = '';
   document.getElementById('reviewUndo').hidden = true;
-  // AI のボタンはキーがある時だけ（無ければ手で直して進むだけの画面＝それでも役に立つ）
-  document.getElementById('reviewAi').hidden = !(window.VCAI && VCAI.hasKey());
+  setReviewAiConfig(false);   // 前回開きっぱなしで終わっていても、必ず畳んだ状態から始める
+  renderReviewAi();
+  // v93: なぜこの画面が出たのかを言う（長さで出たのか、自分で長文モードを押したのか）＝
+  // 「勝手に画面が挟まった」に見せない（v91「絞っていることを常に見せる」と同じ線）。
+  const longMode = !!(opts && opts.longMode);
+  document.getElementById('reviewHead').textContent = longMode
+    ? '長文モードの録音です。直してから進めます'
+    : '長い発話です。直してから進めます';
   renderReviewCount();
   rvStage.hidden = false;
   document.body.classList.add('reviewing');
-  window.__vcDebugNote(`✍️ 推敲画面（${reviewSpoken.length}字）`);
+  window.__vcDebugNote(`✍️ 推敲画面（${reviewSpoken.length}字${longMode ? '・長文モード' : ''}）`);
 }
 
 function closeReview() {
+  setReviewAiConfig(false);   // 🔑 AI 設定を借りたままにしない（詳細設定へ返す）
   rvStage.hidden = true;
   document.body.classList.remove('reviewing');
   reviewMeta = null;
@@ -3951,6 +4038,8 @@ async function runReviewAi(mode) {
 }
 
 rvText.addEventListener('input', renderReviewCount);
+// v93: 押すたびに開閉（もう一度押せば本文に戻れる＝出口を増やす）
+document.getElementById('reviewAiCfg').addEventListener('click', () => setReviewAiConfig(!reviewAiConfigOpen()));
 document.getElementById('reviewTidy').addEventListener('click', () => runReviewAi('tidy'));
 document.getElementById('reviewSum').addEventListener('click', () => runReviewAi('summarize'));
 document.getElementById('reviewUndo').addEventListener('click', () => {

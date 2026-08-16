@@ -500,6 +500,7 @@ t('挟む判定は1箇所・長さの数字は engine が持つ', () => {
   ok(/function shouldReviewUtterance/.test(code), 'shouldReviewUtterance が無い');
   const body = bodyOf('shouldReviewUtterance');
   ok(/VCRewrite\.needsReview/.test(body), '長さの判定を engine に任せていない＝閾値が2箇所に散る');
+  // v93: 長文モード（自分でボタンを押した時）だけは越える＝下の 15 節で別に縛る
   ok(/targeted/.test(body), '欄指定発話でも挟んでいる＝v17（その欄だけの差分）の意味が壊れる');
   // 定義（function openReview）は数えない＝**呼び出し**が1箇所であることを見る
   const calls = countOf(/(?<!function )\bopenReview\s*\(/g);
@@ -637,6 +638,81 @@ t('トーストは位置まで補間しない（前の位置から動いて見�
 t('トーストは操作を邪魔しない（重なっても押せる）', () => {
   ok(/pointer-events:\s*none/.test(cssBlock('.toast')),
     'トーストがタップを吸う＝下のボタンが押せなくなる');
+});
+
+// ===== 15. v93: 長文モードは必ず推敲画面を挟む／推敲画面から AI 設定を触れる（ゆう要求） =====
+// ゆう「録音時、長く話すボタン押したら、保存前に**必ず**1枚下書きのページを挟むようにして、
+//      下書きのページに AI設定ボタンを置いてください」。
+t('長文モードの録音は長さに関わらず推敲画面を挟む', () => {
+  const body = bodyOf('shouldReviewUtterance');
+  ok(/opts && opts\.longMode/.test(body), 'longMode を見ていない＝短い長文モードの発話が素通りする');
+  // 長さ・欄指定の判定より**前**に返す（後ろに置くと 80字未満で弾かれて挟まらない）
+  const iLong = body.indexOf('opts.longMode');
+  const iLen = body.indexOf('needsReview');
+  const iTg = body.indexOf('targeted');
+  ok(iLong > 0 && iLen > iLong && iTg > iLong,
+    '長さ／欄指定の判定が先＝長文モードでも 80字未満や「メモ 〜」で挟まれない');
+});
+
+t('長文モードの印を渡すのは音声の確定だけ（テキスト送信を巻き込まない）', () => {
+  ok(/onFinal[\s\S]{0,160}?onUtterance\([\s\S]{0,80}?longMode:\s*recOverride\.keepOpen/.test(code),
+    '音声の確定が長文モードを渡していない＝ボタンを押しても挟まらない');
+  // recOverride は次の録音開始までリセットされない（v61）＝テキスト送信が巻き添えを食う形を禁じる
+  ok(!/longMode/.test(bodyOf('send')),
+    'テキスト送信が longMode を渡している＝録音の後にテキストを送ると短文でも推敲画面が出る');
+  ok(!/recOverride\.keepOpen/.test(bodyOf('shouldReviewUtterance')),
+    '判定関数が recOverride を直接読んでいる＝どの経路から来たか区別できず誤爆する');
+});
+
+t('なぜ挟まれたかを画面に出す（勝手に画面が挟まったに見せない）', () => {
+  const body = bodyOf('openReview');
+  ok(/reviewHead/.test(body) && /長文モード/.test(body),
+    '見出しを言い分けていない＝長さで出たのか自分で押したのか分からない');
+});
+
+t('推敲画面の AI 設定は詳細設定の現物を移す（設定を2つ作らない・v74）', () => {
+  ok(/function setReviewAiConfig/.test(code), 'setReviewAiConfig が無い');
+  const body = bodyOf('setReviewAiConfig');
+  ok(/aiConfigBox/.test(body), '現物（#aiConfigBox）を使っていない＝入力欄を複製している');
+  // 推敲画面の中に AI 設定の入力欄を作り直していないこと（id の重複＝どちらが本物か分からなくなる）
+  for (const id of ['aiProvider', 'aiModel', 'aiKey']) {
+    ok(countOf(new RegExp(`id="${id}"`, 'g')) === 1, `#${id} が2つある＝設定の入れ物が割れている`);
+  }
+});
+
+t('借りた AI 設定は必ず詳細設定へ返す（画面から機能が失踪しない）', () => {
+  ok(/setReviewAiConfig\(false\)/.test(bodyOf('closeReview')),
+    '推敲画面を閉じる時に返していない＝詳細設定を開いても AI 設定が無い');
+  ok(/setReviewAiConfig\(false\)/.test(bodyOf('openReview')),
+    '開く時に畳んでいない＝前回の開きっぱなしが残る');
+  ok(/aiConfigSlot/.test(bodyOf('setReviewAiConfig')) && /id="aiConfigSlot"/.test(html),
+    '戻る場所（#aiConfigSlot）が無い＝元の位置を復元できない');
+  // 移す側・返す側の**両方**に親チェックが要る（片方だけだと、そちらでフォーカスが飛ぶ）
+  const moves = (bodyOf('setReviewAiConfig').match(/appendChild\(box\)/g) || []).length;
+  const guarded = (bodyOf('setReviewAiConfig').match(/parentNode !== \w+\)\s*\w+\.appendChild\(box\)/g) || []).length;
+  ok(moves > 0 && moves === guarded,
+    `同じ親でも appendChild している（${guarded}/${moves} だけ守られている）＝入力中にフォーカスが飛ぶ`);
+});
+
+t('AI 設定ボタンはキーが無くても出す（押せるものが1つも無い画面を作らない）', () => {
+  const body = bodyOf('renderReviewAi');
+  ok(/reviewTidy/.test(body) && /reviewSum/.test(body), '整える／要約の出し入れがここに無い');
+  ok(!/reviewAiCfg[^\n]*hidden\s*=\s*!has/.test(body), 'AI 設定ボタンをキーの有無で隠している');
+  ok(/cfgBtn\.hidden\s*=\s*!window\.VCAI/.test(body),
+    'AI 機能が読めていない時にも出している＝開いても空の枠しか出ない');
+  // v89 の「見た目を直す1箇所」から呼ぶ＝キーを入れた瞬間に「整える」が出る
+  ok(/renderReviewAi\(\)/.test(bodyOf('refreshAiState')),
+    'refreshAiState から呼んでいない＝設定した直後も画面が古いまま（画面が嘘をつく・v20）');
+});
+
+t('Esc は上に居るものから（推敲画面そのものは Esc で閉じない）', () => {
+  const m = code.match(/if \(e\.key !== 'Escape'\) return;[\s\S]{0,400}?\}\);/);
+  ok(m, 'Esc のハンドラが見つからない');
+  const h = m[0];
+  const iAi = h.indexOf('reviewAiConfigOpen');
+  const iSheet = h.indexOf('periodSheet');
+  ok(iAi > 0 && iAi < iSheet, 'AI 設定より先に期間の板を閉じている＝上に居るものから閉じていない');
+  ok(!/closeReview\(\)/.test(h), 'Esc で推敲画面ごと閉じている＝書いた本文が一発で消える');
 });
 
 console.log(`\nwiring.test: ${pass} passed, ${fail.length} failed`);
