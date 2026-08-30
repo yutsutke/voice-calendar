@@ -502,9 +502,14 @@ t('挟む判定は1箇所・長さの数字は engine が持つ', () => {
   ok(/VCRewrite\.needsReview/.test(body), '長さの判定を engine に任せていない＝閾値が2箇所に散る');
   // v93: 長文モード（自分でボタンを押した時）だけは越える＝下の 15 節で別に縛る
   ok(/targeted/.test(body), '欄指定発話でも挟んでいる＝v17（その欄だけの差分）の意味が壊れる');
-  // 定義（function openReview）は数えない＝**呼び出し**が1箇所であることを見る
+  // 定義（function openReview）は数えない＝**呼び出し**を見る。v96 で入口は2つになった:
+  //   ①条件で開く（onUtterance→shouldReviewUtterance）②人がボタンで開く（openLiveReview・逐次）。
+  //   ②は「押すこと自体が意思表明」（v44）＝条件が食い違う心配が無い。条件由来の入口は今も1つ。
   const calls = countOf(/(?<!function )\bopenReview\s*\(/g);
-  ok(calls === 1, `openReview の呼び出しが ${calls} 箇所＝入口が増えると条件が食い違う`);
+  ok(calls === 2, `openReview の呼び出しが ${calls} 箇所（条件の入口1＋逐次の入口1＝2のはず）`);
+  ok(/function openLiveReview[\s\S]{0,300}openReview\('', null, \{ live: true \}\)/.test(code),
+    '逐次の入口が openLiveReview 1関数に集まっていない');
+  ok(countOf(/openLiveReview\b/g) >= 3, 'ボタンと E2E が openLiveReview を通っていない');
 });
 
 t('閉じ込めない＝出口は「進む」と「捨てる」の2つ（v78 の不変条件）', () => {
@@ -725,12 +730,16 @@ t('推敲中かの判定は reviewOpen 1関数（同じ答えを3つの経路が
   ok(countOf(/rvStage\.hidden\s*===/g) === 0, 'reviewStage の hidden を別の場所で読んでいる＝判定が2つ');
 });
 
-t('続きを足すのは onFinal の分岐1つだけ（appendReview の入口は1本）', () => {
-  ok(countOf(/appendReview\s*\(/g) === 2, `appendReview の呼び出しが1箇所でない（定義+1呼び出し＝2のはず・実際 ${countOf(/appendReview\s*\(/g)}）`);
+t('下書きへの確定は reviewTakeFinal 1本（逐次の話し終わりか、続きの追記かはそこで分ける）', () => {
   const h = code.match(/onFinal\(t, meta\) \{[\s\S]{0,300}?\n  \},/);
   ok(h, 'onFinal のハンドラが見つからない');
-  ok(/if \(reviewOpen\(\)\) \{ appendReview\(t\); return; \}/.test(h[0]),
+  ok(/if \(reviewOpen\(\)\) \{ reviewTakeFinal\(t\); return; \}/.test(h[0]),
     '推敲中の確定をフォームへ流している（下書きの続きが予定になる）');
+  const b = bodyOf('reviewTakeFinal');
+  ok(/liveActive/.test(b) && /finishLive\(t\)/.test(b) && /appendReview\(t\)/.test(b),
+    'reviewTakeFinal が逐次と追記を分けていない');
+  ok(countOf(/appendReview\s*\(/g) === 2, `appendReview の呼び出しが1箇所でない（定義+1呼び出し＝2のはず・実際 ${countOf(/appendReview\s*\(/g)}）`);
+  ok(countOf(/finishLive\s*\(/g) === 4, `finishLive の入口が増えた（定義+話し終わり+録音エラー+無言＝4のはず・実際 ${countOf(/finishLive\s*\(/g)}）`);
 });
 
 t('推敲中は自動で録音しない（本文が黙って伸びない）', () => {
@@ -794,6 +803,79 @@ t('☑ は設定の現物に直結（入れ物を2つ作らない）', () => {
   ok(/autoCb\.checked = !!settings\.get\('autoSummarize'\)/.test(bodyOf('renderReviewAi')),
     '☑ の見た目を設定から作っていない＝画面と設定が食い違う（v20）');
   ok(/autoWrap\.hidden = !has/.test(bodyOf('renderReviewAi')), 'キーが無くても ☑ を出している（v40）');
+});
+// ===== v96: 逐次モード＝話しながら AI が整える（ゆう要求 2026-08-30）=====
+// 🚨 ここが壊れると: 認識が死んだ時に**出口の無い画面**に閉じ込める（進むは隠れたまま）／
+//    人の編集に AI の訂正が**後から**重なって打った字が消える／逐次の状態が次の下書きへ漏れる。
+
+t('逐次の interim 分岐は reviewOpen より先（逐次中の途中経過を追記側が食わない）', () => {
+  const m = code.match(/onInterim\(t\) \{[\s\S]{0,400}?\n  \},/);
+  ok(m, 'onInterim のハンドラが見つからない');
+  const iLive = m[0].indexOf('liveActive');
+  const iReview = m[0].indexOf('reviewOpen()');
+  ok(iLive > 0 && iLive < iReview, 'liveActive の分岐が reviewOpen より後＝逐次の途中経過が v94 側に流れる');
+});
+
+t('区切りの数字は engine が持つ（宿主に息継ぎの ms・字数を書かない）', () => {
+  ok(/VCRewrite\.LIVE\.PAUSE_MS/.test(bodyOf('liveInterim')), '息継ぎの ms を宿主に書いている');
+  ok(/VCRewrite\.LIVE\.MAX_TAIL_CHARS/.test(bodyOf('liveInterim')), '溜まりすぎの字数を宿主に書いている');
+  ok(/VCRewrite\.LIVE\.MIN_CHUNK_CHARS/.test(bodyOf('settleLiveChunk')), '最小の断片の字数を宿主に書いている');
+  ok(/VCRewrite\.LIVE\.CONTEXT_CHARS/.test(bodyOf('correctLiveChunk')), '文脈の長さを宿主に書いている');
+});
+
+t('録音中の本文は readOnly（機械が書く欄に人の編集を混ぜない）', () => {
+  ok(/rvText\.readOnly = liveActive/.test(bodyOf('openReview')), '逐次で開いても編集できる＝訂正が上書きする');
+  ok(/rvText\.readOnly = false/.test(bodyOf('finishLive')), '話し終わっても readOnly のまま＝直せない');
+  ok(/rvText\.readOnly = false/.test(bodyOf('closeReview')), '捨てた後も readOnly が残る＝次の下書きが直せない');
+});
+
+t('話し終わり後に返ってきた訂正は「本文が組んだままの時だけ」当てる', () => {
+  const b = bodyOf('correctLiveChunk');
+  ok(/rvText\.value === joined/.test(b), '在庫の訂正が人の編集を上書きする（v3 の線）');
+  ok(/liveActive/.test(b), '録音中かどうかを見ていない');
+  ok(/VCAI\.hasKey\(\)/.test(b), 'キーが無くても AI を呼ぼうとする');
+});
+
+t('逐次中に認識が死んだら、拾えた分で話し終わりにする（閉じ込めない・v78）', () => {
+  const m = code.match(/onError\(e\) \{[\s\S]{0,700}?\n  \},/);
+  ok(m, 'onError のハンドラが見つからない');
+  ok(/liveActive && !transcriber\.isListening\(\)/.test(m[0]) && /finishLive\(liveLastInterim\)/.test(m[0]),
+    '逐次中の録音死で final が来ない＝「進む」が隠れたままの画面に閉じ込める');
+});
+
+t('逐次の後始末は closeReview にもある（捨てても次の下書きへ漏れない）', () => {
+  const b = bodyOf('closeReview');
+  ok(/liveActive = false/.test(b), 'liveActive が残る＝次の確定が finishLive へ吸われる');
+  ok(/clearTimeout\(liveTimer\)/.test(b), '息継ぎタイマーが残る＝閉じた後に settle が走る');
+});
+
+t('逐次モード中も ✕ 捨てる は残る（CSS で隠す一覧に reviewCancel が居ない）', () => {
+  const m = html.match(/#reviewStage\.live[^{]*\{ display: none; \}/);
+  ok(m, '逐次中に隠す CSS が見つからない');
+  ok(!m[0].includes('reviewCancel') && !m[0].includes('reviewMic'),
+    '出口（✕ 捨てる／⏹）まで隠している＝閉じ込め（v78 違反）');
+});
+
+t('来歴に残す「話したまま」は生の全文（訂正後を話したことにしない）', () => {
+  ok(/reviewSpoken = liveChunks\.map\(\(c\) => c\.raw\)\.join\(''\)/.test(bodyOf('finishLive')),
+    '来歴が訂正後の文になっている＝認識と解釈の切り分け（v5）が壊れる');
+});
+
+t('↩ の戻し先は話したまま・訂正があった時だけ出す', () => {
+  const b = bodyOf('finishLive');
+  ok(/reviewUndoText = reviewSpoken/.test(b), '↩ が生の全文に戻らない');
+  ok(/fixedCount/.test(b), '訂正ゼロでも ↩ を出している（押しても何も起きないボタン）');
+});
+
+t('openLiveReview は長文モードを道連れにする（無音で止まったら「話しながら」にならない）', () => {
+  const b = bodyOf('openLiveReview');
+  ok(/recOverride\.keepOpen = true/.test(b), 'keepOpen を立てていない');
+  ok(/setContinuous\(true\)/.test(b), 'native に「止めない」を頼んでいない');
+});
+
+t('逐次ボタンは native の長文＋キーの両方がある時だけ（押せるのに動かないを作らない）', () => {
+  ok(/ovLive\.hidden = !\(transcriber\.canKeepOpen && canAI\)/.test(bodyOf('renderOverrideButtons')),
+    'ovLive の出し入れが canKeepOpen と canAI の両方を見ていない');
 });
 console.log(`\nwiring.test: ${pass} passed, ${fail.length} failed`);
 if (fail.length) { console.log('\n' + fail.join('\n\n')); process.exit(1); }

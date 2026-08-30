@@ -185,5 +185,36 @@ t('自動要約の境目は「整えるを出す境目」より上（下書き�
   // MIN_CHARS(40) の倍より上に置く（当初の 300 はゆうの実機体感で 100 へ・2026-08-30）
   ok(R.AUTO_SUMMARY_CHARS > R.MIN_CHARS * 2, '境目が低すぎる＝ひと言の続きで自動要約が走る');
 });
+// ===== v96: 逐次モード（correct モード＋LIVE の数字）=====
+
+t('LIVE の数字が仕様どおり（変えるならこのテストも直す＝仕様書）', () => {
+  ok(R.LIVE.MIN_CHUNK_CHARS === 8, `MIN_CHUNK_CHARS=${R.LIVE.MIN_CHUNK_CHARS}`);
+  ok(R.LIVE.PAUSE_MS === 900, `PAUSE_MS=${R.LIVE.PAUSE_MS}`);
+  ok(R.LIVE.MAX_TAIL_CHARS === 120, `MAX_TAIL_CHARS=${R.LIVE.MAX_TAIL_CHARS}`);
+  ok(R.LIVE.CONTEXT_CHARS === 100, `CONTEXT_CHARS=${R.LIVE.CONTEXT_CHARS}`);
+});
+
+t('correct の指示文＝断片は断片のまま・文脈を出力に含めない（文言が仕様）', () => {
+  const p = R.buildPrompt('correct', '直前の文章です');
+  ok(p.includes('直前の文章です'), '渡した文脈が指示文に埋まらない');
+  ok(p.includes('届いた断片だけを直して返す。直前の文章を出力に含めない。'), '文脈を出力に含めない縛りが消えた（訂正のたびに本文が二重になる）');
+  ok(p.includes('断片は断片のまま返す。文を完成させない・続きを推測して足さない。'),
+    '断片を文に完成させる余地がある＝AI が創作する（SPEC §7）');
+  ok(p.includes('内容を足さない・減らさない。要約しない。'), '要約の禁止が消えた');
+});
+
+t('correct は文脈なしでも成立（最初の断片には直前が無い）', () => {
+  const p = R.buildPrompt('correct');
+  ok(!p.includes('【直前の文章'), '文脈が無いのに空の文脈ブロックが出る');
+  ok(p.includes('断片'), '断片の指示が消えている');
+});
+
+t('correct の受け入れ幅＝境目ちょうどを通す（0.5 / 1.6）', () => {
+  const before = 'あ'.repeat(100);
+  ok(R.check(before, 'い'.repeat(50), 'correct').ok, '下限ちょうど(0.5)を落としている');
+  ok(!R.check(before, 'い'.repeat(49), 'correct').ok, '0.5未満を通している');
+  ok(R.check(before, 'い'.repeat(160), 'correct').ok, '上限ちょうど(1.6)を落としている');
+  ok(!R.check(before, 'い'.repeat(161), 'correct').ok, '1.6超を通している');
+});
 console.log(`\nrewrite.test: ${pass} passed, ${failures.length} failed`);
 if (failures.length) { console.log('\n' + failures.join('\n\n')); process.exit(1); }

@@ -114,6 +114,8 @@
       toggle(opts) { listening ? this.stop() : this.start(opts); },
       isListening: () => listening,
       simulate(text) { const t = String(text || '').trim(); if (t) h.onFinal(t, { engine: 'simulated' }); },
+      // v96: 途中結果も注入できる（逐次モードの E2E 用。実装はどちらも onInterim へ流すだけ）
+      simulateInterim(text) { h.onInterim(String(text || '')); },
     };
   }
 
@@ -177,6 +179,8 @@
       toggle() { listening ? stop() : start(); },
       isListening: () => listening,
       simulate(text) { const t = String(text || '').trim(); if (t) h.onFinal(t, { engine: 'simulated' }); },
+      // v96: 途中結果も注入できる（逐次モードの E2E 用。実装はどちらも onInterim へ流すだけ）
+      simulateInterim(text) { h.onInterim(String(text || '')); },
     };
   }
 
