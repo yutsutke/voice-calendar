@@ -168,7 +168,7 @@ t('元の末尾の空白・改行は畳んでから足す（改行が二重に�
 });
 
 t('自動要約の境目ちょうどは走る（数字は engine が持つ）', () => {
-  ok(R.AUTO_SUMMARY_CHARS === 300, '境目の数字が変わった（変えるならこのテストも直す＝仕様書）');
+  ok(R.AUTO_SUMMARY_CHARS === 100, '境目の数字が変わった（変えるならこのテストも直す＝仕様書。100 はゆうの実機体感 2026-08-30）');
   ok(!R.shouldAutoSummarize(R.AUTO_SUMMARY_CHARS - 1), '境目の1つ手前で走っている');
   ok(R.shouldAutoSummarize(R.AUTO_SUMMARY_CHARS), '境目ちょうどで走らない');
   ok(R.shouldAutoSummarize(9999), 'たっぷり超えても走らない');
@@ -180,9 +180,10 @@ t('数えられない値では走らない（黙って AI を呼ばない）', (
   }
 });
 
-t('自動要約の境目は「推敲画面を挟む境目」より十分に高い', () => {
-  // 1回ぶんの長い発話（80字）では走らず、**話し続けた人にだけ**効く＝割り込みの敷居は提案より高い
-  ok(R.AUTO_SUMMARY_CHARS > R.REVIEW_MIN_CHARS * 2, '境目が近すぎる＝1発話で自動要約が走る');
+t('自動要約の境目は「整えるを出す境目」より上（下書きの最初の発話は数えないので比較先はこちら）', () => {
+  // 最初の発話は openReview が 0 に数え直す＝境目が効くのは**続き**だけ。それでも数語で走らないよう
+  // MIN_CHARS(40) の倍より上に置く（当初の 300 はゆうの実機体感で 100 へ・2026-08-30）
+  ok(R.AUTO_SUMMARY_CHARS > R.MIN_CHARS * 2, '境目が低すぎる＝ひと言の続きで自動要約が走る');
 });
 console.log(`\nrewrite.test: ${pass} passed, ${failures.length} failed`);
 if (failures.length) { console.log('\n' + failures.join('\n\n')); process.exit(1); }
