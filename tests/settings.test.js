@@ -165,5 +165,17 @@ t('subscribe で変更が通知される', () => {
   eq(got, ['autoOpenOptional', false], '通知される');
 });
 
+// ===== v94: 下書きの自動要約（既定オフ＝触らない人の体験は不変）=====
+t('autoSummarize の既定はオフ（AI が勝手に本文を書き換えない）', () => {
+  const s = createSettings();
+  ok(s.get('autoSummarize') === false, '既定でオンになっている＝黙って書き換える側に倒れている');
+});
+
+t('autoSummarize の UI は下書き画面の ☑ だけ（詳細設定の一覧には出さない）', () => {
+  const d = DEFS.find((x) => x.key === 'autoSummarize');
+  ok(d, 'autoSummarize が DEFS に無い');
+  ok(d.render === 'custom', '詳細設定の汎用ループが描いてしまう＝同じ設定の入れ物が2つになる（v93）');
+  ok(typeof d.why === 'string' && d.why.length > 40, 'why が無い＝将来「これ要る？」を判断できない');
+});
 console.log(`\nsettings.test: ${pass} passed, ${fail} failed`);
 if (failures.length) { console.log('\n' + failures.join('\n\n')); process.exit(1); }

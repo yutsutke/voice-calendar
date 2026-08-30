@@ -28,6 +28,14 @@
   // 80字 ≒ 一段落。「明日15時に歯医者」のような1件の予定は絶対に届かない＝普段の一本道は無傷。
   const REVIEW_MIN_CHARS = 80;
 
+  // 🆕 v94: **自動で要約が走る境目**（ゆう要求「ある程度しゃべると、自動に要約がはしる設定も欲しい」）。
+  // 数え方は「本文の総字数」ではなく **前回 AI を当ててから声で足した分**（下の shouldAutoSummarize）。
+  // 🚨 総字数で数えると**要約の要約**が延々と走る（400字→要約100字→また閾値を超えれば走る…）＝
+  //    要らない情報の欠落が積み上がる。「足した分」で数えれば、走るのは**新しく話した分が溜まった時だけ**。
+  // 300字 ≒ 話し言葉で1分ぶん（長文モードは最長10分）。80字（推敲画面を挟む境目）より十分に高い
+  // ＝「1回ぶんの長い発話」では走らず、**話し続けた人にだけ**効く。
+  const AUTO_SUMMARY_CHARS = 300;
+
   // 🆕 v84: AI に文章を作り直させる操作は2つ（ゆう要求「AIで要約、文章を整える、などのボタン」）。
   // **指示文と受け入れ幅を1つの表にまとめる**＝新しい操作が増えても、書く場所が1箇所で済む
   // （プロンプトだけ別、判定だけ別、に散らすと v74 の形になる）。
@@ -141,9 +149,30 @@
     return String(text == null ? '' : text).trim().length >= REVIEW_MIN_CHARS;
   }
 
+  // 🆕 v94: 推敲画面で**続きを声で足す**時の足し方（ゆう要求「編集した後にまた、その文章の続きを
+  // 音声で入力できるようにしてほしい」）。区切り方を宿主に書かない＝ここが唯一の決定。
+  // 🔑 **改行で区切る**（句点を足さない）＝ 足すのは「話した通りの文字」だけ＝**創作しない**（SPEC §7）。
+  //   要約した後に続きを足す使い方（ゆうの流れ）では、要約と生の続きが**見て分かれている**方が直しやすい。
+  // 空はそのまま返す（空を足して余計な改行だけ増やさない）。
+  function appendSpoken(base, add) {
+    const b = String(base == null ? '' : base).replace(/\s+$/, '');
+    const a = String(add == null ? '' : add).trim();
+    if (!a) return b;
+    if (!b) return a;
+    return b + '\n' + a;
+  }
+
+  // 🆕 v94: 自動要約を走らせるか。**前回 AI を当ててから声で足した字数**だけで決める。
+  // 🚫 中身では判断しない（意味を判定しない＝v27/v28 の線）。
+  // 🚫 手で打った分は数えない（宿主側の責任）＝キーを打つたびに AI が走る画面を作らない。
+  function shouldAutoSummarize(addedSinceAi) {
+    const n = Number(addedSinceAi);
+    return Number.isFinite(n) && n >= AUTO_SUMMARY_CHARS;
+  }
+
   const api = {
-    MIN_CHARS, MIN_RATIO, MAX_RATIO, REVIEW_MIN_CHARS, MODES,
-    buildPrompt, clean, check, isLongEnough, needsReview,
+    MIN_CHARS, MIN_RATIO, MAX_RATIO, REVIEW_MIN_CHARS, AUTO_SUMMARY_CHARS, MODES,
+    buildPrompt, clean, check, isLongEnough, needsReview, appendSpoken, shouldAutoSummarize,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else global.VCRewrite = api;

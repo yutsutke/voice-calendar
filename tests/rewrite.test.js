@@ -149,5 +149,40 @@ t('落とす理由はモードごとに言い方が変わる（そのまま画�
   ok(!r2.ok && /要約なのに長く/.test(r2.problem), `要約の理由になっていない: ${r2.problem}`);
 });
 
+// ===== v94: 続きを声で足す／たまったら自動で要約（ゆう要求 2026-08-30）=====
+
+t('続きは改行で区切って足す（句点を創作しない）', () => {
+  ok(R.appendSpoken('明日は歯医者', '三時から') === '明日は歯医者\n三時から', '改行で足していない');
+  ok(!/。/.test(R.appendSpoken('明日は歯医者', '三時から')), '言っていない句点を足している（創作＝SPEC §7）');
+});
+
+t('空は足さない（余計な改行だけ増やさない）', () => {
+  ok(R.appendSpoken('本文', '') === '本文', '空を足して形が変わった');
+  ok(R.appendSpoken('本文', '   ') === '本文', '空白だけの続きを足している');
+  ok(R.appendSpoken('', '続き') === '続き', '白紙に足すと先頭に改行が入っている');
+  ok(R.appendSpoken(null, null) === '', 'null で壊れる');
+});
+
+t('元の末尾の空白・改行は畳んでから足す（改行が二重にならない）', () => {
+  ok(R.appendSpoken('本文\n\n  ', ' 続き ') === '本文\n続き', `畳めていない: ${JSON.stringify(R.appendSpoken('本文\n\n  ', ' 続き '))}`);
+});
+
+t('自動要約の境目ちょうどは走る（数字は engine が持つ）', () => {
+  ok(R.AUTO_SUMMARY_CHARS === 300, '境目の数字が変わった（変えるならこのテストも直す＝仕様書）');
+  ok(!R.shouldAutoSummarize(R.AUTO_SUMMARY_CHARS - 1), '境目の1つ手前で走っている');
+  ok(R.shouldAutoSummarize(R.AUTO_SUMMARY_CHARS), '境目ちょうどで走らない');
+  ok(R.shouldAutoSummarize(9999), 'たっぷり超えても走らない');
+});
+
+t('数えられない値では走らない（黙って AI を呼ばない）', () => {
+  for (const v of [undefined, null, NaN, 'たくさん', {}, -1]) {
+    ok(!R.shouldAutoSummarize(v), `${String(v)} で走っている`);
+  }
+});
+
+t('自動要約の境目は「推敲画面を挟む境目」より十分に高い', () => {
+  // 1回ぶんの長い発話（80字）では走らず、**話し続けた人にだけ**効く＝割り込みの敷居は提案より高い
+  ok(R.AUTO_SUMMARY_CHARS > R.REVIEW_MIN_CHARS * 2, '境目が近すぎる＝1発話で自動要約が走る');
+});
 console.log(`\nrewrite.test: ${pass} passed, ${failures.length} failed`);
 if (failures.length) { console.log('\n' + failures.join('\n\n')); process.exit(1); }

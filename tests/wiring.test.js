@@ -715,5 +715,85 @@ t('Esc は上に居るものから（推敲画面そのものは Esc で閉じ�
   ok(!/closeReview\(\)/.test(h), 'Esc で推敲画面ごと閉じている＝書いた本文が一発で消える');
 });
 
+// ===== v94: 下書きで続きを声で足す／たまったら自動で要約（ゆう要求 2026-08-30）=====
+// 🚨 ここが壊れると **捨てたはずの続きがカレンダーに入る**（閉じた後の確定がフォームへ流れる）か、
+//    **本文が黙って伸びる**（自動録音が推敲中に走る）。どちらも実機まで気づけない種類の事故。
+
+t('推敲中かの判定は reviewOpen 1関数（同じ答えを3つの経路が見る）', () => {
+  ok(/function reviewOpen\s*\(/.test(code), 'reviewOpen が無い');
+  // 画面の hidden を直接読む場所を増やさない（v3 の二重管理と同じ形になる）
+  ok(countOf(/rvStage\.hidden\s*===/g) === 0, 'reviewStage の hidden を別の場所で読んでいる＝判定が2つ');
+});
+
+t('続きを足すのは onFinal の分岐1つだけ（appendReview の入口は1本）', () => {
+  ok(countOf(/appendReview\s*\(/g) === 2, `appendReview の呼び出しが1箇所でない（定義+1呼び出し＝2のはず・実際 ${countOf(/appendReview\s*\(/g)}）`);
+  const h = code.match(/onFinal\(t, meta\) \{[\s\S]{0,300}?\n  \},/);
+  ok(h, 'onFinal のハンドラが見つからない');
+  ok(/if \(reviewOpen\(\)\) \{ appendReview\(t\); return; \}/.test(h[0]),
+    '推敲中の確定をフォームへ流している（下書きの続きが予定になる）');
+});
+
+t('推敲中は自動で録音しない（本文が黙って伸びない）', () => {
+  ok(/reviewOpen\(\)\) return 'review'/.test(bodyOf('autoRecord')),
+    'autoRecord に推敲中の門が無い＝アプリへ戻るだけで下書きに環境音が足される（v28 の積）');
+});
+
+t('画面を閉じる時は必ず録音を止める（閉じた後の確定がフォームへ流れない）', () => {
+  ok(/stopReviewMic\(\);/.test(bodyOf('closeReview')), 'closeReview が録音を止めていない');
+  // 進むも捨てるも closeReview を通る＝止める場所は1つ
+  ok(countOf(/stopReviewMic\(\)/g) === 2, '録音を止める場所が closeReview の外にもある（複製）');
+});
+
+t('続きは本文・話したまま・↩ の戻し先の3つに同じだけ足す', () => {
+  const b = bodyOf('appendReview');
+  ok(/rvText\.value = VCRewrite\.appendSpoken/.test(b), '本文に足していない');
+  ok(/reviewSpoken = VCRewrite\.appendSpoken/.test(b), '話したまま（来歴用）に足していない＝来歴が嘘になる');
+  ok(/reviewUndoText = VCRewrite\.appendSpoken/.test(b), '↩ の戻し先に足していない＝↩ で自分が話した続きが消える');
+  ok(/reviewUndoText !== null/.test(b), 'AI を当てる前でも戻し先を作っている（↩ が勝手に出る）');
+});
+
+t('区切り方も境目の数字も engine が持つ（宿主に書かない）', () => {
+  ok(countOf(/VCRewrite\.appendSpoken/g) >= 3, '足し方を宿主で書いている');
+  ok(/VCRewrite\.shouldAutoSummarize\(reviewAdded\)/.test(bodyOf('maybeAutoSummarize')),
+    '自動要約の境目を宿主の数字で判定している');
+  ok(countOf(/reviewAdded\s*>=?\s*\d/g) === 0, '宿主に閾値の数字が書かれている（二重管理）');
+});
+
+t('長文モードを頼むのは「録音が始まった後」だけ（native は start でリセットする）', () => {
+  ok(countOf(/setReviewContinuous\(\)/g) === 2, 'setReviewContinuous の呼び出しが1箇所でない');
+  ok(/if \(on\) setReviewContinuous\(\);/.test(code), 'onState の listening 以外で頼んでいる＝黙って効かない');
+  ok(!/setReviewContinuous\(\)[\s\S]{0,80}transcriber\.start/.test(code),
+    'start より前に頼んでいる＝native の「この録音だけ」リセットで消える');
+});
+
+t('自動要約が走るのは声で足した直後だけ（打っている最中に走らない）', () => {
+  ok(countOf(/maybeAutoSummarize\(\)/g) === 2, 'maybeAutoSummarize の呼び出しが1箇所でない');
+  ok(/maybeAutoSummarize\(\);/.test(bodyOf('appendReview')), '声で足した直後に見ていない');
+  const b = bodyOf('maybeAutoSummarize');
+  ok(/settings\.get\('autoSummarize'\)/.test(b), '設定を見ずに走っている（既定オフが効かない）');
+  ok(/VCAI\.hasKey\(\)/.test(b), 'キーが無くても走らせている（押せるのに動かない・v40）');
+  ok(/auto: true/.test(b), '自動で走ったことを runReviewAi へ伝えていない＝理由が画面に出ない');
+});
+
+t('AI の待ち時間に本文が変わっていたら当てない（人の編集を上書きしない）', () => {
+  const b = bodyOf('runReviewAi');
+  ok(/rvText\.value\.trim\(\) !== before/.test(b), '待機中の編集を見ていない＝打った字が消える（v3 の線）');
+  const iGuard = b.indexOf('!== before');
+  const iApply = b.indexOf('rvText.value = r.text');
+  ok(iGuard > 0 && iApply > 0 && iGuard < iApply, '当ててから確かめている（順番が逆）');
+});
+
+t('「話した分」を数え直すのは AI を当てた時（要約の要約が続けて走らない）', () => {
+  ok(/reviewAdded = 0;/.test(bodyOf('runReviewAi')), 'runReviewAi で数え直していない＝失敗のたびに再挑戦する');
+  ok(/reviewAdded = 0;/.test(bodyOf('openReview')), '新しい下書きに前の回の分を持ち越している');
+  ok(/reviewAdded = 0;/.test(bodyOf('closeReview')), '閉じても数が残っている');
+});
+
+t('☑ は設定の現物に直結（入れ物を2つ作らない）', () => {
+  ok(/settings\.set\('autoSummarize'/.test(code), '☑ が設定を書き換えていない＝次に開くと消える');
+  ok(/autoCb\.checked = !!settings\.get\('autoSummarize'\)/.test(bodyOf('renderReviewAi')),
+    '☑ の見た目を設定から作っていない＝画面と設定が食い違う（v20）');
+  ok(/autoWrap\.hidden = !has/.test(bodyOf('renderReviewAi')), 'キーが無くても ☑ を出している（v40）');
+});
 console.log(`\nwiring.test: ${pass} passed, ${fail.length} failed`);
 if (fail.length) { console.log('\n' + fail.join('\n\n')); process.exit(1); }

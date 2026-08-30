@@ -198,6 +198,16 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
   .rv-aicfg[hidden] { display: none; }
   .rv-ai { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
   .rv-ai[hidden] { display: none; }
+  /* v94: 続きを声で足す（ゆう要求）。マイクも .ov-btn の語彙のまま＝新しい形を増やさない（v46）。
+     録音中は .on（既存の語彙）で光る＝この画面だけの見た目を作らない。 */
+  .rv-live { font-size: 13px; color: var(--sub); line-height: 1.5; margin: 8px 2px 0;
+    max-height: 4.5em; overflow-y: auto; }
+  .rv-live[hidden] { display: none; }
+  /* ☑ 自動要約（ゆう要求「下書きボタンに☑みたいのを場所を入れて」）＝押せるものと同じ段に並べる。
+     チェックは設定の現物（engine/settings.js の autoSummarize）に直結＝入れ物を2つ作らない（v93）。 */
+  .rv-auto { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--sub);
+    border: 1px solid var(--line); border-radius: 999px; padding: 7px 14px; background: var(--card); }
+  .rv-auto[hidden] { display: none; }
   /* AI 設定ボタンだけは**キーが無くても出す**（キーが無い人こそ設定へ行きたい）。見た目は他の
      .ov-btn と同じ＝新しい視覚語彙を増やさない（v46）。開いている間は ✓ が付く（.on は既存の語彙） */
   .rv-go { display: flex; gap: 10px; margin-top: 12px; }
@@ -623,17 +633,28 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
     </div>
     <!-- 話したままを、そのまま出す（要求①）。ここで直せる（要求②） -->
     <textarea id="reviewText" spellcheck="false"></textarea>
+    <!-- 🆕 v94: 「続きを話す」の途中経過。後ろの専用画面（v78）は推敲画面に隠れて見えない＝
+         いま言っているところをこの画面の中に出す（切り捨てない・v16 の表示版）。 -->
+    <div class="rv-live" id="reviewInterim" hidden></div>
     <div class="rv-note" id="reviewNote"></div>
     <!-- 🆕 v93（ゆう要求「下書きのページに AI設定ボタンを置いてください」）: ここに詳細設定の
          #aiConfigBox を**移して**見せる（複製しない＝設定を2つ作らない・v74）。閉じる時は必ず元へ
          戻す＝戻し忘れると詳細設定から AI 設定が消える（v92「隠したら中身を数え直す」）。 -->
     <div class="rv-aicfg" id="reviewAiSlot" hidden></div>
     <div class="rv-ai" id="reviewAi">
+      <!-- 🆕 v94（ゆう要求「編集した後にまた、その文章の続きを音声で入力できるようにしてほしい」）:
+           押した時だけ足す（自動では録らない）。この画面の録音は長文モード固定＝続きも長く話せる。 -->
+      <button id="reviewMic" type="button" class="ov-btn">🎤 続きを話す</button>
       <button id="reviewTidy" type="button" class="ov-btn">✍️ 文章を整える</button>
       <button id="reviewSum" type="button" class="ov-btn">📝 要約する</button>
       <button id="reviewUndo" type="button" class="ov-btn" hidden>↩ AIの前に戻す</button>
       <!-- キーが無くても出す（キーが無い人こそここから設定へ行く）＝この画面を離れずに直せる -->
       <button id="reviewAiCfg" type="button" class="ov-btn">⚙ AI設定</button>
+      <!-- 🆕 v94（ゆう要求「ある程度しゃべると、自動に要約がはしる設定も欲しい」）: 既定オフ。
+           キーがある時だけ出す（押せるのに動かないものを作らない・v40）。値は詳細設定と同じ入れ物。 -->
+      <label class="rv-auto" id="reviewAutoWrap" hidden for="reviewAuto">
+        <input type="checkbox" id="reviewAuto"> たまったら自動で要約
+      </label>
     </div>
     <div class="rv-go">
       <button id="reviewGo" type="button">進む</button>
@@ -988,23 +1009,23 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
      理由: この版文字列は index.html にしかないが、ロジックは別ファイル＝別キャッシュ。
      付けないと「フッタは新しいのにパーサは古い」という嘘の状態が成立する（v9 で実際に踏んだ）。
      index.html が更新されれば src の URL も変わる → JS も必ず新しく取り直される。 -->
-<script src="engine/settings.js?v=93"></script>
-<script src="engine/schema.js?v=93"></script>
-<script src="engine/parser.js?v=93"></script>
-<script src="engine/dictionary.js?v=93"></script>
-<script src="engine/contract.js?v=93"></script>
-<script src="engine/batch.js?v=93"></script>
-<script src="engine/ai.js?v=93"></script>
-<script src="engine/rewrite.js?v=93"></script>
-<script src="input/transcriber.js?v=93"></script>
-<script src="adapters/calendar.js?v=93"></script>
-<script src="adapters/records.js?v=93"></script>
-<script src="adapters/location.js?v=93"></script>
-<script src="engine/geomap.js?v=93"></script>
-<script src="engine/period.js?v=93"></script>
+<script src="engine/settings.js?v=94"></script>
+<script src="engine/schema.js?v=94"></script>
+<script src="engine/parser.js?v=94"></script>
+<script src="engine/dictionary.js?v=94"></script>
+<script src="engine/contract.js?v=94"></script>
+<script src="engine/batch.js?v=94"></script>
+<script src="engine/ai.js?v=94"></script>
+<script src="engine/rewrite.js?v=94"></script>
+<script src="input/transcriber.js?v=94"></script>
+<script src="adapters/calendar.js?v=94"></script>
+<script src="adapters/records.js?v=94"></script>
+<script src="adapters/location.js?v=94"></script>
+<script src="engine/geomap.js?v=94"></script>
+<script src="engine/period.js?v=94"></script>
 <script>
 'use strict';
-const BUILD = 'v93：長文モードは必ず推敲画面／推敲画面から AI 設定 · 2026-08-16';
+const BUILD = 'v94：下書きで続きを声で足す／たまったら自動で要約 · 2026-08-30';
 console.log('BUILD:', BUILD);
 document.getElementById('build').textContent = BUILD;
 
@@ -2821,6 +2842,8 @@ window.__vcRegisterWebMcp();
 
 const transcriber = VCTranscriber.createTranscriber({
   onInterim(t) {
+    // v94: 推敲画面で「続きを話す」中は、途中経過は**その画面の中**に出す（後ろは見えない）。
+    if (reviewOpen()) { showReviewInterim(t); return; }
     transcriptEl.textContent = `… ${t}`;
     // v78: 専用画面では長い発話が入り切らなくなる＝**いま言ったところ（末尾）が見える**ように追従。
     // 上に隠れた前半はスクロールで読める＝切り捨てない（v16「黙って捨てない」の表示版）。
@@ -2829,7 +2852,12 @@ const transcriber = VCTranscriber.createTranscriber({
   // v93: この確定が長文モードの録音のものかを**ここでだけ**渡す（ゆう要求「長く話すボタンを押したら
   // 必ず下書きを挟む」）。recOverride は次の録音開始までリセットされないので、テキスト送信（send）が
   // 巻き添えで推敲画面を出さないよう、印を付けるのは**音声の確定だけ**にする。
-  onFinal(t, meta) { onUtterance(t, meta, { longMode: recOverride.keepOpen }); },
+  // 🆕 v94: 推敲画面が開いている間の確定は**本文の続き**（ゆう要求）＝フォームへは流さない。
+  // 🔑 分岐はここ1箇所（v74）。押した人だけが足せる＝自動録音は推敲中に走らない（autoRecord の門）。
+  onFinal(t, meta) {
+    if (reviewOpen()) { appendReview(t); return; }
+    onUtterance(t, meta, { longMode: recOverride.keepOpen });
+  },
   onDebug(msg) { window.__vcDebugNote(`🎙 ${msg}`); }, // Swift 内部の出来事 → 診断（v15）
   onState(s) {
     const on = s === 'listening';
@@ -2840,6 +2868,13 @@ const transcriber = VCTranscriber.createTranscriber({
     // v79: リストを見に来た起動では、指示より後に録音が始まることがある（cold start の実際の順番）
     // ＝始まった瞬間にここで引っ込める。判定は quietAutoRecordForList 1箇所。
     if (on) quietAutoRecordForList();
+    // 🆕 v94: 推敲画面の「続きを話す」は**長文モード固定**（続きも長く話せる）。
+    // 🚨 native は start のたびに continuous を false へ戻す（Swift/Java の「この録音だけ」）＝
+    //    start より前に頼んでも消える。**始まった後のここで**頼むのが唯一の確実な順番。
+    if (reviewOpen()) {
+      if (on) setReviewContinuous();
+      renderReviewMic(on);
+    }
   },
   onError(e) {
     if (e === 'no-speech') { micState.textContent = ''; return; } // web の「無言」は正常系
@@ -2852,6 +2887,9 @@ const transcriber = VCTranscriber.createTranscriber({
 });
 
 // 診断へ環境を報告（native を期待したのに web に落ちた理由もここに出る）
+// v94: E2E が**音声の確定と同じ経路（onFinal）**を通す入口（__vcAutoRecord と同じ流儀）。
+//   下のテキスト欄は onUtterance を直呼びする＝推敲画面の「続きを足す」分岐を通らないため。
+window.__vcSimulateFinal = (t) => transcriber.simulate(t);
 window.__vcEngine = transcriber.engine;
 window.__vcNativeFailure = transcriber.nativeFailure || null;
 
@@ -2975,6 +3013,9 @@ if (transcriber.available) {
 // 実機の診断に 🎙「自動録音（起動/復帰）」が出る＝動いた証拠（v15: 画面に出す以外に見る手段が無い）。
 function autoRecord(trigger) {
   if (transcriber.isListening()) return 'listening';       // toggle ではなく start＝既に聞いていたら触らない
+  // 🆕 v94: 下書き（推敲）画面が開いている間は自動で録らない＝**本文が黙って伸びない**。
+  //   続きを足すのは人が「🎤 続きを話す」を押した時だけ（v28 で学んだ「自動録音 × 自動で確定」の積）。
+  if (reviewOpen()) return 'review';
   if (listIntent) return 'listIntent';                     // v79: リストを見に来た＝話しに来ていない（実機FB第44回）
   const d = store.get();
   if (VCStore.FIELDS.some((f) => d[f] !== '' && d[f] !== false)) return 'draft'; // 書きかけを守る
@@ -3902,6 +3943,16 @@ let reviewMeta = null;      // この推敲がどの発話のものか（認識�
 let reviewSpoken = '';      // 話したまま（来歴に残すのはこれ）
 let reviewUndoText = null;  // AI を当てる直前の本文（↩ 1段で戻す）
 let reviewBusy = false;
+// 🆕 v94: **前回 AI を当ててから、声で足した字数**（自動要約の判定はこれだけで決める）。
+//   総字数で数えると要約の要約が延々と走る＝新しく話した分だけを数える（engine/rewrite.js の表）。
+let reviewAdded = 0;
+
+// v94: この画面が開いているか。**判定はこの1関数だけ**（onFinal / onInterim / autoRecord が同じ答えを見る）。
+// getElementById で引くのは、転写層のハンドラが**この行より前に**呼ばれ得るため（起動時の自動録音）。
+function reviewOpen() {
+  const el = document.getElementById('reviewStage');
+  return !!(el && !el.hidden);
+}
 
 // 「この発話は推敲画面を挟むか」。長さは engine が持つ（数字を宿主に書かない）。
 // 🚫 欄指定発話（「メモ 〜」）は挟まない＝v17 の意味（その欄だけの差分）を推敲で壊さないため。
@@ -3925,6 +3976,82 @@ function renderReviewCount() {
   document.getElementById('reviewCount').textContent = `${rvText.value.trim().length}字`;
 }
 
+// 🆕 v94（ゆう要求「編集した後にまた、その文章の続きを音声で入力できるようにしてほしい」）
+// ＝この画面の中で録音する。見た目は .ov-btn/.on の既存の語彙のまま（v46）。
+function renderReviewMic(on) {
+  const btn = document.getElementById('reviewMic');
+  if (!btn) return;
+  btn.hidden = !transcriber.available;   // 音声が無い環境ではボタンを出さない（押せるのに動かないを作らない）
+  btn.classList.toggle('on', !!on);
+  btn.textContent = on ? '⏹ 話し終わり' : '🎤 続きを話す';
+  if (!on) {
+    const live = document.getElementById('reviewInterim');
+    if (live) { live.hidden = true; live.textContent = ''; }
+  }
+}
+
+function showReviewInterim(t) {
+  const live = document.getElementById('reviewInterim');
+  if (!live) return;
+  live.hidden = false;
+  live.textContent = `… ${t}`;
+  live.scrollTop = live.scrollHeight;   // v78 と同じ＝いま言ったところ（末尾）が見える
+}
+
+// この画面の録音は**長文モード固定**（v82 の「この録音だけ 止めない」と同じ仕掛けを使う）。
+// 🚨 呼ぶのは「録音が始まった後」だけ（native は start のたびに continuous を false へ戻す）。
+function setReviewContinuous() {
+  if (!transcriber.canKeepOpen || typeof transcriber.setContinuous !== 'function') return;
+  transcriber.setContinuous(true);
+}
+
+function toggleReviewMic() {
+  if (transcriber.isListening()) { transcriber.stop(); return; }  // 止める＝確定＝続きとして足す
+  transcriber.start(micOpts());
+}
+
+// 🚨 画面を閉じる時は**必ず**録音を捨てる（v49 の cancel＝止めるだけでなく解釈へ流さない）。
+//   ここで止めないと、閉じた後に届いた確定が reviewOpen()=false を通って**フォームへ入る**
+//   ＝「捨てた」はずの続きが予定になる。黙って捨てないので toast で告げる（v16）。
+function stopReviewMic() {
+  if (!transcriber.isListening()) return;
+  // 🔑 取り消しの中身は複製しない＝**cancelMic 1本**を通す（v77 の不変条件・wiring テストが縛る）。
+  //   古い転写層への保険も見た目の後始末もあちら側に既に在る＝ここは「呼ぶ」だけ。
+  cancelMic('🎤 録音中だったので、その続きは入れていません');
+}
+
+// 声で足す。**本文・話したまま・↩ の戻し先**の3つに同じだけ足す＝どこか1つだけズレる形を作らない。
+// 🔑 ↩ にも足すのは、続きが**AI の仕業ではない**から＝「AI の前に戻す」で自分が話した続きが消えない。
+function appendReview(text) {
+  const add = String(text || '').trim();
+  if (!add) {   // 空の確定は握り潰さない（v16 の真犯人と同じ形）＝理由を出す
+    rvNote.textContent = '🎤 何も聞き取れませんでした（本文はそのままです）';
+    window.__vcDebugNote('✍️ 続きが空（本文は変えていない）');
+    return;
+  }
+  rvText.value = VCRewrite.appendSpoken(rvText.value, add);
+  reviewSpoken = VCRewrite.appendSpoken(reviewSpoken, add);
+  if (reviewUndoText !== null) reviewUndoText = VCRewrite.appendSpoken(reviewUndoText, add);
+  reviewAdded += add.length;
+  renderReviewCount();
+  rvText.scrollTop = rvText.scrollHeight;
+  rvNote.textContent = `🎤 続きを足しました（+${add.length}字）`;
+  window.__vcDebugNote(`✍️ 続きを追記（+${add.length}字／前回AIから${reviewAdded}字）`);
+  maybeAutoSummarize();
+}
+
+// 🆕 v94（ゆう要求「ある程度しゃべると、自動に要約がはしる設定も欲しい」）。
+// 走るのは**声で足した直後だけ**＝手で打っている最中に AI が本文を書き換えない。
+function maybeAutoSummarize() {
+  try {
+    if (!settings.get('autoSummarize')) return;
+    if (!(window.VCAI && VCAI.hasKey())) return;   // キーが無ければ動かない（v40）
+    if (reviewBusy) return;
+    if (!VCRewrite.shouldAutoSummarize(reviewAdded)) return;
+    runReviewAi('summarize', { auto: true });
+  } catch (e) { window.__vcNote('自動要約', (e && e.message) || String(e)); }  // 補助が本体を殺さない（v13）
+}
+
 // v93: AI の操作は**キーの有無で出し入れ**するが、「⚙ AI設定」だけは常に出す
 // （キーが無い人こそここから設定へ行く＝押せるボタンが1つも無い画面を作らない・v92）。
 // 🔑 出し入れを決めるのはこの関数だけ＝ refreshAiState（v89 の「見た目を直す1箇所」）から呼ぶ
@@ -3937,6 +4064,13 @@ function renderReviewAi() {
   tidy.hidden = !has;
   sum.hidden = !has;
   if (!has) document.getElementById('reviewUndo').hidden = true; // 戻す先は AI を当てた時にしか生まれない
+  // v94: ☑ 自動要約もキーがある時だけ（キーが無ければ走りようがない）。値は settings の現物を映す。
+  const autoWrap = document.getElementById('reviewAutoWrap');
+  const autoCb = document.getElementById('reviewAuto');
+  if (autoWrap && autoCb) {
+    autoWrap.hidden = !has;
+    autoCb.checked = !!settings.get('autoSummarize');
+  }
   const cfgBtn = document.getElementById('reviewAiCfg');
   if (cfgBtn) {
     // AI 機能そのものが読み込めていない時だけ出さない（開いても空の枠が出るだけ・v40 の流儀）
@@ -3975,8 +4109,10 @@ function openReview(text, meta, opts) {
   reviewMeta = meta || null;
   reviewSpoken = String(text || '');
   reviewUndoText = null;
+  reviewAdded = 0;            // v94: この下書きは白紙から＝前の回の「話した分」を持ち越さない
   rvText.value = reviewSpoken;
   rvNote.textContent = '';
+  renderReviewMic(false);     // 前回の録音中の見た目を持ち越さない（途中経過も消える）
   document.getElementById('reviewUndo').hidden = true;
   setReviewAiConfig(false);   // 前回開きっぱなしで終わっていても、必ず畳んだ状態から始める
   renderReviewAi();
@@ -3993,21 +4129,26 @@ function openReview(text, meta, opts) {
 }
 
 function closeReview() {
+  stopReviewMic();            // 🚨 v94: 開いたままの録音を捨てる（閉じた後の確定がフォームへ流れない）
   setReviewAiConfig(false);   // 🔑 AI 設定を借りたままにしない（詳細設定へ返す）
   rvStage.hidden = true;
   document.body.classList.remove('reviewing');
   reviewMeta = null;
   reviewUndoText = null;
+  reviewAdded = 0;
 }
 
 // AI を当てる（整える／要約する）。**受け入れ幅と文言はモードごと**（engine/rewrite.js の表）。
-async function runReviewAi(mode) {
+// v94: opts.auto＝☑ による自動実行（人が押していない）＝**理由を必ず画面に出す**。
+async function runReviewAi(mode, opts) {
   if (reviewBusy) return;
   const before = rvText.value.trim();
   if (!before) return;
+  const auto = !!(opts && opts.auto);
   const btn = document.getElementById(mode === 'summarize' ? 'reviewSum' : 'reviewTidy');
   const label = btn.textContent;
   reviewBusy = true;
+  reviewAdded = 0;   // v94: 走らせたらここから数え直す（失敗しても足すたびに再挑戦しない＝黙って課金しない）
   btn.disabled = true;
   btn.textContent = '⏳ ' + VCRewrite.MODES[mode].label + '…';
   rvNote.textContent = '';
@@ -4015,6 +4156,13 @@ async function runReviewAi(mode) {
     const raw = await VCAI.interpretLongText(before, {
       system: VCRewrite.buildPrompt(mode), timeoutMs: REWRITE_TIMEOUT_MS,
     });
+    // 🚨 v94: 待っている数秒の間に人が本文を触っていたら**当てない**（人の編集を上書きしない・v3 の線）。
+    //   自動要約だけでなく、押した時にも効く（v80 から在った穴＝AI の返事が来た瞬間に打った字が消える）。
+    if (rvText.value.trim() !== before) {
+      rvNote.textContent = '⚠ 待っている間に本文が変わったので当てませんでした（もう一度押してください）';
+      window.__vcDebugNote(`✍️ 推敲(${mode}): 待機中に本文が変わった＝当てない`);
+      return;
+    }
     const r = VCRewrite.check(before, raw, mode);
     if (!r.ok) { // 落とすなら理由を必ず出す（v16）＝「押したのに何も起きない」を作らない
       rvNote.textContent = `⚠ ${r.problem}`;
@@ -4024,7 +4172,9 @@ async function runReviewAi(mode) {
     reviewUndoText = before;                 // ↩ 1段で戻せる（AI の結果を人が上書きできる＝要求③）
     rvText.value = r.text;
     document.getElementById('reviewUndo').hidden = false;
-    rvNote.textContent = `${VCRewrite.MODES[mode].done}（${before.length}字→${r.text.length}字）。このまま手で直せます`;
+    rvNote.textContent = auto
+      ? `🤖 話した分が ${VCRewrite.AUTO_SUMMARY_CHARS}字 を超えたので自動で要約しました（${before.length}字→${r.text.length}字）。↩ で戻せます`
+      : `${VCRewrite.MODES[mode].done}（${before.length}字→${r.text.length}字）。このまま手で直せます`;
     renderReviewCount();
   } catch (e) {
     const msg = (e && e.message) || String(e);
@@ -4038,6 +4188,14 @@ async function runReviewAi(mode) {
 }
 
 rvText.addEventListener('input', renderReviewCount);
+// v94: 続きを声で足す／☑ 自動要約（設定の現物を書き換える＝入れ物は1つ）
+document.getElementById('reviewMic').addEventListener('click', toggleReviewMic);
+document.getElementById('reviewAuto').addEventListener('change', (e) => {
+  settings.set('autoSummarize', e.target.checked);
+  rvNote.textContent = e.target.checked
+    ? `☑ これから、話した分が ${VCRewrite.AUTO_SUMMARY_CHARS}字 たまるたびに自動で要約します（↩ で戻せます）`
+    : '☐ 自動の要約をやめました（📝 要約する を押した時だけ動きます）';
+});
 // v93: 押すたびに開閉（もう一度押せば本文に戻れる＝出口を増やす）
 document.getElementById('reviewAiCfg').addEventListener('click', () => setReviewAiConfig(!reviewAiConfigOpen()));
 document.getElementById('reviewTidy').addEventListener('click', () => runReviewAi('tidy'));
