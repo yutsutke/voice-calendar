@@ -110,23 +110,36 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
   #mic:disabled { background: var(--line); box-shadow: none; cursor: default; }
   @keyframes pulse { 50% { box-shadow: 0 0 0 16px rgb(255 55 95 / .06); } }
   .mic-state { color: var(--sub); font-size: 13px; margin-top: 8px; min-height: 20px; }
-  /* v49「やめる」: 録音中だけ出る。赤いマイクと同じ色の系統で「今の録音を止める操作」だと分かるが、
-     主行動（マイク）より弱い見た目にする（枠線だけ）＝押し間違いで発話を失わないように。 */
-  #micCancel { margin-top: 6px; border: 1px solid #ff375f; border-radius: 999px; padding: 7px 16px;
-    background: transparent; color: #ff375f; font-size: 13px; font-family: inherit; cursor: pointer; }
-  #micCancel:active { opacity: .6; }
-  #micCancel[hidden] { display: none; }
-  /* v61: この録音だけの一時オーバーライド。やめる（赤・停止）とは別の意味＝録音1回だけ挙動を変える。
-     既定は控えめなグレー、有効化すると accent で「効いている」と分かる（新しい色語彙を増やさない＝v46）。 */
-  .mic-overrides { margin-top: 6px; display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
+  /* 🆕 v97（ゆう要求「録音中の UI をボタン式にして押しやすく」・手描きのスケッチ）:
+     録音中の操作は**2列のタイル**に並べる（v49 の「やめる」・v61 の一時オーバーライド・v82 長文・v96 逐次）。
+     細い楕円が縦に5本並んでいた＝親指で狙いにくく、押し間違えると発話を失う（やめる）／意図しない
+     モードに入る。タイルは面が大きく、位置で覚えられる（左上＝やめる・右上＝長文）。
+     🔑 ノードは増やさない・複製しない（v74/v78）＝既存のボタンに class を付け替えただけ。配線は不変。
+     色の意味は据え置き（v61/v63）: 赤=止める（やめる）／グレー=この録音だけ挙動を変える／.on=効いている。 */
+  .mic-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
+    width: 100%; max-width: 380px; margin: 10px auto 0; }
+  body:not(.recording) .mic-grid { display: none; }   /* 録音していない時は空の枠も出さない */
+  .mic-overrides { display: contents; }             /* 中のボタンを親のグリッドに直接並べる（入れ物は hidden の出し入れ用） */
   .mic-overrides[hidden] { display: none; }
-  /* v63: 大きさは「やめる」(#micCancel) と同じ padding 7px 16px / font-size 13px にする（実機FBの要求「大きさだけ揃えて」）。
-     色（グレー→有効化で accent の .on）は据え置き＝赤=停止／グレー=この録音だけ設定変更、の意味差は色で保つ。 */
+  .mic-tile { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+    min-height: 74px; padding: 10px 8px; border-radius: 16px; border: 1px solid var(--line);
+    background: var(--card); color: var(--ink); font-size: 16px; font-weight: 600; line-height: 1.25;
+    font-family: inherit; cursor: pointer; text-align: center; -webkit-tap-highlight-color: transparent; }
+  .mic-tile:active { transform: scale(.97); opacity: .75; }
+  .mic-tile .tile-sub { font-size: 11px; font-weight: 400; color: var(--sub); }
+  .mic-tile.on { border-color: var(--accent); color: var(--accent); background: var(--lock); }
+  .mic-tile.on .tile-sub { color: var(--accent); }
+  .mic-tile[hidden] { display: none; }
+  /* v63 の小さな丸ボタン。録音中のタイルには使わなくなったが（v97）、下書き画面（v84-v96）の操作が
+     同じ語彙を使い続けている＝消さない。 */
   .ov-btn { border: 1px solid var(--line); border-radius: 999px; padding: 7px 16px;
     background: transparent; color: var(--sub); font-size: 13px; font-family: inherit; cursor: pointer; }
   .ov-btn:active { opacity: .6; }
   .ov-btn.on { border-color: var(--accent); color: var(--accent); background: var(--lock); font-weight: 600; }
   .ov-btn[hidden] { display: none; }
+  /* v49「やめる」: 赤＝今の録音を止める操作。塗らずに枠と文字だけ＝主行動（マイク）より弱く見せる */
+  #micCancel { border-color: #ff375f; color: #ff375f; }
+  #micCancel .tile-sub { color: #ff375f; opacity: .8; }
   /* v70: 発話中に出る文字（途中結果「… こんにちは」・確定の「🗣 …」）を大きく（実機FBの要求）。
      ノールックの直前に「今なんと認識されているか」を*見る*唯一の場所＝手元から離れていても読める大きさに。
      確定（.final）も同じ要素なので一緒に大きくなる＝同じ趣旨（生テキストは認識/解釈の切り分けの起点＝来歴の 🗣 と同じもの）。 */
@@ -222,7 +235,9 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
      hidden 属性でなく CSS で隠す＝renderReviewAi の hidden 管理（キーの有無）と衝突しない。 */
   #reviewStage.live #reviewTidy, #reviewStage.live #reviewSum, #reviewStage.live #reviewUndo,
   #reviewStage.live #reviewAiCfg, #reviewStage.live #reviewAutoWrap, #reviewStage.live #reviewGo { display: none; }
-  #reviewStage.live #reviewText { background: var(--bg); }  /* 機械が書いている間＝触る欄でない、を色で言う */
+  /* v97: 聞いている間は「進む」を隠す（押すと録音中の続きが捨てられる）。⏹ と ✕ 捨てる は残る＝閉じ込めない。
+     v96 の「逐次中は本文の背景を変える（触る欄でない）」は撤去＝逐次中も手で直せるようになった。 */
+  #reviewStage.listening #reviewGo { display: none; }
   body.reviewing { overflow: hidden; }
 
   /* ---- 開発用: テキストで発話 ---- */
@@ -608,23 +623,29 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
   <div class="mic-wrap">
     <button id="mic" type="button" aria-label="録音">🎤</button>
     <div class="mic-state" id="micState"></div>
+    <!-- 🆕 v97（ゆう要求・スケッチ）: 録音中の操作は2列のタイル。並びはスケッチどおり
+           左上=入力しない／右上=長文／中段=自動登録OFF・AIで解釈／下段=話しながら整える。
+         出せないタイル（web の長文・キーが無い時の AI）は hidden＝残りが詰まる（押せるのに動かないを作らない）。 -->
+    <div class="mic-grid" id="micGrid">
     <!-- v49: 言い間違えに気づいた時の「やめる」（実機FB第31回）。録音中だけ出す。
          マイクをもう一度押す＝止めて**確定する**なので、言い間違えの取り消しには使えなかった。 -->
-    <button id="micCancel" type="button" hidden>✕ やめる（入力しない）</button>
+    <button id="micCancel" type="button" class="mic-tile" hidden>✕ 入力しない<span class="tile-sub">やめる</span></button>
     <!-- v61: この録音だけの一時オーバーライド（実機FBの要求＝詳細設定へ行かず1回だけ挙動を変える）。
-         録音中だけ出す。「やめる」（赤・停止）とは意味が別＝この録音の設定を上書きする。 -->
+         録音中だけ出す。「やめる」（赤・停止）とは意味が別＝この録音の設定を上書きする。
+         v97: 入れ物は display: contents＝中のボタンは上のグリッドに直接並ぶ（hidden の出し入れは従来どおり1箇所）。 -->
     <div id="micOverrides" class="mic-overrides" hidden>
-      <button id="ovNoAuto" type="button" class="ov-btn">この録音だけ 自動登録OFF</button>
-      <button id="ovAI" type="button" class="ov-btn" hidden>この録音だけ AIで解釈</button>
-      <!-- v82（ゆう要求「おもったことを長文で吐き出したい／この会話に限り、話し終わって自動で録音を
-           とめない旨のボタン」）: 押すと**この録音だけ**無音で止まらなくなる。止めるのは自分の手。
+      <!-- v82（ゆう要求「おもったことを長文で吐き出したい」）→ 🆕 v97（ゆう要求「押してすぐに下書きへ」）:
+           押すと**その場で下書き画面**が開き、この録音は無音で止まらなくなる。話しながら手でも直せる。
            native だけ（web の音声はブラウザが無音判定を持つ＝押せても効かないので出さない）。 -->
-      <button id="ovKeepOpen" type="button" class="ov-btn" hidden>この録音だけ 止めない（長文）</button>
-      <!-- 🆕 v96（ゆう要求「話しながら要約や文章の揺れを直してくれるモード」）: 押すと下書き画面が
+      <button id="ovKeepOpen" type="button" class="mic-tile" hidden>📝 長文</button>
+      <button id="ovNoAuto" type="button" class="mic-tile">自動登録OFF</button>
+      <button id="ovAI" type="button" class="mic-tile" hidden>🤖 AIで解釈</button>
+      <!-- v96（ゆう要求「話しながら要約や文章の揺れを直してくれるモード」）: 押すと下書き画面が
            そのまま開き、話した言葉が文字になりながら、息継ぎごとに AI が誤変換を直す。
            native ＋ キーがある時だけ（長文の仕掛けと AI の両方が要る）。 -->
-      <button id="ovLive" type="button" class="ov-btn" hidden>✍️ 話しながら整える（逐次）</button>
+      <button id="ovLive" type="button" class="mic-tile" hidden>✍️ 逐次</button>
     </div>
+    </div><!-- /.mic-grid -->
   </div>
   <div class="transcript" id="transcript"></div>
   </div><!-- /#micStage -->
@@ -1019,23 +1040,23 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
      理由: この版文字列は index.html にしかないが、ロジックは別ファイル＝別キャッシュ。
      付けないと「フッタは新しいのにパーサは古い」という嘘の状態が成立する（v9 で実際に踏んだ）。
      index.html が更新されれば src の URL も変わる → JS も必ず新しく取り直される。 -->
-<script src="engine/settings.js?v=96"></script>
-<script src="engine/schema.js?v=96"></script>
-<script src="engine/parser.js?v=96"></script>
-<script src="engine/dictionary.js?v=96"></script>
-<script src="engine/contract.js?v=96"></script>
-<script src="engine/batch.js?v=96"></script>
-<script src="engine/ai.js?v=96"></script>
-<script src="engine/rewrite.js?v=96"></script>
-<script src="input/transcriber.js?v=96"></script>
-<script src="adapters/calendar.js?v=96"></script>
-<script src="adapters/records.js?v=96"></script>
-<script src="adapters/location.js?v=96"></script>
-<script src="engine/geomap.js?v=96"></script>
-<script src="engine/period.js?v=96"></script>
+<script src="engine/settings.js?v=97"></script>
+<script src="engine/schema.js?v=97"></script>
+<script src="engine/parser.js?v=97"></script>
+<script src="engine/dictionary.js?v=97"></script>
+<script src="engine/contract.js?v=97"></script>
+<script src="engine/batch.js?v=97"></script>
+<script src="engine/ai.js?v=97"></script>
+<script src="engine/rewrite.js?v=97"></script>
+<script src="input/transcriber.js?v=97"></script>
+<script src="adapters/calendar.js?v=97"></script>
+<script src="adapters/records.js?v=97"></script>
+<script src="adapters/location.js?v=97"></script>
+<script src="engine/geomap.js?v=97"></script>
+<script src="engine/period.js?v=97"></script>
 <script>
 'use strict';
-const BUILD = 'v96：逐次モード＝話しながら AI が整える · 2026-08-30';
+const BUILD = 'v97：録音中はタイル／長文・逐次は押してすぐ下書きへ · 2026-09-26';
 console.log('BUILD:', BUILD);
 document.getElementById('build').textContent = BUILD;
 
@@ -1294,10 +1315,14 @@ function resetRecOverride() { recOverride.noAutoSave = false; recOverride.ai = n
 //   ・指示の後に録音が始まった → onState がその場で引っ込める（cold start の実際の順番はここになりやすい）
 // 消えるのは「マイクを押した」（＝話しに来た）か「アプリを離れた」時＝意図が終わった時だけ。
 let listIntent = false;
+// v97: タイルの中身（大きい1行＋小さい補足）。文言は固定文字列だけ＝innerHTML に外の値を入れない。
+function setTile(btn, main, sub) {
+  btn.innerHTML = `${main}<span class="tile-sub">${sub}</span>`;
+}
 function renderOverrideButtons() {
   if (!ovNoAuto) return;
   ovNoAuto.classList.toggle('on', recOverride.noAutoSave);
-  ovNoAuto.textContent = (recOverride.noAutoSave ? '✓ ' : '') + 'この録音だけ 自動登録OFF';
+  setTile(ovNoAuto, (recOverride.noAutoSave ? '✓ ' : '') + '自動登録OFF', 'この録音だけ');
   // AI はキーがある時だけ出す（無ければ AI はどちらの向きにも動かせない＝既定の体験不変 v40）。
   const canAI = !!(window.VCAI && VCAI.hasKey());
   ovAI.hidden = !canAI;
@@ -1305,18 +1330,21 @@ function renderOverrideButtons() {
     const aiDefault = !!settings.get('voiceAI'); // 既定で AI か（この録音の「逆」を1タップで提示）
     const active = recOverride.ai !== null;
     ovAI.classList.toggle('on', active);
-    ovAI.textContent = (active ? '✓ ' : '') + (aiDefault ? 'この録音だけ AIを使わない' : 'この録音だけ AIで解釈');
+    setTile(ovAI, (active ? '✓ ' : '') + (aiDefault ? 'AIを使わない' : '🤖 AIで解釈'), 'この録音だけ');
   }
   // v82: 長文モードは native の音声だけ（web はブラウザが無音判定を持ち、こちらから外せない）
   // ＝押せるのに効かないボタンを作らない（v40/v75 と同じ筋）。
   if (ovKeepOpen) {
     ovKeepOpen.hidden = !transcriber.canKeepOpen;
     ovKeepOpen.classList.toggle('on', recOverride.keepOpen);
-    ovKeepOpen.textContent = (recOverride.keepOpen ? '✓ ' : '') + 'この録音だけ 止めない（長文）';
+    setTile(ovKeepOpen, '📝 長文', '止めずに下書きへ');
   }
   // v96 逐次: 長文の仕掛け（canKeepOpen）と AI キーの**両方**がある時だけ（押せるのに動かないを作らない）
   const ovLive = document.getElementById('ovLive');
-  if (ovLive) ovLive.hidden = !(transcriber.canKeepOpen && canAI);
+  if (ovLive) {
+    ovLive.hidden = !(transcriber.canKeepOpen && canAI);
+    setTile(ovLive, '✍️ 逐次', '話しながら整える');
+  }
 }
 async function interpretByAI({ text, rawText, dictHits, meta, rule, seq }) {
   notesEl.textContent = '🤖 AI解釈中…';
@@ -2870,7 +2898,7 @@ const transcriber = VCTranscriber.createTranscriber({
   // 🆕 v94: 推敲画面が開いている間の確定は**本文の続き**（ゆう要求）＝フォームへは流さない。
   // 🔑 分岐はここ1箇所（v74）。押した人だけが足せる＝自動録音は推敲中に走らない（autoRecord の門）。
   onFinal(t, meta) {
-    if (reviewOpen()) { reviewTakeFinal(t); return; }
+    if (reviewOpen()) { reviewTakeFinal(t, meta); return; }
     onUtterance(t, meta, { longMode: recOverride.keepOpen });
   },
   onDebug(msg) { window.__vcDebugNote(`🎙 ${msg}`); }, // Swift 内部の出来事 → 診断（v15）
@@ -2918,7 +2946,8 @@ const transcriber = VCTranscriber.createTranscriber({
 window.__vcSimulateFinal = (t) => transcriber.simulate(t);
 // v96: 逐次モードの E2E 入口（途中結果の注入と、録音なしで逐次画面を開く）
 window.__vcSimulateInterim = (t) => transcriber.simulateInterim(t);
-window.__vcOpenLive = () => openLiveReview();
+window.__vcOpenLive = () => openMicReview('live');
+window.__vcOpenLong = () => openMicReview('long'); // v97: 長文を押した時と同じ道（E2E 用）
 window.__vcEngine = transcriber.engine;
 window.__vcNativeFailure = transcriber.nativeFailure || null;
 
@@ -3014,21 +3043,17 @@ if (transcriber.available) {
       : (recOverride.ai ? 'この録音だけ AIで解釈します' : 'この録音だけ AIを使いません（ルール）');
     toast('🎤 ' + eff);
   });
-  // v82: 長文モード＝**この録音だけ**無音で止めない。押した時点から効く（録音中に効かせる唯一の設定）。
-  // 🚨 一方通行にしない: もう一度押せば普段の無音停止に戻る＝入った袋小路から出られる。
-  // 止める手段は普段どおり2つ（マイク再押下＝確定／✕ やめる＝破棄）＝**閉じ込めない**（v78）。
-  ovKeepOpen.addEventListener('click', () => {
-    recOverride.keepOpen = !recOverride.keepOpen;
-    if (typeof transcriber.setContinuous === 'function') transcriber.setContinuous(recOverride.keepOpen);
-    renderOverrideButtons();
-    toast(recOverride.keepOpen
-      ? '🎤 この録音は自動で止まりません（マイクをもう一度押すと確定します）'
-      : '🎤 無音で止まる普段の動きに戻しました');
-  });
+  // v82: 長文モード＝**この録音だけ**無音で止めない。
+  // 🆕 v97（ゆう要求「長文と逐次は押してすぐに下書きへ」）: 押した**その場で**下書き画面を開く。
+  //   v82-v96 は「止まるまで専用画面で待ち、確定してから下書き」＝長く話している間、直す場所が無かった。
+  //   下書き画面の「続きを話す」（v94）と同じ形になる＝話した分は確定で本文に入り、その間も手で直せる。
+  //   入口は逐次と同じ openMicReview 1本（長文モードの道連れ＝setContinuous もそこで1回）。
+  //   止める手段は下書き画面の ⏹（確定）と ✕ 捨てる（破棄）＝**閉じ込めない**（v78）。
+  ovKeepOpen.addEventListener('click', () => openMicReview('long'));
   // v96 逐次（ゆう要求）: 押すと下書き画面が開き、話した言葉が文字になりながら AI が直していく。
   // 長文モードを道連れにする（無音で止まったら「話しながら」にならない）。出口は画面の ⏹ と ✕。
   const ovLiveBtn = document.getElementById('ovLive');
-  if (ovLiveBtn) ovLiveBtn.addEventListener('click', openLiveReview);
+  if (ovLiveBtn) ovLiveBtn.addEventListener('click', () => openMicReview('live'));
 } else {
   micBtn.disabled = true;
   micState.textContent = transcriber.nativeFailure
@@ -3980,18 +4005,39 @@ let reviewBusy = false;
 //   総字数で数えると要約の要約が延々と走る＝新しく話した分だけを数える（engine/rewrite.js の表）。
 let reviewAdded = 0;
 // 🆕 v96 逐次モード（ゆう要求「話しながら…ＡＩが自動で訂正」）の状態。
-// liveChunks が本文の正＝rvText はその描画（録音中は readOnly＝機械が書く欄に人の編集が混ざらない）。
+// liveChunks が本文の正＝rvText はその描画（v97: 人が触るまで。触った後は本文が正・機械は末尾に足すだけ）。
 let liveActive = false;
 let liveChunks = [];        // { raw, text, fixed } — raw=話したまま / text=表示（訂正後）
 let liveRaw = '';           // チャンクへ区切り済みの「話したまま」の連結（interim の合計との差分が末尾）
 let liveLastInterim = '';   // 最後に見た interim の合計（認識器が死んだ時の finishLive の材料にもなる）
 let liveTimer = null;       // 息継ぎ判定（PAUSE_MS 止まったら区切る）
+// 🆕 v97（ゆう要求「逐次でも押してすぐ下書きで手書き修正できるように」）: 逐次中に人が本文を触ったか。
+//   v96 は録音中 readOnly＝話し終わるまで直せなかった。触った後は**機械は末尾に足すだけ**
+//   （チャンクから本文を組み直さない＝人の直しを上書きしない・v3 の線）。
+let liveTouched = false;
+// 🆕 v97: 録音中のマイクから開いた下書き（長文）で、まだ聞いているか（見出しの言い分け用）。
+let reviewFromMic = false;
 
 // v94: この画面が開いているか。**判定はこの1関数だけ**（onFinal / onInterim / autoRecord が同じ答えを見る）。
 // getElementById で引くのは、転写層のハンドラが**この行より前に**呼ばれ得るため（起動時の自動録音）。
 function reviewOpen() {
   const el = document.getElementById('reviewStage');
   return !!(el && !el.hidden);
+}
+
+// v97: 本文を機械が書き換える**唯一の口**（声の追記・逐次の組み立て・訂正の当て込み）。
+// 録音中にも手で直せるようになった＝人が打っている最中に値を差し替えると、カーソルが末尾へ飛ぶ。
+// 🔑 触っている間はカーソル位置を戻す・末尾への追従スクロールもしない（読んでいる所を動かさない）。
+function setReviewBody(v) {
+  const focused = document.activeElement === rvText;
+  const a = rvText.selectionStart, b = rvText.selectionEnd;
+  rvText.value = v;
+  if (focused) {
+    try { rvText.setSelectionRange(Math.min(a, v.length), Math.min(b, v.length)); } catch {}
+  } else {
+    rvText.scrollTop = rvText.scrollHeight;
+  }
+  renderReviewCount();
 }
 
 // 「この発話は推敲画面を挟むか」。長さは engine が持つ（数字を宿主に書かない）。
@@ -4024,6 +4070,15 @@ function renderReviewMic(on) {
   btn.hidden = !transcriber.available;   // 音声が無い環境ではボタンを出さない（押せるのに動かないを作らない）
   btn.classList.toggle('on', !!on);
   btn.textContent = on ? '⏹ 話し終わり' : '🎤 続きを話す';
+  // v97: 聞いている間は「進む」を隠す（CSS）＝押すと録音中の続きが捨てられる（stopReviewMic）。
+  //   長文を押してすぐ下書きへ来るようになり、⏹ を押さずに「進む」が主な道になった＝先に塞ぐ。
+  //   出口は ⏹ と ✕ 捨てる が残る（閉じ込めない・v78）。録音が死ねば onState がここを false で呼ぶ。
+  const stage = document.getElementById('reviewStage'); // 起動直後の onState からも呼ばれ得る（v94 と同じ理由で引き直す）
+  if (stage) stage.classList.toggle('listening', !!on);
+  if (!on && reviewFromMic && !liveActive) {
+    reviewFromMic = false;
+    document.getElementById('reviewHead').textContent = '長文モードの録音です。直してから進めます';
+  }
   if (!on) {
     const live = document.getElementById('reviewInterim');
     if (live) { live.hidden = true; live.textContent = ''; }
@@ -4053,7 +4108,7 @@ function toggleReviewMic() {
 
 // ===== v96 逐次モード（ゆう要求「話しながら要約や文章の揺れを直してくれるモード」）=====
 // 下書き画面をそのまま流用する（ゆうの設計案どおり）。録音中は:
-//   本文(rvText) = 区切り済みチャンクの連結（訂正が返るたび差し替わる）・readOnly
+//   本文(rvText) = 区切り済みチャンクの連結（訂正が返るたび差し替わる）。v97: 手で直せる（liveTouched）
 //   下の行(reviewInterim) = まだ区切っていない末尾（いま言っているところ）
 // 話し終わる（final）と普段の下書き画面に変わる＝要約・整える・続きを話す・進むが全部使える。
 
@@ -4081,15 +4136,15 @@ function settleLiveChunk() {
   liveRaw = liveLastInterim;
   const chunk = { raw, text: raw, fixed: false };
   liveChunks.push(chunk);
-  renderLiveBody();
+  if (liveTouched) setReviewBody(rvText.value + raw);  // v97: 人が触った後は末尾に足すだけ
+  else renderLiveBody();
   showReviewInterim('');
   correctLiveChunk(chunk);
 }
 
 function renderLiveBody() {
-  rvText.value = liveChunks.map((c) => c.text).join('');
-  rvText.scrollTop = rvText.scrollHeight;
-  renderReviewCount();
+  if (liveTouched) return;   // v97: 人が触った本文をチャンクから組み直さない（打った字が消える）
+  setReviewBody(liveChunks.map((c) => c.text).join(''));
 }
 
 // 1チャンクの AI 訂正。失敗しても**録音は続く・本文は話したままが残る**（補助が本体を殺さない v13）。
@@ -4108,9 +4163,20 @@ async function correctLiveChunk(chunk) {
       return;
     }
     const text = r.same ? chunk.raw : r.text;
-    if (liveActive) {
+    if (liveActive && !liveTouched) {
       chunk.text = text; chunk.fixed = !r.same;
       renderLiveBody();
+    } else if (liveActive) {
+      // v97: 人が触った後＝**末尾の最新チャンクがまだ話したままの時だけ**そこを差し替える。
+      //   それより前（人が直しているかもしれない所）には当てない＝人の直しを上書きしない。
+      const last = chunk === liveChunks[liveChunks.length - 1];
+      if (last && rvText.value.endsWith(chunk.text)) {
+        const head = rvText.value.slice(0, rvText.value.length - chunk.text.length);
+        chunk.text = text; chunk.fixed = !r.same;
+        setReviewBody(head + text);
+      } else {
+        window.__vcDebugNote('✍️ 逐次訂正: 手で直した後・末尾でない＝当てない');
+      }
     } else {
       // 話し終わりの後に返ってきた訂正: **本文が組んだままの時だけ**当てる（人が触っていたら上書きしない）
       const joined = liveChunks.map((c) => c.text).join('');
@@ -4140,11 +4206,13 @@ function finishLive(finalText) {
   if (total.length > liveRaw.length) {
     if (!total.startsWith(liveRaw)) window.__vcDebugNote('✍️ 逐次: 確定が途中と食い違った（境目に乱れの可能性）');
     const rest = total.slice(liveRaw.length);
-    if (rest.trim()) { liveChunks.push({ raw: rest, text: rest, fixed: false }); liveRaw = total; }
+    if (rest.trim()) {
+      liveChunks.push({ raw: rest, text: rest, fixed: false }); liveRaw = total;
+      if (liveTouched) setReviewBody(rvText.value + rest);  // v97: 触った後は末尾に足すだけ
+    }
   }
   liveActive = false;             // ここから在庫の訂正は「本文が組んだままの時だけ」当たる（上の分岐）
   rvStage.classList.remove('live');
-  rvText.readOnly = false;
   showReviewInterim('');
   reviewSpoken = liveChunks.map((c) => c.raw).join('');   // 来歴に残す「話したまま」＝生の全文
   if (!rvText.value.trim() && !reviewSpoken.trim()) {     // 何も拾えなかった＝直すものが無い画面を出さない（v93）
@@ -4153,13 +4221,16 @@ function finishLive(finalText) {
     return;
   }
   const fixedCount = liveChunks.filter((c) => c.fixed).length;
-  if (fixedCount) {
+  // v97: 手で直した後は ↩ を出さない＝戻し先（話したまま）へ戻すと**人の直しまで消える**。
+  if (fixedCount && !liveTouched) {
     reviewUndoText = reviewSpoken;                        // ↩ ＝話したまま（全訂正前）へ1段で戻す
     document.getElementById('reviewUndo').hidden = false;
   }
   renderLiveBody();
   document.getElementById('reviewHead').textContent = '話しながら整えました。直してから進めます';
-  rvNote.textContent = fixedCount
+  rvNote.textContent = liveTouched
+    ? `✋ 手で直した所はそのままです${fixedCount ? `（🤖 ${fixedCount}か所を整えました）` : ''}`
+    : fixedCount
     ? `🤖 話しながら ${fixedCount}か所を整えました（↩ で話したままに戻せます）`
     : '';
   renderReviewAi();
@@ -4168,18 +4239,33 @@ function finishLive(finalText) {
 }
 
 // 下書き画面が受け取る確定の**唯一の入口**（v74: 分岐は1箇所）: 逐次の話し終わりか、続きの追記か。
-function reviewTakeFinal(t) {
+// v97: 長文を押してすぐ開いた下書きは meta 無しで開く＝最初の確定の meta（認識信頼度）をここで拾う。
+function reviewTakeFinal(t, meta) {
+  if (!reviewMeta && meta) reviewMeta = meta;
   if (liveActive) { finishLive(t); return; }
   appendReview(t);
 }
 
-// 逐次モードの**唯一の入口**（ボタンも E2E もここを通る）。押すこと自体が意思表明（v44）＝
-// 条件では開かない。長文モードを道連れにする（無音で止まったら「話しながら」にならない）。
-function openLiveReview() {
+// 録音中のタイルから下書きへ移る**唯一の入口**（v96 逐次／🆕 v97 長文。ボタンも E2E もここを通る）。
+// 押すこと自体が意思表明（v44）＝条件では開かない。長文モードを道連れにする
+// （無音で止まったら「話しながら」にも「長く吐き出す」にもならない）。
+//   mode='live': 逐次＝息継ぎごとに AI が直す（v96）
+//   mode='long': 長文＝話した分は確定で本文に入る（v94 の「続きを話す」と同じ形）・その間も手で直せる
+function openMicReview(mode) {
   recOverride.keepOpen = true;
   if (typeof transcriber.setContinuous === 'function') transcriber.setContinuous(true);
   renderOverrideButtons();
-  openReview('', null, { live: true });
+  // 押す前に話していた分（専用画面に出ていた途中結果）を下書き側へ引き継いで見せる＝画面が変わっても
+  // 「いま聞こえている」が途切れない。確定は native が録音開始からの合計で返す＝本文には後で全部入る。
+  const cur = transcriptEl.textContent;
+  const heard = cur.startsWith('…') ? cur.replace(/^…\s*/, '') : '';
+  if (mode === 'live') {
+    openReview('', null, { live: true });
+    if (heard) liveInterim(heard);
+  } else {
+    openReview('', null, { longMode: true, fromMic: true });
+    if (heard) showReviewInterim(heard);
+  }
 }
 
 // 🚨 画面を閉じる時は**必ず**録音を捨てる（v49 の cancel＝止めるだけでなく解釈へ流さない）。
@@ -4201,13 +4287,12 @@ function appendReview(text) {
     window.__vcDebugNote('✍️ 続きが空（本文は変えていない）');
     return;
   }
-  rvText.value = VCRewrite.appendSpoken(rvText.value, add);
+  const first = !rvText.value.trim();
+  setReviewBody(VCRewrite.appendSpoken(rvText.value, add));   // v97: 手で直している最中でもカーソルを飛ばさない
   reviewSpoken = VCRewrite.appendSpoken(reviewSpoken, add);
   if (reviewUndoText !== null) reviewUndoText = VCRewrite.appendSpoken(reviewUndoText, add);
   reviewAdded += add.length;
-  renderReviewCount();
-  rvText.scrollTop = rvText.scrollHeight;
-  rvNote.textContent = `🎤 続きを足しました（+${add.length}字）`;
+  rvNote.textContent = first ? `🎤 話した分を入れました（${add.length}字）` : `🎤 続きを足しました（+${add.length}字）`;
   window.__vcDebugNote(`✍️ 続きを追記（+${add.length}字／前回AIから${reviewAdded}字）`);
   maybeAutoSummarize();
 }
@@ -4285,12 +4370,17 @@ function openReview(text, meta, opts) {
   // v96: 逐次モードで開く（録音中に開く＝本文は機械が書き、息継ぎごとに AI が直す）
   liveActive = !!(opts && opts.live);
   liveChunks = []; liveRaw = ''; liveLastInterim = '';
+  liveTouched = false;        // v97: 触ったかは下書きごと（前の回を持ち越さない）
   if (liveTimer) { clearTimeout(liveTimer); liveTimer = null; }
   rvStage.classList.toggle('live', liveActive);
-  rvText.readOnly = liveActive;   // 機械が書いている間は人の編集を混ぜない（返ってきた訂正が上書きしてしまう）
+  // v97: 逐次中も readOnly にしない（ゆう要求「手書き修正できるように」）。人が触ったら liveTouched で
+  //   機械側が引く（組み直さない・末尾に足すだけ）＝訂正が人の直しを上書きしない、は別の形で守る。
   rvText.value = reviewSpoken;
   rvNote.textContent = '';
-  renderReviewMic(liveActive && transcriber.isListening()); // 逐次は録音中に開く＝⏹ を最初から出す
+  // v97: 録音中のタイル（長文／逐次）から開いた時は、まだ聞いている＝⏹ を最初から出す
+  const fromMic = liveActive || !!(opts && opts.fromMic);
+  reviewFromMic = !liveActive && fromMic && transcriber.isListening();
+  renderReviewMic(fromMic && transcriber.isListening());
   document.getElementById('reviewUndo').hidden = true;
   setReviewAiConfig(false);   // 前回開きっぱなしで終わっていても、必ず畳んだ状態から始める
   renderReviewAi();
@@ -4298,14 +4388,16 @@ function openReview(text, meta, opts) {
   // 「勝手に画面が挟まった」に見せない（v91「絞っていることを常に見せる」と同じ線）。
   const longMode = !!(opts && opts.longMode);
   document.getElementById('reviewHead').textContent = liveActive
-    ? '🎙 話しながら整えています…（⏹ を押すと話し終わり）'
+    ? '🎙 話しながら整えています…（⏹ で話し終わり・手で直してもOK）'
+    : reviewFromMic
+    ? '🎙 長文モードで聞いています…（⏹ で話し終わり・手で直してもOK）'
     : longMode
     ? '長文モードの録音です。直してから進めます'
     : '長い発話です。直してから進めます';
   renderReviewCount();
   rvStage.hidden = false;
   document.body.classList.add('reviewing');
-  window.__vcDebugNote(`✍️ 推敲画面（${liveActive ? '逐次' : `${reviewSpoken.length}字${longMode ? '・長文モード' : ''}`}）`);
+  window.__vcDebugNote(`✍️ 推敲画面（${liveActive ? '逐次' : reviewFromMic ? '長文・録音中から' : `${reviewSpoken.length}字${longMode ? '・長文モード' : ''}`}）`);
 }
 
 function closeReview() {
@@ -4318,10 +4410,11 @@ function closeReview() {
   reviewAdded = 0;
   // v96: 逐次の後始末（捨てるで閉じても、次に普通の下書きを開いても、逐次の状態を持ち越さない）
   liveActive = false;
+  liveTouched = false;
+  reviewFromMic = false;
   liveChunks = []; liveRaw = ''; liveLastInterim = '';
   if (liveTimer) { clearTimeout(liveTimer); liveTimer = null; }
-  rvStage.classList.remove('live');
-  rvText.readOnly = false;
+  rvStage.classList.remove('live', 'listening');
 }
 
 // AI を当てる（整える／要約する）。**受け入れ幅と文言はモードごと**（engine/rewrite.js の表）。
@@ -4373,7 +4466,15 @@ async function runReviewAi(mode, opts) {
   }
 }
 
-rvText.addEventListener('input', renderReviewCount);
+rvText.addEventListener('input', () => {
+  // v97: 逐次中に人が触った＝ここから機械は末尾に足すだけ（組み直さない）。黙って切り替えない＝言う。
+  if (liveActive && !liveTouched) {
+    liveTouched = true;
+    rvNote.textContent = '✋ 手で直しています — 話した続きは末尾に足します（直した所に AI は上書きしません）';
+    window.__vcDebugNote('✍️ 逐次: 手で直し始めた＝以降は末尾に足すだけ');
+  }
+  renderReviewCount();
+});
 // v94: 続きを声で足す／☑ 自動要約（設定の現物を書き換える＝入れ物は1つ）
 document.getElementById('reviewMic').addEventListener('click', toggleReviewMic);
 document.getElementById('reviewAuto').addEventListener('change', (e) => {
