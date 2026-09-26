@@ -480,8 +480,11 @@ t('長文モードのボタンは native の時だけ出す', () => {
 });
 
 t('押した時に native へ伝える（画面だけ変わって効いていない、を作らない）', () => {
-  ok(/setContinuous\(recOverride\.keepOpen\)/.test(code),
-    'ボタンの状態を native に渡していない＝✓ は付くのに止まり続ける（画面が嘘をつく・v3）');
+  // v97: 長文ボタンは押すと下書きへ移る（トグルではなくなった）＝openMicReview で「止めない」を頼む
+  ok(/ovKeepOpen\.addEventListener\('click', \(\) => openMicReview\('long'\)\)/.test(code),
+    '長文ボタンが openMicReview を通っていない');
+  ok(/setContinuous\(true\)/.test(bodyOf('openMicReview')),
+    'native に「止めない」を頼んでいない＝下書きは開くのに無音で止まる（画面が嘘をつく・v3）');
 });
 
 // ===== 11. 長文の推敲画面（v84・ゆう要求） =====
@@ -503,13 +506,15 @@ t('挟む判定は1箇所・長さの数字は engine が持つ', () => {
   // v93: 長文モード（自分でボタンを押した時）だけは越える＝下の 15 節で別に縛る
   ok(/targeted/.test(body), '欄指定発話でも挟んでいる＝v17（その欄だけの差分）の意味が壊れる');
   // 定義（function openReview）は数えない＝**呼び出し**を見る。v96 で入口は2つになった:
-  //   ①条件で開く（onUtterance→shouldReviewUtterance）②人がボタンで開く（openLiveReview・逐次）。
+  //   ①条件で開く（onUtterance→shouldReviewUtterance）②人がボタンで開く（openMicReview・逐次／v97 長文）。
   //   ②は「押すこと自体が意思表明」（v44）＝条件が食い違う心配が無い。条件由来の入口は今も1つ。
+  //   ②の中で逐次と長文に分かれる（openMicReview の中の2呼び出し）＝入口の関数は1つ。
   const calls = countOf(/(?<!function )\bopenReview\s*\(/g);
-  ok(calls === 2, `openReview の呼び出しが ${calls} 箇所（条件の入口1＋逐次の入口1＝2のはず）`);
-  ok(/function openLiveReview[\s\S]{0,300}openReview\('', null, \{ live: true \}\)/.test(code),
-    '逐次の入口が openLiveReview 1関数に集まっていない');
-  ok(countOf(/openLiveReview\b/g) >= 3, 'ボタンと E2E が openLiveReview を通っていない');
+  ok(calls === 3, `openReview の呼び出しが ${calls} 箇所（条件の入口1＋タイルの入口（逐次・長文）2＝3のはず）`);
+  ok(inBody('openMicReview', /openReview\s*\(/g) === 2, 'タイルからの2つの開き方が openMicReview 1関数に集まっていない');
+  ok(/openReview\('', null, \{ live: true \}\)/.test(bodyOf('openMicReview')), '逐次の開き方が無い');
+  ok(/openReview\('', null, \{ longMode: true, fromMic: true \}\)/.test(bodyOf('openMicReview')), '長文の開き方が無い');
+  ok(countOf(/openMicReview\(/g) >= 5, 'ボタン（逐次・長文）と E2E（2つ）が openMicReview を通っていない');
 });
 
 t('閉じ込めない＝出口は「進む」と「捨てる」の2つ（v78 の不変条件）', () => {
@@ -733,7 +738,7 @@ t('推敲中かの判定は reviewOpen 1関数（同じ答えを3つの経路が
 t('下書きへの確定は reviewTakeFinal 1本（逐次の話し終わりか、続きの追記かはそこで分ける）', () => {
   const h = code.match(/onFinal\(t, meta\) \{[\s\S]{0,300}?\n  \},/);
   ok(h, 'onFinal のハンドラが見つからない');
-  ok(/if \(reviewOpen\(\)\) \{ reviewTakeFinal\(t\); return; \}/.test(h[0]),
+  ok(/if \(reviewOpen\(\)\) \{ reviewTakeFinal\(t, meta\); return; \}/.test(h[0]),
     '推敲中の確定をフォームへ流している（下書きの続きが予定になる）');
   const b = bodyOf('reviewTakeFinal');
   ok(/liveActive/.test(b) && /finishLive\(t\)/.test(b) && /appendReview\(t\)/.test(b),
@@ -755,7 +760,7 @@ t('画面を閉じる時は必ず録音を止める（閉じた後の確定が�
 
 t('続きは本文・話したまま・↩ の戻し先の3つに同じだけ足す', () => {
   const b = bodyOf('appendReview');
-  ok(/rvText\.value = VCRewrite\.appendSpoken/.test(b), '本文に足していない');
+  ok(/setReviewBody\(VCRewrite\.appendSpoken\(rvText\.value/.test(b), '本文に足していない');
   ok(/reviewSpoken = VCRewrite\.appendSpoken/.test(b), '話したまま（来歴用）に足していない＝来歴が嘘になる');
   ok(/reviewUndoText = VCRewrite\.appendSpoken/.test(b), '↩ の戻し先に足していない＝↩ で自分が話した続きが消える');
   ok(/reviewUndoText !== null/.test(b), 'AI を当てる前でも戻し先を作っている（↩ が勝手に出る）');
@@ -823,10 +828,33 @@ t('区切りの数字は engine が持つ（宿主に息継ぎの ms・字数を
   ok(/VCRewrite\.LIVE\.CONTEXT_CHARS/.test(bodyOf('correctLiveChunk')), '文脈の長さを宿主に書いている');
 });
 
-t('録音中の本文は readOnly（機械が書く欄に人の編集を混ぜない）', () => {
-  ok(/rvText\.readOnly = liveActive/.test(bodyOf('openReview')), '逐次で開いても編集できる＝訂正が上書きする');
-  ok(/rvText\.readOnly = false/.test(bodyOf('finishLive')), '話し終わっても readOnly のまま＝直せない');
-  ok(/rvText\.readOnly = false/.test(bodyOf('closeReview')), '捨てた後も readOnly が残る＝次の下書きが直せない');
+// v97（ゆう要求「逐次でも押してすぐ手書き修正できるように」）: v96 の readOnly をやめた。
+//   代わりに「人が触ったら機械が引く」＝チャンクから組み直さない・末尾に足すだけ・↩ を出さない。
+t('逐次中も手で直せる・触った後は機械が人の直しを上書きしない', () => {
+  ok(!/readOnly = liveActive/.test(code), '逐次中に readOnly にしている＝録音中に直せない（v97 の要求）');
+  ok(/if \(liveTouched\) return;/.test(bodyOf('renderLiveBody')),
+    '触った後もチャンクから本文を組み直している＝打った字が消える（v3 の線）');
+  ok(/liveTouched = true/.test(code) && /rvText\.addEventListener\('input'/.test(code),
+    '人の入力で liveTouched を立てていない');
+  ok(/if \(liveTouched\) setReviewBody\(rvText\.value \+ raw\)/.test(bodyOf('settleLiveChunk')),
+    '触った後に区切った続きを本文へ足していない＝話した分が画面から消える（v16）');
+  ok(/if \(liveTouched\) setReviewBody\(rvText\.value \+ rest\)/.test(bodyOf('finishLive')),
+    '触った後の話し終わりで、残りの末尾を本文へ足していない');
+  ok(/liveActive && !liveTouched/.test(bodyOf('correctLiveChunk')),
+    '触った後の訂正を組み直しで当てている');
+  ok(/endsWith\(chunk\.text\)/.test(bodyOf('correctLiveChunk')),
+    '触った後の訂正を末尾以外にも当てている＝人の直しを上書きする');
+  ok(/fixedCount && !liveTouched/.test(bodyOf('finishLive')),
+    '触った後に ↩（話したままへ戻す）を出している＝押すと人の直しまで消える');
+  ok(/liveTouched = false/.test(bodyOf('openReview')) && /liveTouched = false/.test(bodyOf('closeReview')),
+    '触った印が次の下書きへ漏れる');
+});
+
+t('本文を機械が書く口は setReviewBody 1本（手で直している最中にカーソルを飛ばさない）', () => {
+  const b = bodyOf('setReviewBody');
+  ok(/setSelectionRange/.test(b) && /document\.activeElement === rvText/.test(b),
+    '触っている最中の差し替えでカーソル位置を戻していない＝打つたびに末尾へ飛ぶ');
+  ok(countOf(/rvText\.value = liveChunks/g) === 1, '逐次の本文を setReviewBody の外で組んでいる（在庫の訂正の1箇所だけのはず）');
 });
 
 t('話し終わり後に返ってきた訂正は「本文が組んだままの時だけ」当てる', () => {
@@ -867,8 +895,8 @@ t('↩ の戻し先は話したまま・訂正があった時だけ出す', () =
   ok(/fixedCount/.test(b), '訂正ゼロでも ↩ を出している（押しても何も起きないボタン）');
 });
 
-t('openLiveReview は長文モードを道連れにする（無音で止まったら「話しながら」にならない）', () => {
-  const b = bodyOf('openLiveReview');
+t('openMicReview は長文モードを道連れにする（無音で止まったら「話しながら」にならない）', () => {
+  const b = bodyOf('openMicReview');
   ok(/recOverride\.keepOpen = true/.test(b), 'keepOpen を立てていない');
   ok(/setContinuous\(true\)/.test(b), 'native に「止めない」を頼んでいない');
 });
@@ -877,5 +905,38 @@ t('逐次ボタンは native の長文＋キーの両方がある時だけ（押
   ok(/ovLive\.hidden = !\(transcriber\.canKeepOpen && canAI\)/.test(bodyOf('renderOverrideButtons')),
     'ovLive の出し入れが canKeepOpen と canAI の両方を見ていない');
 });
+// ===== v97: 録音中のタイル／長文は押してすぐ下書きへ（ゆう要求・スケッチ 2026-09-26）=====
+t('録音中の操作はタイルのグリッド（ノードは増やさず class を付け替えただけ）', () => {
+  const from = html.indexOf('id="micGrid"');
+  const to = html.indexOf('<!-- /.mic-grid -->');
+  ok(from > 0 && to > from, '#micGrid が無い');
+  const inner = html.slice(from, to);
+  for (const id of ['micCancel', 'ovKeepOpen', 'ovNoAuto', 'ovAI', 'ovLive']) {
+    ok(new RegExp(`id="${id}"[^>]*class="mic-tile"`).test(inner), `${id} がタイルになっていない／グリッドの外に居る`);
+  }
+  // 入れ物（micOverrides）は hidden の出し入れ用に残す＝中身をグリッドへ直接並べる
+  ok(/\.mic-overrides \{ display: contents; \}/.test(html), 'オーバーライドの入れ物がグリッドを割っている');
+  ok(/\.mic-overrides\[hidden\] \{ display: none; \}/.test(html), 'display: contents が hidden を上書きしている＝録音外でも出る');
+});
+
+t('タイルの文言は固定文字列だけ（innerHTML に外の値を入れない）', () => {
+  const b = bodyOf('renderOverrideButtons');
+  ok(!/\.textContent\s*=/.test(b), 'タイルの一部だけ textContent で書いて補足行を消している');
+  ok(countOf(/setTile\(/g) >= 5, 'タイルの書き方が setTile に揃っていない');
+});
+
+t('長文を押してすぐ開いた下書き: 聞いている間は「進む」を隠す（⏹ と ✕ は残す）', () => {
+  ok(/stage\.classList\.toggle\('listening', !!on\)/.test(bodyOf('renderReviewMic')),
+    '聞いている印を renderReviewMic で付け外ししていない＝録音の状態と画面が食い違う');
+  const m = html.match(/#reviewStage\.listening[^{]*\{ display: none; \}/);
+  ok(m && m[0].includes('reviewGo'), '聞いている間に「進む」が出ている＝押すと録音中の続きが捨てられる');
+  ok(!m[0].includes('reviewCancel') && !m[0].includes('reviewMic'), '出口（✕ 捨てる／⏹）まで隠している＝閉じ込め（v78 違反）');
+  ok(/classList\.remove\('live', 'listening'\)/.test(bodyOf('closeReview')), '閉じても listening が残る＝次の下書きで「進む」が出ない');
+});
+
+t('録音中から開いた下書きは、最初の確定の meta を拾う（認識信頼度を落とさない）', () => {
+  ok(/if \(!reviewMeta && meta\) reviewMeta = meta;/.test(bodyOf('reviewTakeFinal')), 'meta を拾っていない');
+});
+
 console.log(`\nwiring.test: ${pass} passed, ${fail.length} failed`);
 if (fail.length) { console.log('\n' + fail.join('\n\n')); process.exit(1); }
