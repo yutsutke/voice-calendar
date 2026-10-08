@@ -213,8 +213,10 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
   .rv-ai[hidden] { display: none; }
   /* v94: 続きを声で足す（ゆう要求）。マイクも .ov-btn の語彙のまま＝新しい形を増やさない（v46）。
      録音中は .on（既存の語彙）で光る＝この画面だけの見た目を作らない。 */
-  .rv-live { font-size: 13px; color: var(--sub); line-height: 1.5; margin: 8px 2px 0;
-    max-height: 4.5em; overflow-y: auto; }
+  /* v98: 長文／続きを話すの途中経過は本文欄に直接出す（ゆう実機FB「小さくて見えにくい」）＝この行は逐次の
+     「まだ区切っていない末尾」だけ。それも本文と同じ大きさで読めるように 13px→20px（本文に揃える）。 */
+  .rv-live { font-size: 20px; color: var(--sub); line-height: 1.6; margin: 8px 2px 0;
+    max-height: 3.2em; overflow-y: auto; }
   .rv-live[hidden] { display: none; }
   /* ☑ 自動要約（ゆう要求「下書きボタンに☑みたいのを場所を入れて」）＝押せるものと同じ段に並べる。
      チェックは設定の現物（engine/settings.js の autoSummarize）に直結＝入れ物を2つ作らない（v93）。 */
@@ -1040,23 +1042,23 @@ document.addEventListener('DOMContentLoaded', function () { window.__vcRenderDia
      理由: この版文字列は index.html にしかないが、ロジックは別ファイル＝別キャッシュ。
      付けないと「フッタは新しいのにパーサは古い」という嘘の状態が成立する（v9 で実際に踏んだ）。
      index.html が更新されれば src の URL も変わる → JS も必ず新しく取り直される。 -->
-<script src="engine/settings.js?v=97"></script>
-<script src="engine/schema.js?v=97"></script>
-<script src="engine/parser.js?v=97"></script>
-<script src="engine/dictionary.js?v=97"></script>
-<script src="engine/contract.js?v=97"></script>
-<script src="engine/batch.js?v=97"></script>
-<script src="engine/ai.js?v=97"></script>
-<script src="engine/rewrite.js?v=97"></script>
-<script src="input/transcriber.js?v=97"></script>
-<script src="adapters/calendar.js?v=97"></script>
-<script src="adapters/records.js?v=97"></script>
-<script src="adapters/location.js?v=97"></script>
-<script src="engine/geomap.js?v=97"></script>
-<script src="engine/period.js?v=97"></script>
+<script src="engine/settings.js?v=98"></script>
+<script src="engine/schema.js?v=98"></script>
+<script src="engine/parser.js?v=98"></script>
+<script src="engine/dictionary.js?v=98"></script>
+<script src="engine/contract.js?v=98"></script>
+<script src="engine/batch.js?v=98"></script>
+<script src="engine/ai.js?v=98"></script>
+<script src="engine/rewrite.js?v=98"></script>
+<script src="input/transcriber.js?v=98"></script>
+<script src="adapters/calendar.js?v=98"></script>
+<script src="adapters/records.js?v=98"></script>
+<script src="adapters/location.js?v=98"></script>
+<script src="engine/geomap.js?v=98"></script>
+<script src="engine/period.js?v=98"></script>
 <script>
 'use strict';
-const BUILD = 'v97：録音中はタイル／長文・逐次は押してすぐ下書きへ · 2026-09-26';
+const BUILD = 'v98：長文の途中経過を本文欄に直接出す · 2026-10-09';
 console.log('BUILD:', BUILD);
 document.getElementById('build').textContent = BUILD;
 
@@ -2886,7 +2888,8 @@ const transcriber = VCTranscriber.createTranscriber({
     // v96: 逐次モード中は、合計から**まだ区切っていない末尾**を出し、息継ぎで区切る。
     if (liveActive) { liveInterim(t); return; }
     // v94: 推敲画面で「続きを話す」中は、途中経過は**その画面の中**に出す（後ろは見えない）。
-    if (reviewOpen()) { showReviewInterim(t); return; }
+    // v98: 小さい行でなく**本文欄の末尾に仮置き**（ゆう実機FB「小さくて見えにくい」）
+    if (reviewOpen()) { showReviewTail(t); return; }
     transcriptEl.textContent = `… ${t}`;
     // v78: 専用画面では長い発話が入り切らなくなる＝**いま言ったところ（末尾）が見える**ように追従。
     // 上に隠れた前半はスクロールで読める＝切り捨てない（v16「黙って捨てない」の表示版）。
@@ -2915,6 +2918,9 @@ const transcriber = VCTranscriber.createTranscriber({
     // 🚨 native は start のたびに continuous を false へ戻す（Swift/Java の「この録音だけ」）＝
     //    start より前に頼んでも消える。**始まった後のここで**頼むのが唯一の確実な順番。
     if (reviewOpen()) {
+      // v98: 新しい録音＝合計は0から数え直し。前の録音の仮置きが残っていたら（確定が来ずに死んだ等）
+      //   それは**本文として残す**（捨てない・v16）＝印だけ外す。
+      if (on) reviewTailReset();
       if (on) setReviewContinuous();
       renderReviewMic(on);
     }
@@ -4017,6 +4023,15 @@ let liveTimer = null;       // 息継ぎ判定（PAUSE_MS 止まったら区切�
 let liveTouched = false;
 // 🆕 v97: 録音中のマイクから開いた下書き（長文）で、まだ聞いているか（見出しの言い分け用）。
 let reviewFromMic = false;
+// 🆕 v98（ゆう実機FB「長文録音中、録音している文字が小さくて見えにくい。最初から本文の所に出して」）:
+//   長文／続きを話すの途中経過は、下の小さい行でなく**本文欄の末尾に仮置き**する（確定でそのまま置き換わる）。
+//   rvTail    = 本文の末尾に今出している仮置き（区切りの改行を含む）＝確定が来たらここを外して確定を足す
+//   rvTailSeg = その中身（今回の録音の合計のうち、仮置きしている部分・生のまま）
+//   rvAdopted = 今回の録音の合計のうち、人が仮置きを手で直して**本文に取り込んだ**字数（以後は上書きしない）
+let rvTail = '';
+let rvTailSeg = '';
+let rvAdopted = 0;
+function reviewTailReset() { rvTail = ''; rvTailSeg = ''; rvAdopted = 0; }
 
 // v94: この画面が開いているか。**判定はこの1関数だけ**（onFinal / onInterim / autoRecord が同じ答えを見る）。
 // getElementById で引くのは、転写層のハンドラが**この行より前に**呼ばれ得るため（起動時の自動録音）。
@@ -4092,6 +4107,34 @@ function showReviewInterim(t) {
   live.hidden = false;
   live.textContent = `… ${t}`;
   live.scrollTop = live.scrollHeight;   // v78 と同じ＝いま言ったところ（末尾）が見える
+}
+
+// v98: 本文から仮置き（途中経過）を外した「人と確定の分」を返す。
+// 人が仮置きの中を直していた（末尾が一致しない）なら、その分は**人のもの**として取り込む（上書きしない・v3 の線）。
+function reviewBodyHead() {
+  const v = rvText.value;
+  if (!rvTail) return v;
+  if (v.endsWith(rvTail)) return v.slice(0, v.length - rvTail.length);
+  rvAdopted += rvTailSeg.length;
+  rvTail = ''; rvTailSeg = '';
+  window.__vcDebugNote(`✍️ 途中の文字を手で直した＝取り込み（今回の録音の先頭${rvAdopted}字）`);
+  return v;
+}
+
+// v98: 長文／続きを話すの途中経過（＝今回の録音の合計）を本文の末尾に仮置きする。
+function showReviewTail(total) {
+  const head = reviewBodyHead();
+  const raw = String(total || '').slice(rvAdopted);
+  const shown = raw.trim();
+  rvTailSeg = raw;
+  if (!shown) {
+    if (rvText.value !== head) setReviewBody(head);
+    rvTail = '';
+    return;
+  }
+  const base = head.replace(/\s+$/, '');   // 確定の足し方（VCRewrite.appendSpoken）と同じ形＝確定で見た目が跳ねない
+  rvTail = (base ? '\n' : '') + shown;
+  setReviewBody(base + rvTail);
 }
 
 // この画面の録音は**長文モード固定**（v82 の「この録音だけ 止めない」と同じ仕掛けを使う）。
@@ -4264,7 +4307,7 @@ function openMicReview(mode) {
     if (heard) liveInterim(heard);
   } else {
     openReview('', null, { longMode: true, fromMic: true });
-    if (heard) showReviewInterim(heard);
+    if (heard) showReviewTail(heard);   // v98: 本文欄に仮置き
   }
 }
 
@@ -4283,12 +4326,21 @@ function stopReviewMic() {
 function appendReview(text) {
   const add = String(text || '').trim();
   if (!add) {   // 空の確定は握り潰さない（v16 の真犯人と同じ形）＝理由を出す
-    rvNote.textContent = '🎤 何も聞き取れませんでした（本文はそのままです）';
-    window.__vcDebugNote('✍️ 続きが空（本文は変えていない）');
+    // v98: 仮置き（途中経過）が出ていたら**消さずに本文として残す**（確定が空でも聞こえた分は捨てない）
+    const kept = rvTail.trim();
+    reviewTailReset();
+    rvNote.textContent = kept
+      ? '🎤 確定が空だったので、途中まで聞こえた分を本文に残しました'
+      : '🎤 何も聞き取れませんでした（本文はそのままです）';
+    window.__vcDebugNote(`✍️ 続きが空（${kept ? `途中の${kept.length}字を残した` : '本文は変えていない'}）`);
     return;
   }
-  const first = !rvText.value.trim();
-  setReviewBody(VCRewrite.appendSpoken(rvText.value, add));   // v97: 手で直している最中でもカーソルを飛ばさない
+  // v98: 本文の末尾の仮置きを外して確定を足す（仮置きを手で直した分は取り込み済み＝その後ろだけ足す）
+  const head = reviewBodyHead();
+  const addBody = String(text).slice(rvAdopted).trim();   // 数え方は showReviewTail と同じ（生の合計の字数）
+  reviewTailReset();
+  const first = !head.trim();
+  setReviewBody(VCRewrite.appendSpoken(head, addBody));   // v97: 手で直している最中でもカーソルを飛ばさない
   reviewSpoken = VCRewrite.appendSpoken(reviewSpoken, add);
   if (reviewUndoText !== null) reviewUndoText = VCRewrite.appendSpoken(reviewUndoText, add);
   reviewAdded += add.length;
@@ -4371,6 +4423,7 @@ function openReview(text, meta, opts) {
   liveActive = !!(opts && opts.live);
   liveChunks = []; liveRaw = ''; liveLastInterim = '';
   liveTouched = false;        // v97: 触ったかは下書きごと（前の回を持ち越さない）
+  reviewTailReset();          // v98: 仮置きも下書きごと
   if (liveTimer) { clearTimeout(liveTimer); liveTimer = null; }
   rvStage.classList.toggle('live', liveActive);
   // v97: 逐次中も readOnly にしない（ゆう要求「手書き修正できるように」）。人が触ったら liveTouched で
@@ -4412,6 +4465,7 @@ function closeReview() {
   liveActive = false;
   liveTouched = false;
   reviewFromMic = false;
+  reviewTailReset();
   liveChunks = []; liveRaw = ''; liveLastInterim = '';
   if (liveTimer) { clearTimeout(liveTimer); liveTimer = null; }
   rvStage.classList.remove('live', 'listening');

@@ -760,7 +760,8 @@ t('画面を閉じる時は必ず録音を止める（閉じた後の確定が�
 
 t('続きは本文・話したまま・↩ の戻し先の3つに同じだけ足す', () => {
   const b = bodyOf('appendReview');
-  ok(/setReviewBody\(VCRewrite\.appendSpoken\(rvText\.value/.test(b), '本文に足していない');
+  // v98: 本文は「仮置き（途中経過）を外した head」に足す（rvText.value に直接足すと途中経過と確定が二重になる）
+  ok(/setReviewBody\(VCRewrite\.appendSpoken\(head/.test(b), '本文に足していない');
   ok(/reviewSpoken = VCRewrite\.appendSpoken/.test(b), '話したまま（来歴用）に足していない＝来歴が嘘になる');
   ok(/reviewUndoText = VCRewrite\.appendSpoken/.test(b), '↩ の戻し先に足していない＝↩ で自分が話した続きが消える');
   ok(/reviewUndoText !== null/.test(b), 'AI を当てる前でも戻し先を作っている（↩ が勝手に出る）');
@@ -936,6 +937,37 @@ t('長文を押してすぐ開いた下書き: 聞いている間は「進む」
 
 t('録音中から開いた下書きは、最初の確定の meta を拾う（認識信頼度を落とさない）', () => {
   ok(/if \(!reviewMeta && meta\) reviewMeta = meta;/.test(bodyOf('reviewTakeFinal')), 'meta を拾っていない');
+});
+
+// ===== v98: 長文の途中経過を本文欄に直接出す（ゆう実機FB 2026-10-09「小さくて見えにくい」）=====
+t('下書きが開いている間の途中経過は本文欄へ（小さい行に戻さない）', () => {
+  ok(/if \(reviewOpen\(\)\) \{ showReviewTail\(t\); return; \}/.test(code), 'onInterim が本文欄に出していない');
+  ok(/showReviewTail\(heard\)/.test(bodyOf('openMicReview')), '押す前に聞こえていた分が本文欄に出ない');
+});
+
+t('確定は仮置きを外してから足す（途中経過と確定が二重にならない）', () => {
+  const b = bodyOf('appendReview');
+  ok(/const head = reviewBodyHead\(\);/.test(b), '仮置きを外していない＝確定で同じ文が2回入る');
+  ok(/slice\(rvAdopted\)/.test(b), '手で直して取り込んだ分まで確定で足し直している');
+  ok(/reviewTailReset\(\);/.test(b), '確定の後も仮置きの印が残る＝次の確定で本文が削られる');
+});
+
+t('仮置きを人が直したら上書きしない（人のものとして取り込む）', () => {
+  const b = bodyOf('reviewBodyHead');
+  ok(/v\.endsWith\(rvTail\)/.test(b), '仮置きが手つかずかを確かめずに外している＝人の直しを消す');
+  ok(/rvAdopted \+= rvTailSeg\.length/.test(b), '直した仮置きを取り込んでいない＝次の途中経過で上書き・二重になる');
+});
+
+t('空の確定でも途中まで聞こえた分は消さない（v16）', () => {
+  const b = bodyOf('appendReview');
+  ok(/const kept = rvTail\.trim\(\);/.test(b) && /途中まで聞こえた分を本文に残しました/.test(b),
+    '確定が空の時に仮置きを黙って捨てている／言っていない');
+});
+
+t('仮置きの印は録音・下書きごとに外す（前の回を持ち越さない）', () => {
+  ok(/if \(on\) reviewTailReset\(\);/.test(code), '新しい録音で合計の数え直しをしていない＝続きが前の録音の字数で切られる');
+  ok(/reviewTailReset\(\);/.test(bodyOf('openReview')), '開くたびに外していない');
+  ok(/reviewTailReset\(\);/.test(bodyOf('closeReview')), '閉じても残る');
 });
 
 console.log(`\nwiring.test: ${pass} passed, ${fail.length} failed`);
