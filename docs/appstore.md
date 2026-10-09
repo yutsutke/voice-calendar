@@ -173,21 +173,21 @@ Google カレンダーに入れたい時は、iOS の「設定 → カレンダ�
 ```
 
 ### リリースノート（What's New・v1.4＝公開 1.3 → v93-v98）
-> 公開版 1.3（≈v92）からの差分。**この範囲に Android 専用の変更は無い**。ボタン名は画面の実物と一致させてある（📝 長文／✍️ 逐次／🎤 続きを話す／📝 要約する／⚙ AI設定）。
+> 公開版 1.3（≈v92）からの差分。**この範囲に Android 専用の変更は無い**。🚨 **絵文字は入れない**＝ASC が「このフィールドには1つ以上の無効な文字が含まれています」で弾く（2026-10-09 に実際に弾かれた）。ボタンは絵文字を除いた名前で書く（長文／逐次／続きを話す／AI設定）。
 ```
 バージョン1.4では、長く話す時の「下書き」をぐっと使いやすくしました。
 
 ■ 長文は、押してすぐ下書きへ
-・録音中に「📝 長文」を押すと、すぐに下書き画面に切り替わります。話した言葉がそのまま大きな文字で本文に出るので、話しながら読み返せます。
-・話している最中でも、本文を手で直せます。「⏹ 話し終わり」で確定し、読み返してから進めます。
+・録音中に「長文」を押すと、すぐに下書き画面に切り替わります。話した言葉がそのまま大きな文字で本文に出るので、話しながら読み返せます。
+・話している最中でも、本文を手で直せます。「話し終わり」で確定し、読み返してから進めます。
 
 ■ 下書きに、続きを声で足す
-・下書き画面の「🎤 続きを話す」で、書きかけの文章の続きを声で足せます。
+・下書き画面の「続きを話す」で、書きかけの文章の続きを声で足せます。
 
 ■ 話しながら整える（任意・AI）
-・録音中に「✍️ 逐次」を押すと、息継ぎのたびに AI が誤変換や言い間違いを直しながら文字にしていきます。
-・下書きで「たまったら自動で要約」に✓を入れると、話した分がたまったところで自動で要約します。↩ で元に戻せます。
-・下書き画面から「⚙ AI設定」を開けるようになりました。
+・録音中に「逐次」を押すと、息継ぎのたびに AI が誤変換や言い間違いを直しながら文字にしていきます。
+・下書きで「たまったら自動で要約」にチェックを入れると、話した分がたまったところで自動で要約します。↩ で元に戻せます。
+・下書き画面から「AI設定」を開けるようになりました。
 ※ AI の機能は、お使いの AI の API キーの登録が要ります
 
 ■ 使い勝手
@@ -417,6 +417,7 @@ TEST API KEY (Anthropic, capped at ~US$1/month, revoked after review - please do
 > ① 🚨 **AI に送るタイミングが増えた**＝ **✍️ 逐次**（録音中、息継ぎごとに区切って自動で送る）と **☑ たまったら自動で要約**（既定オフ）。1.3 までは「人がボタンを押した時に送る」だけだった。どちらも**自分のキー＋自分で押す／✓を入れる**ことが前提＝5.1.2（AI 送信の同意）の担保は崩れていない、と明記した。
 > ② **長文の流れが変わった**（v97）＝ 8-d の「この録音だけ 止めない（長文）」というボタン名は**もう画面に無い**（今は「📝 長文」タイル）。押すとすぐ下書き画面・聞いている間は「進む」が隠れる・⏹ 話し終わり で確定。
 > ③ 録音中の取り消しボタンの名前が「やめる（入力しない）」→「**✕ 入力しない**」（v97 のタイル）。
+> ⑤ 🚨 **絵文字は入れない**（ASC が無効な文字として弾く）＝ボタンは絵文字を除いた名前で書いた（画面では「📝 長文」等だが、審査担当は文字部分で探せる）。
 > ④ 字数を空けるため、1.3 の「NEW IN 1.3」表記・ホーム長押しの説明・権限の補足を削った。
 > 🚨 **ASC のメモ欄は 4000 字上限**。下の本文は **3,737 字**（`[PASTE ...]` を実キー ≈110字に替え、改行が2文字で数えられる最悪でも **約 3,850 字**）。**足す時は同じ分だけ削る**。
 
@@ -425,14 +426,14 @@ This app adds calendar events from Japanese voice input. No account or login. Th
 
 THREE THINGS TO KNOW UP FRONT:
 
-1) A FULL-SCREEN "LISTENING" VIEW MAY APPEAR RIGHT AFTER LAUNCH. The app starts recording automatically when opened with an empty form. It is not frozen: it closes by itself after about 6 seconds of silence, or tap the red microphone (stop) or the red tile "✕ 入力しない" (cancel). Nothing is saved by this view.
+1) A FULL-SCREEN "LISTENING" VIEW MAY APPEAR RIGHT AFTER LAUNCH. The app starts recording automatically when opened with an empty form. It is not frozen: it closes by itself after about 6 seconds of silence, or tap the red microphone (stop) or the red tile "入力しない" (cancel). Nothing is saved by this view.
 
 2) AN OPTIONAL MAP, the only request this app makes on its own. If the user has turned location on (see LOCATION) and opens the "地図（つぶやいた場所）" panel, map tiles are downloaded from OpenStreetMap (tile.openstreetmap.org). Only the area currently on screen is requested; saved coordinates and entry contents are never sent. Nothing is fetched unless that panel is opened.
 
-3) LONG-FORM DICTATION (changed in 1.4). While recording, tapping the tile "📝 長文" opens a full-screen draft screen right away and keeps the microphone open while the user thinks. The text appears in the draft as it is spoken and can be edited by hand. It ends on tapping "⏹ 話し終わり", or after 10 minutes. Then "進む" continues to the form, "✕ 捨てる" discards. An utterance of 80+ characters also opens this draft screen first.
+3) LONG-FORM DICTATION (changed in 1.4). While recording, tapping the tile "長文" opens a full-screen draft screen right away and keeps the microphone open while the user thinks. The text appears in the draft as it is spoken and can be edited by hand. It ends on tapping "話し終わり", or after 10 minutes. Then "進む" continues to the form, "捨てる" discards. An utterance of 80+ characters also opens this draft screen first.
 
 HOW TO TEST WITHOUT SPEAKING JAPANESE:
-1. Launch the app; grant Microphone, Speech Recognition and Calendar (write-only) when prompted. If the listening view appears, wait ~6 seconds or tap "✕ 入力しない".
+1. Launch the app; grant Microphone, Speech Recognition and Calendar (write-only) when prompted. If the listening view appears, wait ~6 seconds or tap "入力しない".
 2. On the main screen a text field simulates an utterance. Type: 明日15時に歯医者 (= dentist tomorrow at 3pm) and tap the button below it, "発話として送る" (send as utterance).
 3. The form fills in (date / time / title). Tap "カレンダーに保存" (save) - the event is added to the device's default calendar via EventKit.
 
@@ -448,10 +449,10 @@ SIRI: "Hey Siri, ボイカレ開いて" just opens the app (INAlternativeAppName
 
 OPTIONAL AI (off by default, bring your own key):
 Long text can be turned into draft events, and dictated text tidied up or summarized, using Anthropic Claude, Google Gemini, or OpenRouter (with OpenRouter the text also reaches the upstream model provider chosen). Nothing is sent unless the user enters their OWN API key. The key stays on the device; we receive neither the key nor the text; results are shown for review and can be undone.
-New in 1.4, both only after the user opts in: the recording tile "✍️ 逐次" sends the dictated text to the user's AI in short segments at each pause to fix recognition errors; the draft-screen checkbox "たまったら自動で要約" (off by default) summarizes automatically after ~100 dictated characters.
+New in 1.4, both only after the user opts in: the recording tile "逐次" sends the dictated text to the user's AI in short segments at each pause to fix recognition errors; the draft-screen checkbox "たまったら自動で要約" (off by default) summarizes automatically after ~100 dictated characters.
 
 TO TEST THE AI (spend-capped key below):
-1. Expand "詳細設定" near the bottom and find "AI 設定". Or, on the draft screen, tap "⚙ AI設定".
+1. Expand "詳細設定" near the bottom and find "AI 設定". Or, on the draft screen, tap "AI設定".
 2. プロバイダ: choose "Anthropic（Claude）".
 3. API キー: paste the key below (it saves on paste; there is no save button), then tap テスト送信 - it should report a successful connection.
 4. Open "まとめて入力（長文・AI・JSON）", paste any text with a schedule in it, and tap the AI button. Drafts appear for review before saving.
